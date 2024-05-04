@@ -33,7 +33,7 @@ impl V1OutboundMessage {
             .as_secs();
         let default_port = match self.network {
             Network::Bitcoin => 8332,
-            Network::Testnet => panic!("unimplemented"),
+            Network::Testnet => 18332,
             Network::Signet => 38332,
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
@@ -49,7 +49,7 @@ impl V1OutboundMessage {
             timestamp: now as i64,
             receiver: from_and_recv.clone(),
             sender: from_and_recv,
-            nonce: 0,
+            nonce: 1,
             user_agent: "kyoto".to_string(),
             start_height: 0,
             relay: false,
@@ -77,6 +77,12 @@ impl V1OutboundMessage {
             GetHeadersMessage::new(locator_hashes, stop_hash.unwrap_or(BlockHash::all_zeros()));
         let data =
             &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetHeaders(msg));
+        serialize(&data)
+    }
+
+    pub(crate) fn new_pong(&self, nonce: u64) -> Vec<u8> {
+        let msg = NetworkMessage::Pong(nonce);
+        let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
         serialize(&data)
     }
 }

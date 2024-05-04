@@ -1,4 +1,4 @@
-use bitcoin::{block::Header, Target};
+use bitcoin::block::Header;
 use thiserror::Error;
 
 use crate::prelude::{Median, MEDIAN_TIME_PAST};
@@ -11,6 +11,10 @@ pub(crate) struct HeadersBatch {
 // this struct provides basic sanity checks and helper methods.
 impl HeadersBatch {
     pub(crate) fn new(batch: Vec<Header>) -> Result<Self, HeadersBatchError> {
+        println!("Got batch of headers with len {}", batch.len());
+        // for (i, header) in batch.iter().enumerate() {
+        //     println!("block: {} time: {}", i, header.time);
+        // }
         if batch.len() < 1 {
             return Err(HeadersBatchError::EmptyVec);
         }
@@ -44,8 +48,8 @@ impl HeadersBatch {
             .collect();
         median_times
             .iter()
-            .enumerate()
-            .all(|(ind, median)| self.batch[ind].time > *median)
+            .zip(&self.batch)
+            .all(|(median, header)| header.time > *median)
     }
 
     // the tip of the list

@@ -1,6 +1,5 @@
 extern crate alloc;
 use bitcoin::Network;
-use log::info;
 use std::net::IpAddr;
 use thiserror::Error;
 // need to get rid of this at some point

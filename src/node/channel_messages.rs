@@ -1,10 +1,6 @@
 use std::net::IpAddr;
 
-use bitcoin::{
-    block::Header,
-    p2p::{message_network::VersionMessage, ServiceFlags},
-    BlockHash,
-};
+use bitcoin::{block::Header, p2p::ServiceFlags, BlockHash};
 
 pub(crate) enum MainThreadMessage {
     GetAddr,
@@ -31,8 +27,8 @@ pub(crate) enum PeerMessage {
     Headers(Vec<Header>),
     Disconnect,
     Verack,
-    Ping,
-    Pong,
+    Ping(u64),
+    Pong(u64),
 }
 
 #[derive(Debug, Clone, Copy)]

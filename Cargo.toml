@@ -13,7 +13,6 @@ bitcoin = { version = "0.32.0", features = [
 ], default-features = false }
 num-bigint = "0.4.0"
 hex = "0.4.0"
-log = "0.4.0"
 rand = "0.4.0"
 thiserror = { version = "1" }
 tokio = { version = "1", default-features = false, features = ["full"] }

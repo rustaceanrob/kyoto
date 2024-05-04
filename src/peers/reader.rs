@@ -7,7 +7,6 @@ use bitcoin::p2p::message::RawNetworkMessage;
 use bitcoin::p2p::Magic;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
-use log::info;
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
@@ -34,25 +33,17 @@ impl Reader {
 
     pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {
         loop {
-            println!("Waiting for messages");
             let mut message_buf = vec![0_u8; 24];
             let _ = self
                 .stream
                 .read_exact(&mut message_buf)
                 .await
                 .map_err(|_| PeerReadError::ReadBufferError)?;
-            println!("Message {:?}", message_buf.clone());
-            println!("Expected magic {:?}", self.network.magic().to_bytes());
-            println!("Got: {:?}", message_buf.clone()[..4].to_vec());
-            println!("In hex: {}", hex::encode(message_buf.clone()[..4].to_vec()));
             let header: V1Header = deserialize_partial(&message_buf)
                 .map_err(|_| PeerReadError::DeserializationError)?
                 .0;
-            println!("Read a message header");
-            println!("Magic {}", header.magic.to_string());
-            let mut contents_buf = Vec::<u8>::with_capacity(header.length as usize);
-            let _ = self.stream.read_exact(&mut contents_buf);
-            println!("{:?}", contents_buf);
+            let mut contents_buf = vec![0_u8; header.length as usize];
+            let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
             message_buf.extend_from_slice(&contents_buf);
             let message: RawNetworkMessage =
                 deserialize(&message_buf).map_err(|_| PeerReadError::DeserializationError)?;
@@ -101,8 +92,8 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::Headers(headers) => Some(PeerMessage::Headers(headers.clone())),
         NetworkMessage::SendHeaders => None,
         NetworkMessage::GetAddr => None,
-        NetworkMessage::Ping(_) => Some(PeerMessage::Ping),
-        NetworkMessage::Pong(_) => Some(PeerMessage::Pong),
+        NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(*nonce)),
+        NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(*nonce)),
         NetworkMessage::MerkleBlock(_) => None,
         NetworkMessage::FilterLoad(_) => None,
         NetworkMessage::FilterAdd(_) => None,
@@ -159,10 +150,10 @@ impl Decodable for V1Header {
         let length = u32::consensus_decode(reader)?;
         let _checksum = u32::consensus_decode(reader)?;
         Ok(Self {
-            _checksum,
+            magic,
             _command,
             length,
-            magic,
+            _checksum,
         })
     }
 }

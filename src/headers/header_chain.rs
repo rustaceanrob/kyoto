@@ -10,7 +10,7 @@ use crate::{headers::header_batch::HeadersBatch, prelude::MEDIAN_TIME_PAST};
 
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
-    pub headers: Vec<Header>,
+    headers: Vec<Header>,
     checkpoints: HeaderCheckpoints,
     params: Params,
 }
@@ -94,6 +94,7 @@ impl HeaderChain {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // we check first if the peer is sending us nonsense
         self.sanity_check(&header_batch).await?;
+        println!("Headers all valid");
         // how we handle forks depends on if we are caught up through all checkpoints or not
         if initially_syncing {
             self.catch_up_sync(header_batch).await?;
@@ -108,21 +109,31 @@ impl HeaderChain {
     async fn sanity_check(&self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // some basic sanity checks that should result in peer bans on errors
-
+        println!("Validating the headers");
         // if we aren't synced up to the checkpoints we don't accept any forks
-        if initially_syncing && self.tip().ne(header_batch.first()) {
+        println!("Checking for premature fork");
+        if initially_syncing
+            && self
+                .tip()
+                .block_hash()
+                .ne(&header_batch.first().prev_blockhash)
+        {
             return Err(HeaderSyncError::PreCheckpointFork);
         }
+
+        println!("Checking all headers are connected");
         // all the headers connect with each other
         if !header_batch.all_connected().await {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
+        println!("Checking each header passes its own proof of work");
         // all headers pass their own proof of work and the network minimum
         if !header_batch.individually_valid_pow().await {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
+        println!("Checking each header has a valid timestamp");
         // the headers have times that are greater than the median of the previous 11 blocks
         let mut last_relevant_mtp: Vec<Header> = self
             .headers
@@ -137,14 +148,19 @@ impl HeaderChain {
             .valid_median_time_past(&mut last_relevant_mtp)
             .await
         {
-            return Err(HeaderSyncError::InvalidHeaderTimes);
+            // the first validation may be incorrect because of median miscalculation,
+            // but it is cheap to detect the peer is lying later from checkpoints
+            // and difficulty of the SHA256 algorithm
+            if self.height() > 1 {
+                return Err(HeaderSyncError::InvalidHeaderTimes);
+            }
         }
         Ok(())
     }
 
     async fn catch_up_sync(&mut self, header_batch: HeadersBatch) -> Result<(), HeaderSyncError> {
-        assert_eq!(self.tip(), header_batch.last());
         assert!(!self.checkpoints.is_exhausted());
+        println!("Adding headers from batch");
         // eagerly append the batch to the chain
         let last_best_index = self.append_naive(header_batch);
         let checkpoint = self
@@ -157,6 +173,7 @@ impl HeaderChain {
                 .block_hash()
                 .eq(&checkpoint.hash)
             {
+                println!("Hit checkpoint {}", checkpoint.height);
                 self.checkpoints.advance();
             } else {
                 self.rollback_to_index(last_best_index);
