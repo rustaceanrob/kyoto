@@ -1,7 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    net::IpAddr,
+    sync::{Arc, Mutex},
+};
 
 use bitcoin::{block::Header, constants::genesis_block, params::Params, BlockHash, Network};
-use rand::{seq::sample_slice, thread_rng, Rng};
+use rand::{prelude::SliceRandom, thread_rng, RngCore};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -11,6 +14,7 @@ use crate::{
 };
 
 use super::channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage};
+use crate::db::sqlite::peer_db::SqlitePeerDb;
 
 pub enum NodeState {
     Behind,
@@ -51,12 +55,10 @@ impl Node {
     }
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + '_>> {
         println!("Starting node");
-        let dns_peers = Dns::bootstrap(self.network).await?;
-        let mut rng = thread_rng();
-        let ip = sample_slice(&mut rng, &dns_peers, 1)[0];
-        println!("Connecting to peer: {}", ip);
+        let ip = self.startup().await?;
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
+        let mut rng = thread_rng();
         let mut peer = Peer::new(rng.next_u32(), ip, None, self.network, mtx, prx);
         tokio::spawn(async move { peer.connect().await });
         loop {
@@ -129,10 +131,54 @@ impl Node {
         }
         Ok(MainThreadMessage::GetHeaders(next_headers))
     }
+
+    async fn startup(&mut self) -> Result<IpAddr, MainThreadError> {
+        let mut peer_db = SqlitePeerDb::new(self.network).map_err(|e| {
+            println!("Persistence failure: {}", e.to_string());
+            MainThreadError::PeerLoadFailure
+        })?;
+        let next_peer = peer_db.get_random_new().await.map_err(|e| {
+            println!("Persistence failure: {}", e.to_string());
+            MainThreadError::PeerLoadFailure
+        })?;
+        match next_peer {
+            Some((ip, _)) => {
+                println!("Able to load a peer from persistence: {}", ip.to_string());
+                Ok(ip)
+            }
+            None => {
+                println!("No peers in database");
+                self.bootstrap_peers(peer_db).await
+            }
+        }
+    }
+
+    async fn bootstrap_peers(&mut self, mut db: SqlitePeerDb) -> Result<IpAddr, MainThreadError> {
+        let mut new_peers = Dns::bootstrap(self.network)
+            .await
+            .map_err(|_| MainThreadError::DnsFailure)?;
+        let mut rng = thread_rng();
+        new_peers.shuffle(&mut rng);
+        // DNS fails if there is an insufficient number of peers
+        let ret_ip = new_peers[0];
+        for peer in new_peers {
+            if let Err(e) = db.add_new(peer, None, None).await {
+                println!(
+                    "Encountered error adding peer to persistence: {}",
+                    e.to_string()
+                );
+            }
+        }
+        Ok(ret_ip)
+    }
 }
 
 #[derive(Error, Debug)]
 pub enum MainThreadError {
     #[error("the lock acquired on the mutex may have left data in an indeterminant state")]
     PoisonedGuard,
+    #[error("the peer persistence failed")]
+    PeerLoadFailure,
+    #[error("dns bootstrap failed")]
+    DnsFailure,
 }

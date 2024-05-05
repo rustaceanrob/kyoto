@@ -11,10 +11,6 @@ pub(crate) struct HeadersBatch {
 // this struct provides basic sanity checks and helper methods.
 impl HeadersBatch {
     pub(crate) fn new(batch: Vec<Header>) -> Result<Self, HeadersBatchError> {
-        println!("Got batch of headers with len {}", batch.len());
-        // for (i, header) in batch.iter().enumerate() {
-        //     println!("block: {} time: {}", i, header.time);
-        // }
         if batch.len() < 1 {
             return Err(HeadersBatchError::EmptyVec);
         }

@@ -9,10 +9,6 @@ pub const TESTNET_HEADER_CP: &[(usize, &str)] = &[(
 
 pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
     (
-        0,
-        "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
-    ),
-    (
         10000,
         "000000ade699ac51fe9f23005115eccafe986e9d0c97f87403579698d31f1692",
     ),

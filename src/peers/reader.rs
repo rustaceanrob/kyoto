@@ -61,7 +61,7 @@ impl Reader {
 }
 
 fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
-    println!("Got a message from peer {}", message.cmd());
+    println!("[Peer message]: {}", message.cmd());
     match message {
         NetworkMessage::Version(version) => Some(PeerMessage::Version(RemoteVersion {
             service_flags: version.services,

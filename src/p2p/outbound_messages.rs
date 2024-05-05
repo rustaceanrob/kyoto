@@ -15,7 +15,7 @@ use bitcoin::{
     BlockHash, Network,
 };
 
-pub const PROTOCOL_VERSION: u32 = 70012;
+pub const PROTOCOL_VERSION: u32 = 70015;
 
 pub(crate) struct V1OutboundMessage {
     network: Network,

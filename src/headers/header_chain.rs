@@ -1,8 +1,7 @@
 extern crate alloc;
 use core::panic;
 
-use bitcoin::{block::Header, consensus::Params, BlockHash, Network, Target, Work};
-use num_bigint::BigUint;
+use bitcoin::{block::Header, consensus::Params, Network, Target, Work};
 use thiserror::Error;
 
 use super::checkpoints::HeaderCheckpoints;
@@ -94,14 +93,13 @@ impl HeaderChain {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // we check first if the peer is sending us nonsense
         self.sanity_check(&header_batch).await?;
-        println!("Headers all valid");
         // how we handle forks depends on if we are caught up through all checkpoints or not
         if initially_syncing {
             self.catch_up_sync(header_batch).await?;
         } else {
             // we may have to handle potential valid forks of the main chain
+            return Err(HeaderSyncError::MiscalculatedDifficulty);
         }
-
         Ok(())
     }
 
@@ -109,9 +107,9 @@ impl HeaderChain {
     async fn sanity_check(&self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // some basic sanity checks that should result in peer bans on errors
-        println!("Validating the headers");
+
         // if we aren't synced up to the checkpoints we don't accept any forks
-        println!("Checking for premature fork");
+        // println!("Checking for premature fork");
         if initially_syncing
             && self
                 .tip()
@@ -121,19 +119,19 @@ impl HeaderChain {
             return Err(HeaderSyncError::PreCheckpointFork);
         }
 
-        println!("Checking all headers are connected");
+        // println!("Checking all headers are connected");
         // all the headers connect with each other
         if !header_batch.all_connected().await {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
-        println!("Checking each header passes its own proof of work");
+        // println!("Checking each header passes its own proof of work");
         // all headers pass their own proof of work and the network minimum
         if !header_batch.individually_valid_pow().await {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
-        println!("Checking each header has a valid timestamp");
+        // println!("Checking each header has a valid timestamp");
         // the headers have times that are greater than the median of the previous 11 blocks
         let mut last_relevant_mtp: Vec<Header> = self
             .headers
@@ -160,7 +158,8 @@ impl HeaderChain {
 
     async fn catch_up_sync(&mut self, header_batch: HeadersBatch) -> Result<(), HeaderSyncError> {
         assert!(!self.checkpoints.is_exhausted());
-        println!("Adding headers from batch");
+        // println!("Adding headers from batch");
+
         // eagerly append the batch to the chain
         let last_best_index = self.append_naive(header_batch);
         let checkpoint = self
@@ -173,9 +172,15 @@ impl HeaderChain {
                 .block_hash()
                 .eq(&checkpoint.hash)
             {
-                println!("Hit checkpoint {}", checkpoint.height);
+                println!("Hit checkpoint, height: {}", checkpoint.height);
+                println!(
+                    "Chain height: {}, log 2 work: {}",
+                    self.height(),
+                    self.log2_work()
+                );
                 self.checkpoints.advance();
             } else {
+                // rollback further
                 self.rollback_to_index(last_best_index);
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
@@ -183,6 +188,8 @@ impl HeaderChain {
         // check the difficulty adjustment when possible
         Ok(())
     }
+
+    // audit the difficulty adjustment of the blocks we received
 
     // rollback the chain to an index, non-inclusive
     fn rollback_to_index(&mut self, index: usize) {
@@ -195,60 +202,6 @@ impl HeaderChain {
         self.headers.extend_from_slice(batch.inner());
         ind
     }
-
-    // audit the difficulty adjustment of the blocks we received
-    async fn audit_difficulty_adjustment(&self) -> Result<(), HeaderSyncError> {
-        assert!(!self.params.allow_min_difficulty_blocks);
-        assert!(!self.params.no_pow_retargeting);
-        let audit_height = self
-            .height()
-            .saturating_sub(self.params.difficulty_adjustment_interval() as usize + 1);
-        let difficulty_retarget_indexes: Vec<usize> = self
-            .headers
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| *index > audit_height)
-            .filter(|(index, _)| {
-                *index % self.params.difficulty_adjustment_interval() as usize == 0
-            })
-            .map(|(index, _)| index)
-            .collect();
-
-        Ok(())
-    }
-
-    async fn calc_retargets(&self, indexes: Vec<usize>) {}
-
-    async fn retarget_difficulty(&self, first: &Header, second: &Header) -> Target {
-        let cur_target = first.target();
-        let abs_max = self.params.max_attainable_target;
-        // TODO: max check depending on network
-        let max_threshold = first.target().max_transition_threshold(self.params.clone());
-        let min_threshold = first.target().min_transition_threshold();
-
-        let timespan = second.time - first.time;
-        // how tf do we get U256 without forking the repo? floresta did it
-        let target_bignum = BigUint::from_bytes_be(&cur_target.to_be_bytes());
-        let mult_adjust = target_bignum * timespan;
-        let retarget = mult_adjust / self.params.pow_target_timespan;
-        // I get Be and Le mixed up, not sure if correct
-        let mut retarget_buffer = [0; 32];
-        retarget_buffer.copy_from_slice(&retarget.to_bytes_le());
-        let new_target = Target::from_le_bytes(retarget_buffer);
-
-        if new_target > max_threshold {
-            if new_target > abs_max {
-                abs_max
-            } else {
-                max_threshold
-            }
-        } else if new_target < min_threshold {
-            min_threshold
-        } else {
-            new_target
-        }
-    }
-
     // should return a fork
     // pub(crate) async fn reorganize(
     //     &mut self,
