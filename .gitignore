@@ -1,6 +1,2 @@
 /target
-peers_ban.db
-peers_evict.db
-peers_new.db
-peers_tried.db
-peers_cpf.db
+/data

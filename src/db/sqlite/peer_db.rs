@@ -44,11 +44,11 @@ impl SqlitePeerDb {
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
         };
-        let conn_new = Connection::open("peers_new.db")?;
-        let conn_tried = Connection::open("peers_tried.db")?;
-        let conn_evict = Connection::open("peers_evict.db")?;
-        let conn_cpf = Connection::open("peers_cpf.db")?;
-        let conn_ban = Connection::open("peers_ban.db")?;
+        let conn_new = Connection::open("./data/peers_new.db")?;
+        let conn_tried = Connection::open("./data/peers_tried.db")?;
+        let conn_evict = Connection::open("./data/peers_evict.db")?;
+        let conn_cpf = Connection::open("./data/peers_cpf.db")?;
+        let conn_ban = Connection::open("./data/peers_ban.db")?;
         conn_new.execute(NEW_SCHEMA, [])?;
         conn_evict.execute(NEW_SCHEMA, [])?;
         conn_tried.execute(TRIED_SCHEMA, [])?;
@@ -107,7 +107,7 @@ impl SqlitePeerDb {
         Ok(count > 0)
     }
 
-    pub async fn evict_random_peer(&mut self) -> Result<()> {
+    async fn evict_random_peer(&mut self) -> Result<()> {
         let mut stmt = self
             .conn_new
             .prepare("SELECT ip_addr FROM peers ORDER BY RANDOM() LIMIT 1")?;
@@ -135,7 +135,6 @@ impl SqlitePeerDb {
             .conn_new
             .prepare("SELECT ip_addr, port FROM peers ORDER BY RANDOM() LIMIT 1")?;
         let mut rows = stmt.query([])?;
-
         if let Some(row) = rows.next()? {
             let ip_addr: String = row.get(0)?;
             let port: u16 = row.get(1)?;
@@ -153,7 +152,6 @@ impl SqlitePeerDb {
             .conn_evict
             .prepare("SELECT ip_addr, port FROM peers ORDER BY RANDOM() LIMIT 1")?;
         let mut rows = stmt.query([])?;
-
         if let Some(row) = rows.next()? {
             let ip_addr: String = row.get(0)?;
             let port: u16 = row.get(1)?;

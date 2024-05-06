@@ -1,23 +1,27 @@
 extern crate alloc;
 use core::panic;
 
-use bitcoin::{block::Header, consensus::Params, Network, Target, Work};
+use bitcoin::{block::Header, consensus::Params, constants::genesis_block, Network, Work};
 use thiserror::Error;
 
 use super::checkpoints::HeaderCheckpoints;
-use crate::{headers::header_batch::HeadersBatch, prelude::MEDIAN_TIME_PAST};
+use crate::{
+    db::sqlite::header_db::SqliteHeaderDb, headers::header_batch::HeadersBatch,
+    prelude::MEDIAN_TIME_PAST,
+};
 
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
     headers: Vec<Header>,
     checkpoints: HeaderCheckpoints,
     params: Params,
+    db: SqliteHeaderDb,
+    best_known_height: Option<usize>,
 }
 
 impl HeaderChain {
-    pub(crate) fn new(start: Header, network: &Network) -> Self {
-        let headers: Vec<Header> = vec![start];
-        let checkpoints = HeaderCheckpoints::new(network);
+    pub(crate) fn new(network: &Network) -> Result<Self, HeaderChainError> {
+        let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
             Network::Bitcoin => panic!("unimplemented network"),
             Network::Testnet => Params::new(*network),
@@ -25,20 +29,56 @@ impl HeaderChain {
             Network::Regtest => panic!("unimplemented network"),
             _ => unreachable!(),
         };
-        HeaderChain {
+        let mut db = SqliteHeaderDb::new(*network, checkpoints.last()).map_err(|e| {
+            println!("{}", e.to_string());
+            HeaderChainError::PersistenceFailed
+        })?;
+        let loaded_headers = db.load().map_err(|e| {
+            println!("{}", e.to_string());
+            HeaderChainError::PersistenceFailed
+        })?;
+        let genesis = genesis_block(params.clone()).header;
+        let headers = if loaded_headers.len().eq(&0) {
+            vec![genesis]
+        } else {
+            if loaded_headers
+                .first()
+                .unwrap()
+                .block_hash()
+                .ne(&genesis.block_hash())
+            {
+                println!("Genesis mismatch");
+                return Err(HeaderChainError::PersistenceFailed);
+            } else if loaded_headers
+                .iter()
+                .zip(loaded_headers.iter().skip(1))
+                .any(|(first, second)| first.block_hash().ne(&second.prev_blockhash))
+            {
+                println!("Blockhash pointer mismatch");
+                return Err(HeaderChainError::PersistenceFailed);
+            }
+            for (height, header) in loaded_headers.iter().enumerate() {
+                if let Some(checkpoint) = checkpoints.next() {
+                    if height.eq(&checkpoint.height) {
+                        if checkpoint.hash.eq(&header.block_hash()) {
+                            checkpoints.advance()
+                        } else {
+                            println!("Checkpoint mismatch");
+                            return Err(HeaderChainError::PersistenceFailed);
+                        }
+                    }
+                }
+            }
+            loaded_headers
+        };
+        Ok(HeaderChain {
             headers,
             checkpoints,
             params,
-        }
+            db,
+            best_known_height: None,
+        })
     }
-
-    // pub(crate) fn new_from_vec(headers: Vec<Header>, network: &Network) -> Self {
-    //     let checkpoints = HeaderCheckpoints::new(network);
-    //     HeaderChain {
-    //         headers,
-    //         checkpoints,
-    //     }
-    // }
 
     // the genesis block or base of alternative chain
     pub(crate) fn root(&self) -> &Header {
@@ -82,6 +122,10 @@ impl HeaderChain {
             .map(|header| header.work().log2())
             .reduce(|acc, next| acc + next)
             .expect("all chains have at least one header")
+    }
+
+    pub(crate) fn checkpoints_complete(&self) -> bool {
+        !self.checkpoints.is_exhausted()
     }
 
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
@@ -173,12 +217,12 @@ impl HeaderChain {
                 .eq(&checkpoint.hash)
             {
                 println!("Hit checkpoint, height: {}", checkpoint.height);
-                println!(
-                    "Chain height: {}, log 2 work: {}",
-                    self.height(),
-                    self.log2_work()
-                );
+                println!("Accumulated log base 2 chainwork: {}", self.log2_work());
+                println!("Writing progress to disk...");
                 self.checkpoints.advance();
+                if let Err(e) = self.db.write(&self.headers).await {
+                    println!("Error persisting to storage: {}", e);
+                }
             } else {
                 // rollback further
                 self.rollback_to_index(last_best_index);
@@ -191,14 +235,14 @@ impl HeaderChain {
 
     // audit the difficulty adjustment of the blocks we received
 
-    // rollback the chain to an index, non-inclusive
+    // rollback the chain to an index, inclusive
     fn rollback_to_index(&mut self, index: usize) {
-        self.headers = self.headers.split_at(index).0.to_vec();
+        self.headers = self.headers.split_at(index + 1).0.to_vec();
     }
 
     // append a new batch and return the length of the chain before the merge
     fn append_naive(&mut self, batch: HeadersBatch) -> usize {
-        let ind = self.height() + 1;
+        let ind = self.height();
         self.headers.extend_from_slice(batch.inner());
         ind
     }
@@ -253,6 +297,8 @@ pub enum HeaderSyncError {
 
 #[derive(Error, Debug)]
 pub enum HeaderChainError {
+    #[error("failed to initialize the header database")]
+    PersistenceFailed,
     #[error("this header does not belong in this chain")]
     OrphanError,
     #[error("this header is a duplicate")]

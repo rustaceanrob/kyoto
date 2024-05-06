@@ -86,7 +86,7 @@ pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
     ),
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 
 pub(crate) struct HeaderCheckpoint {
     pub height: usize,
@@ -102,12 +102,12 @@ impl HeaderCheckpoint {
 #[derive(Debug)]
 pub(crate) struct HeaderCheckpoints {
     checkpoints: VecDeque<HeaderCheckpoint>,
+    last: HeaderCheckpoint,
 }
 
 impl HeaderCheckpoints {
     pub fn new(network: &Network) -> Self {
         let mut checkpoints: VecDeque<HeaderCheckpoint> = VecDeque::new();
-        let mut heights: Vec<usize> = Vec::new();
         let cp_list = match network {
             Network::Bitcoin => panic!("unimplemented network"),
             Network::Testnet => TESTNET_HEADER_CP.to_vec(),
@@ -116,13 +116,13 @@ impl HeaderCheckpoints {
             _ => panic!("unreachable"),
         };
         cp_list.iter().for_each(|(height, hash)| {
-            heights.push(*height);
             checkpoints.push_back(HeaderCheckpoint {
                 height: *height,
                 hash: BlockHash::from_str(&hash).unwrap(),
             })
         });
-        HeaderCheckpoints { checkpoints }
+        let last = *checkpoints.back().unwrap();
+        HeaderCheckpoints { checkpoints, last }
     }
 
     pub fn next(&self) -> Option<&HeaderCheckpoint> {
@@ -135,5 +135,9 @@ impl HeaderCheckpoints {
 
     pub fn is_exhausted(&self) -> bool {
         self.checkpoints.is_empty()
+    }
+
+    pub fn last(&self) -> HeaderCheckpoint {
+        self.last
     }
 }

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::{block::Header, constants::genesis_block, params::Params, BlockHash, Network};
+use bitcoin::{block::Header, BlockHash, Network};
 use rand::{prelude::SliceRandom, thread_rng, RngCore};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -13,7 +13,9 @@ use crate::{
     peers::{dns::Dns, peer::Peer},
 };
 
-use super::channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage};
+use super::channel_messages::{
+    GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage, RemotePeerAddr,
+};
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
 pub enum NodeState {
@@ -27,31 +29,33 @@ pub struct Node {
     state: Arc<NodeState>,
     header_chain: Arc<Mutex<HeaderChain>>,
     // fill filter headers, etc
+    peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
     best_known_hash: Option<BlockHash>,
     network: Network,
 }
 
 impl Node {
-    pub fn new(network: Network) -> Self {
+    pub fn new(network: Network) -> Result<Self, MainThreadError> {
         let state = Arc::new(NodeState::Behind);
-        let genesis = match network {
-            Network::Bitcoin => panic!("unimplemented"),
-            Network::Testnet => genesis_block(Params::new(network)).header,
-            Network::Signet => genesis_block(Params::new(network)).header,
-            Network::Regtest => panic!("unimplemented"),
-            _ => unreachable!(),
-        };
-        let header_chain = Arc::new(Mutex::new(HeaderChain::new(genesis, &network)));
+        let peer_db = SqlitePeerDb::new(network).map_err(|e| {
+            println!("Persistence failure: {}", e.to_string());
+            MainThreadError::PeerLoadFailure
+        })?;
+        let peer_db = Arc::new(Mutex::new(peer_db));
+        let loaded_chain =
+            HeaderChain::new(&network).map_err(|_| MainThreadError::PeerLoadFailure)?;
+        let header_chain = Arc::new(Mutex::new(loaded_chain));
         let best_known_height = 0;
         let best_known_hash = None;
-        Self {
+        Ok(Self {
             state,
             header_chain,
+            peer_db,
             best_known_height,
             best_known_hash,
             network,
-        }
+        })
     }
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + '_>> {
         println!("Starting node");
@@ -83,8 +87,8 @@ impl Node {
                         let _ = ptx.send(response).await;
                     }
                     PeerMessage::Addr(addresses) => {
-                        for _addr in addresses {
-                            // add peers to persistence
+                        if let Err(e) = self.handle_new_addrs(addresses).await {
+                            println!("Error storing new addresses: {}", e);
                         }
                     }
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
@@ -103,6 +107,28 @@ impl Node {
                 }
             }
         }
+    }
+
+    async fn handle_new_addrs(
+        &mut self,
+        new_peers: Vec<RemotePeerAddr>,
+    ) -> Result<(), MainThreadError> {
+        let mut guard = self
+            .peer_db
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        for peer in new_peers {
+            if let Err(e) = guard
+                .add_new(peer.ip, Some(peer.port), Some(peer.last_seen))
+                .await
+            {
+                println!(
+                    "Encountered error adding peer to persistence: {}",
+                    e.to_string()
+                );
+            }
+        }
+        Ok(())
     }
 
     async fn handle_headers(
@@ -133,11 +159,11 @@ impl Node {
     }
 
     async fn startup(&mut self) -> Result<IpAddr, MainThreadError> {
-        let mut peer_db = SqlitePeerDb::new(self.network).map_err(|e| {
-            println!("Persistence failure: {}", e.to_string());
-            MainThreadError::PeerLoadFailure
-        })?;
-        let next_peer = peer_db.get_random_new().await.map_err(|e| {
+        let mut guard = self
+            .peer_db
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let next_peer = guard.get_random_new().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
             MainThreadError::PeerLoadFailure
         })?;
@@ -147,29 +173,24 @@ impl Node {
                 Ok(ip)
             }
             None => {
-                println!("No peers in database");
-                self.bootstrap_peers(peer_db).await
+                let mut new_peers = Dns::bootstrap(self.network)
+                    .await
+                    .map_err(|_| MainThreadError::DnsFailure)?;
+                let mut rng = thread_rng();
+                new_peers.shuffle(&mut rng);
+                // DNS fails if there is an insufficient number of peers
+                let ret_ip = new_peers[0];
+                for peer in new_peers {
+                    if let Err(e) = guard.add_new(peer, None, None).await {
+                        println!(
+                            "Encountered error adding peer to persistence: {}",
+                            e.to_string()
+                        );
+                    }
+                }
+                Ok(ret_ip)
             }
         }
-    }
-
-    async fn bootstrap_peers(&mut self, mut db: SqlitePeerDb) -> Result<IpAddr, MainThreadError> {
-        let mut new_peers = Dns::bootstrap(self.network)
-            .await
-            .map_err(|_| MainThreadError::DnsFailure)?;
-        let mut rng = thread_rng();
-        new_peers.shuffle(&mut rng);
-        // DNS fails if there is an insufficient number of peers
-        let ret_ip = new_peers[0];
-        for peer in new_peers {
-            if let Err(e) = db.add_new(peer, None, None).await {
-                println!(
-                    "Encountered error adding peer to persistence: {}",
-                    e.to_string()
-                );
-            }
-        }
-        Ok(ret_ip)
     }
 }
 

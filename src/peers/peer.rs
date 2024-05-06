@@ -145,11 +145,7 @@ impl Peer {
                     .write_all(&message_generator.new_verack())
                     .await
                     .map_err(|_| PeerError::BufferWriteError)?;
-                println!("Asking for addresses");
-                writer
-                    .write_all(&message_generator.new_get_addr())
-                    .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                // can ask for addresses here depending on if we need them
                 return Ok(());
             }
             PeerMessage::Addr(addrs) => {
