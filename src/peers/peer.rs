@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use bitcoin::{BlockHash, Network};
+use bitcoin::Network;
 use thiserror::Error;
 use tokio::{
     io::AsyncWriteExt,
@@ -11,22 +11,25 @@ use tokio::{
 
 use crate::{
     node::channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
-    p2p::outbound_messages::V1OutboundMessage,
+    peers::outbound_messages::V1OutboundMessage,
 };
 
 use super::reader::Reader;
 
 pub(crate) struct Peer {
     nonce: u32,
-    time: Option<i32>,
-    height: Option<u32>,
-    best_hash: Option<BlockHash>,
     ip_addr: IpAddr,
     port: u16,
     last_message: Option<u64>,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
+}
+
+enum State {
+    NotConnected,
+    Connected,
+    Verack,
 }
 
 impl Peer {
@@ -48,9 +51,6 @@ impl Peer {
 
         Self {
             nonce,
-            time: None,
-            height: None,
-            best_hash: None,
             ip_addr,
             port: port.unwrap_or(default_port),
             last_message: None,
@@ -77,15 +77,16 @@ impl Peer {
         let mut peer_reader = Reader::new(reader, tx, self.network);
         tokio::spawn(async move {
             match peer_reader.read_from_remote().await {
-                Ok(_) => (),
+                Ok(_) => return Ok(()),
                 Err(_) => {
                     println!("Finished connection with a read error");
+                    return Err(PeerError::ReaderError);
                 }
             }
         });
         loop {
             select! {
-                // the buffer sent us a message
+                // the peer sent us a message
                 peer_message = rx.recv() => {
                     match peer_message {
                         Some(message) => {
@@ -143,6 +144,11 @@ impl Peer {
                 println!("Sending Verack");
                 writer
                     .write_all(&message_generator.new_verack())
+                    .await
+                    .map_err(|_| PeerError::BufferWriteError)?;
+                println!("Asking for addrs");
+                writer
+                    .write_all(&message_generator.new_get_addr())
                     .await
                     .map_err(|_| PeerError::BufferWriteError)?;
                 // can ask for addresses here depending on if we need them
@@ -216,6 +222,22 @@ impl Peer {
     }
 }
 
+pub(crate) struct PeerConfig {
+    find_addrs: FindAddresses,
+    cpf_policy: CPFilterPolicy,
+}
+
+pub(crate) enum FindAddresses {
+    None,
+    CPF,
+    Any,
+}
+
+pub(crate) enum CPFilterPolicy {
+    BlockHeadersOnly,
+    MustHaveCPFilters,
+}
+
 #[derive(Error, Debug)]
 pub enum PeerError {
     #[error("the peer's TCP port was closed or we could not connect")]
@@ -226,4 +248,6 @@ pub enum PeerError {
     ThreadChannelError,
     #[error("the main thread advised this peer to disconnect")]
     DisconnectCommand,
+    #[error("the ereading thread encountered an error")]
+    ReaderError,
 }

@@ -1,6 +1,8 @@
-use std::net::IpAddr;
-
-use bitcoin::{block::Header, p2p::ServiceFlags, BlockHash};
+use bitcoin::{
+    block::Header,
+    p2p::{Address, ServiceFlags},
+    BlockHash,
+};
 
 pub(crate) enum MainThreadMessage {
     GetAddr,
@@ -23,19 +25,12 @@ pub(crate) struct PeerThreadMessage {
 
 pub(crate) enum PeerMessage {
     Version(RemoteVersion),
-    Addr(Vec<RemotePeerAddr>),
+    Addr(Vec<Address>),
     Headers(Vec<Header>),
     Disconnect,
     Verack,
     Ping(u64),
     Pong(u64),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct RemotePeerAddr {
-    pub last_seen: u32,
-    pub ip: IpAddr,
-    pub port: u16,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -94,7 +94,6 @@ impl SqliteHeaderDb {
                 headers.push(next_header);
             }
         }
-        print!("Headers retreived from storage: {}", headers.len());
         Ok(headers)
     }
 

@@ -1,9 +1,13 @@
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
+
 use bitcoin::consensus::deserialize;
 use bitcoin::consensus::deserialize_partial;
 use bitcoin::consensus::Decodable;
 use bitcoin::io::BufRead;
 use bitcoin::p2p::message::NetworkMessage;
 use bitcoin::p2p::message::RawNetworkMessage;
+use bitcoin::p2p::Address;
 use bitcoin::p2p::Magic;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
@@ -13,8 +17,9 @@ use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc::Sender;
 
 use crate::node::channel_messages::PeerMessage;
-use crate::node::channel_messages::RemotePeerAddr;
 use crate::node::channel_messages::RemoteVersion;
+
+const ONE_MONTH: u64 = 2_500_000;
 
 pub(crate) struct Reader {
     stream: OwnedReadHalf,
@@ -70,14 +75,20 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         })),
         NetworkMessage::Verack => Some(PeerMessage::Verack),
         NetworkMessage::Addr(addresses) => {
-            let addresses: Vec<RemotePeerAddr> = addresses
+            let last_month = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs()
+                - ONE_MONTH;
+            let addresses: Vec<Address> = addresses
                 .iter()
-                .filter(|f| f.1.socket_addr().is_ok())
-                .map(|(last_seen, ip_addr)| RemotePeerAddr {
-                    last_seen: *last_seen,
-                    ip: ip_addr.socket_addr().unwrap().ip(),
-                    port: ip_addr.port,
+                .filter(|f| {
+                    f.1.services.has(ServiceFlags::COMPACT_FILTERS)
+                        && f.1.services.has(ServiceFlags::WITNESS)
                 })
+                .filter(|f| f.1.socket_addr().is_ok())
+                .filter(|f| f.0 > last_month as u32)
+                .map(|(_, addr)| addr.clone())
                 .collect();
             Some(PeerMessage::Addr(addresses))
         }
@@ -113,17 +124,30 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {
-            let addresses: Vec<RemotePeerAddr> = addresses
+            let last_month = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs()
+                - ONE_MONTH;
+            let addresses: Vec<Address> = addresses
                 .iter()
                 .filter(|f| {
                     f.services.has(ServiceFlags::COMPACT_FILTERS)
                         && f.services.has(ServiceFlags::WITNESS)
                 })
                 .filter(|f| f.socket_addr().is_ok())
-                .map(|ip_addr| RemotePeerAddr {
-                    last_seen: ip_addr.time,
-                    ip: ip_addr.socket_addr().unwrap().ip(),
-                    port: ip_addr.port,
+                .filter(|f| f.time > last_month as u32)
+                .map(|addr| match addr.socket_addr().unwrap().ip() {
+                    std::net::IpAddr::V4(ip) => Address {
+                        services: addr.services,
+                        address: ip.to_ipv6_mapped().segments(),
+                        port: addr.port,
+                    },
+                    std::net::IpAddr::V6(ip) => Address {
+                        services: addr.services,
+                        address: ip.segments(),
+                        port: addr.port,
+                    },
                 })
                 .collect();
             Some(PeerMessage::Addr(addresses))

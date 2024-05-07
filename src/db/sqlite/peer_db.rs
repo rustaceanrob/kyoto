@@ -1,7 +1,9 @@
+use bitcoin::p2p::Address;
 use bitcoin::Network;
 use rusqlite::params;
 use rusqlite::{Connection, Result};
 use std::net::IpAddr;
+
 const MAXIMUM_TABLE_SIZE: i64 = 256;
 
 const NEW_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
@@ -96,6 +98,24 @@ impl SqlitePeerDb {
                 ],
             )?;
         }
+        Ok(())
+    }
+
+    pub async fn add_cpf_peers(&mut self, peers: Vec<Address>) -> Result<()> {
+        let tx = self.conn_cpf.transaction()?;
+        for peer in peers {
+            let ip = peer
+                .socket_addr()
+                .expect("peers should have been screened")
+                .ip()
+                .to_string();
+            println!("Adding peer to CP filter peers: {}", ip);
+            tx.execute(
+                "INSERT OR IGNORE INTO cpfpeers (ip_addr, port) VALUES (?1, ?2)",
+                params![ip, peer.port],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

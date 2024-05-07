@@ -1,7 +1,9 @@
 extern crate alloc;
 use core::panic;
 
-use bitcoin::{block::Header, consensus::Params, constants::genesis_block, Network, Work};
+use bitcoin::{
+    block::Header, consensus::Params, constants::genesis_block, BlockHash, Network, Work,
+};
 use thiserror::Error;
 
 use super::checkpoints::HeaderCheckpoints;
@@ -10,13 +12,15 @@ use crate::{
     prelude::MEDIAN_TIME_PAST,
 };
 
+const NUM_LOCATORS: usize = 20;
+
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
     headers: Vec<Header>,
     checkpoints: HeaderCheckpoints,
     params: Params,
     db: SqliteHeaderDb,
-    best_known_height: Option<usize>,
+    best_known_height: Option<u32>,
 }
 
 impl HeaderChain {
@@ -124,10 +128,49 @@ impl HeaderChain {
             .expect("all chains have at least one header")
     }
 
+    // have we hit the known checkpoints
     pub(crate) fn checkpoints_complete(&self) -> bool {
         !self.checkpoints.is_exhausted()
     }
 
+    // set the best known height to our peer
+    pub(crate) fn set_best_known_height(&mut self, height: u32) {
+        println!("Best known peer height: {}", height);
+        self.best_known_height = Some(height);
+    }
+
+    // do we have best known height and is our height equal to it
+    pub(crate) fn is_synced(&self) -> bool {
+        if let Some(height) = self.best_known_height {
+            if (self.height() as u32).ge(&height) {
+                println!(
+                    "Chain synced! Height: {}, Chainwork: {}",
+                    self.height(),
+                    self.log2_work()
+                );
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn locators(&self) -> Vec<BlockHash> {
+        if !self.checkpoints_complete() {
+            vec![self.tip().block_hash()]
+        } else {
+            let locators = self
+                .headers
+                .iter()
+                .rev()
+                .take(NUM_LOCATORS)
+                .map(|header_ref| header_ref.block_hash())
+                .collect::<Vec<BlockHash>>();
+            locators
+        }
+    }
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // if our chain already has the last header in the message there is no new information
@@ -141,8 +184,14 @@ impl HeaderChain {
         if initially_syncing {
             self.catch_up_sync(header_batch).await?;
         } else {
-            // we may have to handle potential valid forks of the main chain
-            return Err(HeaderSyncError::MiscalculatedDifficulty);
+            // nothing left to do but add the headers to the chain
+            if self
+                .tip()
+                .block_hash()
+                .eq(&header_batch.first().prev_blockhash)
+            {
+                self.append_naive(header_batch);
+            }
         }
         Ok(())
     }

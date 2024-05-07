@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::{block::Header, BlockHash, Network};
+use bitcoin::{block::Header, p2p::Address, BlockHash, Network};
 use rand::{prelude::SliceRandom, thread_rng, RngCore};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -13,9 +13,7 @@ use crate::{
     peers::{dns::Dns, peer::Peer},
 };
 
-use super::channel_messages::{
-    GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage, RemotePeerAddr,
-};
+use super::channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage};
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
 pub enum NodeState {
@@ -40,13 +38,14 @@ impl Node {
         let state = Arc::new(NodeState::Behind);
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
-            MainThreadError::PeerLoadFailure
+            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         let peer_db = Arc::new(Mutex::new(peer_db));
-        let loaded_chain =
-            HeaderChain::new(&network).map_err(|_| MainThreadError::PeerLoadFailure)?;
+        let loaded_chain = HeaderChain::new(&network)
+            .map_err(|_| MainThreadError::LoadError(PersistenceError::HeaderLoadError))?;
+        let best_known_height = loaded_chain.height() as u32;
+        println!("Headers loaded from storage: {}", best_known_height);
         let header_chain = Arc::new(Mutex::new(loaded_chain));
-        let best_known_height = 0;
         let best_known_hash = None;
         Ok(Self {
             state,
@@ -70,21 +69,26 @@ impl Node {
             // try to update the state of our node periodically
             if let Some(peer_thread) = mrx.recv().await {
                 match peer_thread.message {
-                    PeerMessage::Version(_) => {
-                        // add the peer version to our tried db
-                        // add the node to a BTreeMap
-                        // start asking for headers from where our tip is (add check if we are already caught up)
-                        let guard = self
+                    // add the peer version to our tried db
+                    // add the node to a BTreeMap
+                    // start asking for headers from where our tip is (add check if we are already caught up)
+                    PeerMessage::Version(version) => {
+                        let mut guard = self
                             .header_chain
                             .lock()
                             .map_err(|_| MainThreadError::PoisonedGuard)?;
-                        let next_headers = GetHeaderConfig {
-                            // should be done a little smarter
-                            locators: vec![guard.tip().block_hash()],
-                            stop_hash: None,
-                        };
-                        let response = MainThreadMessage::GetHeaders(next_headers);
-                        let _ = ptx.send(response).await;
+                        let peer_height = version.height as u32;
+                        if peer_height > self.best_known_height {
+                            self.best_known_height = peer_height;
+                            guard.set_best_known_height(peer_height);
+                            let next_headers = GetHeaderConfig {
+                                // should be done a little smarter
+                                locators: guard.locators(),
+                                stop_hash: None,
+                            };
+                            let response = MainThreadMessage::GetHeaders(next_headers);
+                            let _ = ptx.send(response).await;
+                        }
                     }
                     PeerMessage::Addr(addresses) => {
                         if let Err(e) = self.handle_new_addrs(addresses).await {
@@ -93,8 +97,9 @@ impl Node {
                     }
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
                         Ok(response) => {
-                            let _ = ptx.send(response).await;
-                            continue;
+                            if let Some(response) = response {
+                                let _ = ptx.send(response).await;
+                            }
                         }
                         // remove node from the BTreeMap
                         Err(_) => continue,
@@ -109,24 +114,16 @@ impl Node {
         }
     }
 
-    async fn handle_new_addrs(
-        &mut self,
-        new_peers: Vec<RemotePeerAddr>,
-    ) -> Result<(), MainThreadError> {
+    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) -> Result<(), MainThreadError> {
         let mut guard = self
             .peer_db
             .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
-        for peer in new_peers {
-            if let Err(e) = guard
-                .add_new(peer.ip, Some(peer.port), Some(peer.last_seen))
-                .await
-            {
-                println!(
-                    "Encountered error adding peer to persistence: {}",
-                    e.to_string()
-                );
-            }
+        if let Err(e) = guard.add_cpf_peers(new_peers).await {
+            println!(
+                "Encountered error adding peer to persistence: {}",
+                e.to_string()
+            );
         }
         Ok(())
     }
@@ -134,28 +131,36 @@ impl Node {
     async fn handle_headers(
         &mut self,
         headers: Vec<Header>,
-    ) -> Result<MainThreadMessage, MainThreadError> {
+    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
         let mut guard = self
             .header_chain
             .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
-        let next_headers = GetHeaderConfig {
-            // should be done a little smarter
-            locators: vec![guard.tip().block_hash()],
-            stop_hash: None,
-        };
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
-                    return Ok(MainThreadMessage::GetHeaders(next_headers))
+                    if !guard.is_synced() {
+                        let next_headers = GetHeaderConfig {
+                            locators: guard.locators(),
+                            stop_hash: None,
+                        };
+                        return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+                    }
                 }
                 _ => {
                     println!("{}", e.to_string());
-                    return Ok(MainThreadMessage::Disconnect);
+                    return Ok(Some(MainThreadMessage::Disconnect));
                 }
             }
         }
-        Ok(MainThreadMessage::GetHeaders(next_headers))
+        if !guard.is_synced() {
+            let next_headers = GetHeaderConfig {
+                locators: guard.locators(),
+                stop_hash: None,
+            };
+            return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+        }
+        Ok(None)
     }
 
     async fn startup(&mut self) -> Result<IpAddr, MainThreadError> {
@@ -165,7 +170,7 @@ impl Node {
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         let next_peer = guard.get_random_new().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
-            MainThreadError::PeerLoadFailure
+            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         match next_peer {
             Some((ip, _)) => {
@@ -198,8 +203,16 @@ impl Node {
 pub enum MainThreadError {
     #[error("the lock acquired on the mutex may have left data in an indeterminant state")]
     PoisonedGuard,
-    #[error("the peer persistence failed")]
-    PeerLoadFailure,
+    #[error("tpersistence failed")]
+    LoadError(PersistenceError),
     #[error("dns bootstrap failed")]
     DnsFailure,
+}
+
+#[derive(Error, Debug)]
+pub enum PersistenceError {
+    #[error("there was an error loading the headers from persistence")]
+    HeaderLoadError,
+    #[error("there was an error loading peers from the database")]
+    PeerLoadFailure,
 }

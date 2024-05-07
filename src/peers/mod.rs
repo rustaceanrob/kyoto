@@ -1,5 +1,5 @@
 pub mod dns;
+pub mod outbound_messages;
 pub mod peer;
-pub mod persistence;
 pub mod reader;
 pub mod time;
