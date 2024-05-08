@@ -99,32 +99,37 @@ impl SqliteHeaderDb {
 
     pub async fn write(&mut self, header_chain: &Vec<Header>) -> Result<()> {
         let tx = self.conn.transaction()?;
+        let count: u64 = tx.query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))?;
+        let adjusted_count = count.checked_sub(1).unwrap_or(0);
         for (height, header) in header_chain.iter().enumerate() {
-            let hash: String = header.block_hash().to_string();
-            let version: i32 = header.version.to_consensus();
-            let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
-            let merkle_root: String = header.merkle_root.to_string();
-            let time: u32 = header.time;
-            let bits: u32 = header.bits.to_consensus();
-            let nonce: u32 = header.nonce;
-            let stmt = if height.le(&self.last_checkpoint.height) {
-                "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
-            } else {
-                "INSERT INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
-            };
-            tx.execute(
-                &stmt,
-                params![
-                    height as u32,
-                    hash,
-                    version,
-                    prev_hash,
-                    merkle_root,
-                    time,
-                    bits,
-                    nonce
-                ],
-            )?;
+            if height.ge(&(adjusted_count as usize)) {
+                let hash: String = header.block_hash().to_string();
+                let version: i32 = header.version.to_consensus();
+                let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
+                let merkle_root: String = header.merkle_root.to_string();
+                let time: u32 = header.time;
+                let bits: u32 = header.bits.to_consensus();
+                let nonce: u32 = header.nonce;
+                // do not allow rewrites before a checkpoint. if they were written to the db they were correct
+                let stmt = if height.le(&self.last_checkpoint.height) {
+                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                } else {
+                    "INSERT INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                };
+                tx.execute(
+                    &stmt,
+                    params![
+                        height as u32,
+                        hash,
+                        version,
+                        prev_hash,
+                        merkle_root,
+                        time,
+                        bits,
+                        nonce
+                    ],
+                )?;
+            }
         }
         tx.commit()?;
         println!("Wrote headers to db.");

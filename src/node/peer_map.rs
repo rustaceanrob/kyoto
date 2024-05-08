@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, net::IpAddr};
 
-use bitcoin::Network;
+use bitcoin::{p2p::ServiceFlags, Network};
 use rand::{thread_rng, RngCore};
 use tokio::{
     sync::mpsc::{self, Sender},
@@ -16,6 +16,7 @@ use super::channel_messages::{MainThreadMessage, PeerThreadMessage};
 
 pub(crate) struct ManagedPeer {
     net_time: i64,
+    service_flags: Option<ServiceFlags>,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
 }
@@ -35,7 +36,7 @@ impl PeerMap {
         }
     }
 
-    pub fn clean(&mut self) {
+    pub async fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished())
     }
 
@@ -43,6 +44,20 @@ impl PeerMap {
         self.map
             .values()
             .filter(|peer| !peer.handle.is_finished())
+            .count()
+    }
+
+    pub fn num_cpf_peers(&mut self) -> usize {
+        self.map
+            .values()
+            .filter(|peer| !peer.handle.is_finished())
+            .filter(|peer| {
+                if let Some(flags) = peer.service_flags {
+                    flags.has(ServiceFlags::COMPACT_FILTERS)
+                } else {
+                    false
+                }
+            })
             .count()
     }
 
@@ -60,7 +75,7 @@ impl PeerMap {
         }
     }
 
-    pub fn dispatch(&mut self, ip: IpAddr, port: Option<u16>) {
+    pub async fn dispatch(&mut self, ip: IpAddr, port: Option<u16>) {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let mut rng = thread_rng();
         let nonce = rng.next_u32();
@@ -69,11 +84,18 @@ impl PeerMap {
         self.map.insert(
             nonce,
             ManagedPeer {
+                service_flags: None,
                 net_time: 0,
                 ptx,
                 handle,
             },
         );
+    }
+
+    pub fn set_services(&mut self, nonce: u32, flags: ServiceFlags) {
+        if let Some(peer) = self.map.get_mut(&nonce) {
+            peer.service_flags = Some(flags)
+        }
     }
 
     pub async fn send_message(&mut self, nonce: u32, message: MainThreadMessage) {

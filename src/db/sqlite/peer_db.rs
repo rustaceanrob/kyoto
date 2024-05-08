@@ -185,4 +185,21 @@ impl SqlitePeerDb {
             Ok(None)
         }
     }
+
+    pub async fn get_random_cpf_peer(&mut self) -> Result<Option<(IpAddr, u16)>> {
+        let mut stmt = self
+            .conn_cpf
+            .prepare("SELECT ip_addr, port FROM cpfpeers ORDER BY RANDOM() LIMIT 1")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let ip_addr: String = row.get(0)?;
+            let port: u16 = row.get(1)?;
+            let ip = ip_addr
+                .parse::<IpAddr>()
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            Ok(Some((ip, port)))
+        } else {
+            Ok(None)
+        }
+    }
 }

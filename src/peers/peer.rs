@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, time::Duration};
 
 use bitcoin::Network;
 use thiserror::Error;
@@ -20,7 +20,6 @@ pub(crate) struct Peer {
     nonce: u32,
     ip_addr: IpAddr,
     port: u16,
-    last_message: Option<u64>,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
@@ -53,7 +52,6 @@ impl Peer {
             nonce,
             ip_addr,
             port: port.unwrap_or(default_port),
-            last_message: None,
             main_thread_sender,
             main_thread_recv,
             network,
@@ -61,10 +59,27 @@ impl Peer {
     }
 
     pub async fn connect(&mut self) -> Result<(), PeerError> {
-        println!("Trying TCP connection");
-        let mut stream = TcpStream::connect((self.ip_addr, self.port))
-            .await
-            .map_err(|_| PeerError::TcpConnectionFailed)?;
+        println!("Trying TCP connection to {}", self.ip_addr.to_string());
+        let timeout = tokio::time::timeout(
+            Duration::from_secs(5),
+            TcpStream::connect((self.ip_addr, self.port)),
+        )
+        .await
+        .map_err(|_| PeerError::TcpConnectionFailed)?;
+        let mut stream: TcpStream;
+        if let Ok(tcp) = timeout {
+            println!("Socket accepted");
+            stream = tcp;
+        } else {
+            let _ = self
+                .main_thread_sender
+                .send(PeerThreadMessage {
+                    nonce: self.nonce,
+                    message: PeerMessage::Disconnect,
+                })
+                .await;
+            return Err(PeerError::TcpConnectionFailed);
+        }
         let outbound_messages = V1OutboundMessage::new(self.network);
         println!("Writing version message to remote");
         let version_message = outbound_messages.new_version_message(None);
@@ -75,7 +90,7 @@ impl Peer {
         let (reader, mut writer) = stream.into_split();
         let (tx, mut rx) = mpsc::channel(32);
         let mut peer_reader = Reader::new(reader, tx, self.network);
-        tokio::spawn(async move {
+        let read_handle = tokio::spawn(async move {
             match peer_reader.read_from_remote().await {
                 Ok(_) => return Ok(()),
                 Err(_) => {
@@ -85,6 +100,9 @@ impl Peer {
             }
         });
         loop {
+            if read_handle.is_finished() {
+                return Ok(());
+            }
             select! {
                 // the peer sent us a message
                 peer_message = rx.recv() => {

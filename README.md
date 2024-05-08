@@ -33,24 +33,22 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [ ] Speed up writes with pointers
 
 #### Filters
-
 - [ ] API
     - [ ] Compute block filter from block
     - [ ] Check set inclusion given filter
+- [ ] 
 
 #### Main thread
-
 - [x] Respond to peers with next `getheader` message
-- [ ] Manage the number of peers and disconnects
-- [ ] Organize the peers in a `BTreeMap` or similar
-    - [ ] Poll handles for progress
+- [x] Manage the number of peers and disconnects
+- [x] Organize the peers in a `BTreeMap` or similar
+    - [x] Poll handles for progress
     - [ ] Designate a "sync" peer
-    - [ ] Track "network adjusted time"
+    - [x] Track "network adjusted time"
 - [ ] Have some `State` to manage what messages to send out
 - [ ] Seed with SPKs and wallet "birthday"
 
 #### Peer threads
-
 - [x] Reach out with v1 version message
 - [x] Respond to `Ping`
 - [x] Send `Verack` and eagerly send `GetAddr`
@@ -58,18 +56,17 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 - [x] Filter messages at the reader level
     - [ ] Add back: `Inv`, `Block`, `TX`, ?   
 - [ ] Set up "peer config"
-    - [ ] TCP timeout
+    - [x] TCP timeout
     - [ ] Should ask for addresses
         - [ ] Filter by CPF
     - [ ] Should serve CPF
 - [ ] Set up "timer"
-    - [ ] Check for DOS
+    - [x] Check for DOS
     - [ ] `Ping` if peer has not been heard from
 - [ ] `Disconnect` peers with high latency
 - [ ] Add BIP-324 with V1 fallback
 
 #### Bindings
-
 - [ ] Add UniFFI to repository
 - [ ] Build UDL
 - [ ] Build for Python

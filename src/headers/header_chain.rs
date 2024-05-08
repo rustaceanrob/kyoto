@@ -143,11 +143,6 @@ impl HeaderChain {
     pub(crate) fn is_synced(&self) -> bool {
         if let Some(height) = self.best_known_height {
             if (self.height() as u32).ge(&height) {
-                println!(
-                    "Chain synced! Height: {}, Chainwork: {}",
-                    self.height(),
-                    self.log2_work()
-                );
                 true
             } else {
                 false

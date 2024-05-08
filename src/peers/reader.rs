@@ -20,8 +20,14 @@ use crate::node::channel_messages::PeerMessage;
 use crate::node::channel_messages::RemoteVersion;
 
 const ONE_MONTH: u64 = 2_500_000;
+// the peer must have sent at least 10 messages to trigger DOS
+const MINIMUM_DOS_THRESHOLD: u64 = 10;
+// we allow up to 50 messages per second
+const RATE_LIMIT: u64 = 50;
 
 pub(crate) struct Reader {
+    num_messages: u64,
+    start_time: u64,
     stream: OwnedReadHalf,
     tx: Sender<PeerMessage>,
     network: Network,
@@ -29,7 +35,13 @@ pub(crate) struct Reader {
 
 impl Reader {
     pub fn new(stream: OwnedReadHalf, tx: Sender<PeerMessage>, network: Network) -> Self {
+        let start_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_secs();
         Self {
+            num_messages: 0,
+            start_time,
             stream,
             tx,
             network,
@@ -38,6 +50,7 @@ impl Reader {
 
     pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {
         loop {
+            // v1 headers are 24 bytes
             let mut message_buf = vec![0_u8; 24];
             let _ = self
                 .stream
@@ -47,6 +60,26 @@ impl Reader {
             let header: V1Header = deserialize_partial(&message_buf)
                 .map_err(|_| PeerReadError::DeserializationError)?
                 .0;
+            // nonsense for our network
+            if header.magic != self.network.magic() {
+                return Err(PeerReadError::DeserializationError);
+            }
+            // message is too long
+            if header.length > (1024 * 1024 * 32) as u32 {
+                return Err(PeerReadError::DeserializationError);
+            }
+            // DOS protection
+            self.num_messages += 1;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs();
+            let duration = now - self.start_time;
+            if self.num_messages > MINIMUM_DOS_THRESHOLD
+                && self.num_messages.checked_div(duration).unwrap_or(0) > RATE_LIMIT
+            {
+                return Err(PeerReadError::TooManyMessages);
+            }
             let mut contents_buf = vec![0_u8; header.length as usize];
             let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
             message_buf.extend_from_slice(&contents_buf);
@@ -188,6 +221,8 @@ pub enum PeerReadError {
     ReadBufferError,
     #[error("the message could not be properly deserialized")]
     DeserializationError,
+    #[error("DOS proctection")]
+    TooManyMessages,
     #[error("sending over the channel failed")]
     MpscSenderError,
 }

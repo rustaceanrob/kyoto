@@ -1,6 +1,7 @@
 use std::{
     net::IpAddr,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
+    time::Duration,
 };
 
 use bitcoin::{block::Header, p2p::Address, BlockHash, Network};
@@ -14,18 +15,27 @@ use crate::{
     peers::dns::Dns,
 };
 
-use super::channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage};
+use super::channel_messages::{
+    GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage, RemoteVersion,
+};
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
+#[derive(Debug, Clone, Copy)]
 pub enum NodeState {
+    // we need to sync headers to the known tip
     Behind,
+    // we need to confirm our chain is of most work with another peer
+    HeaderAudit,
+    // we need to start getting filter headers
     HeadersSynced,
+    // we need to get the CP filters
     FilterHeadersSynced,
+    // we can start asking for blocks with matches
     FiltersSynced,
 }
 
 pub struct Node {
-    state: Arc<NodeState>,
+    state: Arc<RwLock<NodeState>>,
     header_chain: Arc<Mutex<HeaderChain>>,
     // fill filter headers, etc
     peer_db: Arc<Mutex<SqlitePeerDb>>,
@@ -36,7 +46,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(network: Network) -> Result<Self, MainThreadError> {
-        let state = Arc::new(NodeState::Behind);
+        let state = Arc::new(RwLock::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
@@ -62,34 +72,22 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
-            node_map.clean();
+            node_map.clean().await;
+            // rehydrate on peers when lower than a threshold
             if node_map.live() < 1 {
                 println!("Not enough peers, finding one...");
-                let ip = self.startup().await?;
-                node_map.dispatch(ip.0, ip.1)
+                let ip = self.next_peer().await?;
+                node_map.dispatch(ip.0, ip.1).await
             }
-            // rehydrate on peers when lower than a threshold
-            // try to update the state of our node periodically
-            if let Some(peer_thread) = mrx.recv().await {
+            let _ = self.try_advance_state().await;
+            if let Ok(Some(peer_thread)) =
+                tokio::time::timeout(Duration::from_secs(10), mrx.recv()).await
+            {
                 match peer_thread.message {
-                    // add the peer version to our tried db
-                    // add the node to a BTreeMap
-                    // start asking for headers from where our tip is (add check if we are already caught up)
                     PeerMessage::Version(version) => {
-                        let mut guard = self
-                            .header_chain
-                            .lock()
-                            .map_err(|_| MainThreadError::PoisonedGuard)?;
-                        let peer_height = version.height as u32;
-                        if peer_height > self.best_known_height {
-                            self.best_known_height = peer_height;
-                            guard.set_best_known_height(peer_height);
-                            let next_headers = GetHeaderConfig {
-                                // should be done a little smarter
-                                locators: guard.locators(),
-                                stop_hash: None,
-                            };
-                            let response = MainThreadMessage::GetHeaders(next_headers);
+                        node_map.set_offset(peer_thread.nonce, version.timestamp);
+                        node_map.set_services(peer_thread.nonce, version.service_flags);
+                        if let Ok(response) = self.handle_version(version).await {
                             node_map.send_message(peer_thread.nonce, response).await;
                         }
                     }
@@ -109,11 +107,110 @@ impl Node {
                     },
                     PeerMessage::Disconnect => {
                         // remove the node from the BTreeMap
-                        return Ok(());
+                        node_map.clean().await;
                     }
                     _ => continue,
                 }
             }
+        }
+    }
+
+    async fn try_advance_state(&mut self) -> Result<(), MainThreadError> {
+        let state = self
+            .state
+            .as_ref()
+            .read()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match *state {
+            NodeState::Behind => {
+                if self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?
+                    .is_synced()
+                {
+                    println!("Moving to next node state");
+                    let mut writer = self
+                        .state
+                        .write()
+                        .map_err(|_| MainThreadError::PoisonedGuard)?;
+                    *writer = NodeState::HeaderAudit;
+                }
+                return Ok(());
+            }
+            NodeState::HeaderAudit => {
+                if self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?
+                    .is_synced()
+                {
+                    println!("Header audit complete");
+                    let mut writer = self
+                        .state
+                        .write()
+                        .map_err(|_| MainThreadError::PoisonedGuard)?;
+                    *writer = NodeState::HeadersSynced;
+                }
+                return Ok(());
+            }
+            NodeState::HeadersSynced => return Ok(()),
+            NodeState::FilterHeadersSynced => return Ok(()),
+            NodeState::FiltersSynced => return Ok(()),
+        }
+    }
+
+    async fn handle_version(
+        &mut self,
+        version_message: RemoteVersion,
+    ) -> Result<MainThreadMessage, MainThreadError> {
+        let state = *self
+            .state
+            .as_ref()
+            .read()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match state {
+            NodeState::Behind => {
+                let mut guard = self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let peer_height = version_message.height as u32;
+                if peer_height > self.best_known_height {
+                    self.best_known_height = peer_height;
+                    guard.set_best_known_height(peer_height);
+                    let next_headers = GetHeaderConfig {
+                        locators: guard.locators(),
+                        stop_hash: None,
+                    };
+                    let response = MainThreadMessage::GetHeaders(next_headers);
+                    Ok(response)
+                } else {
+                    // we are behind and this peer has a lower height than ours, just disconnect
+                    Ok(MainThreadMessage::Disconnect)
+                }
+            }
+            NodeState::HeaderAudit => {
+                // update the height if their chain is longer
+                let peer_height = version_message.height as u32;
+                if peer_height > self.best_known_height {
+                    self.best_known_height = peer_height;
+                }
+                // we need to audit this new peer to see if they have more information for us to add
+                let guard = self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let next_headers = GetHeaderConfig {
+                    locators: guard.locators(),
+                    stop_hash: None,
+                };
+                let response = MainThreadMessage::GetHeaders(next_headers);
+                Ok(response)
+            }
+            NodeState::HeadersSynced => Ok(MainThreadMessage::Disconnect),
+            NodeState::FilterHeadersSynced => Ok(MainThreadMessage::Disconnect),
+            NodeState::FiltersSynced => Ok(MainThreadMessage::Disconnect),
         }
     }
 
@@ -141,15 +238,7 @@ impl Node {
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
-                HeaderSyncError::EmptyMessage => {
-                    if !guard.is_synced() {
-                        let next_headers = GetHeaderConfig {
-                            locators: guard.locators(),
-                            stop_hash: None,
-                        };
-                        return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
-                    }
-                }
+                HeaderSyncError::EmptyMessage => return Ok(None),
                 _ => {
                     println!("{}", e.to_string());
                     return Ok(Some(MainThreadMessage::Disconnect));
@@ -166,20 +255,61 @@ impl Node {
         Ok(None)
     }
 
-    async fn startup(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+    async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+        let state = *self
+            .state
+            .as_ref()
+            .read()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match state {
+            NodeState::Behind => self.any_peer().await,
+            NodeState::HeaderAudit => self.any_peer().await,
+            _ => match self.cpf_peer().await {
+                Ok(got_peer) => match got_peer {
+                    Some(peer) => Ok(peer),
+                    None => self.any_peer().await,
+                },
+                Err(e) => return Err(e),
+            },
+        }
+    }
+
+    async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, MainThreadError> {
         let mut guard = self
             .peer_db
             .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
+        // we prefer peers with CPF always
+        if let Some(peer) = guard.get_random_cpf_peer().await.map_err(|e| {
+            println!("Persistence failure: {}", e.to_string());
+            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
+        })? {
+            return Ok(Some((peer.0, Some(peer.1))));
+        }
+        Ok(None)
+    }
+
+    async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+        let mut guard = self
+            .peer_db
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+
+        // try to get any new peer
         let next_peer = guard.get_random_new().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         match next_peer {
-            Some(ip) => {
-                println!("Able to load a peer from persistence: {}", ip.0.to_string());
-                Ok((ip.0, Some(ip.1)))
+            // we found some peer to use but may not be reachable
+            Some(peer) => {
+                println!(
+                    "Able to load a peer from persistence: {}",
+                    peer.0.to_string()
+                );
+                Ok((peer.0, Some(peer.1)))
             }
+            // we have no peers in our DB, try DNS
             None => {
                 let mut new_peers = Dns::bootstrap(self.network)
                     .await
