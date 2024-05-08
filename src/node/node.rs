@@ -4,13 +4,14 @@ use std::{
 };
 
 use bitcoin::{block::Header, p2p::Address, BlockHash, Network};
-use rand::{prelude::SliceRandom, thread_rng, RngCore};
+use rand::{prelude::SliceRandom, thread_rng};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::{
     headers::header_chain::{HeaderChain, HeaderSyncError},
-    peers::{dns::Dns, peer::Peer},
+    node::peer_map::PeerMap,
+    peers::dns::Dns,
 };
 
 use super::channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage};
@@ -58,13 +59,15 @@ impl Node {
     }
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + '_>> {
         println!("Starting node");
-        let ip = self.startup().await?;
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
-        let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
-        let mut rng = thread_rng();
-        let mut peer = Peer::new(rng.next_u32(), ip, None, self.network, mtx, prx);
-        tokio::spawn(async move { peer.connect().await });
+        let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
+            node_map.clean();
+            if node_map.live() < 1 {
+                println!("Not enough peers, finding one...");
+                let ip = self.startup().await?;
+                node_map.dispatch(ip.0, ip.1)
+            }
             // rehydrate on peers when lower than a threshold
             // try to update the state of our node periodically
             if let Some(peer_thread) = mrx.recv().await {
@@ -87,7 +90,7 @@ impl Node {
                                 stop_hash: None,
                             };
                             let response = MainThreadMessage::GetHeaders(next_headers);
-                            let _ = ptx.send(response).await;
+                            node_map.send_message(peer_thread.nonce, response).await;
                         }
                     }
                     PeerMessage::Addr(addresses) => {
@@ -98,7 +101,7 @@ impl Node {
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
                         Ok(response) => {
                             if let Some(response) = response {
-                                let _ = ptx.send(response).await;
+                                node_map.send_message(peer_thread.nonce, response).await;
                             }
                         }
                         // remove node from the BTreeMap
@@ -163,7 +166,7 @@ impl Node {
         Ok(None)
     }
 
-    async fn startup(&mut self) -> Result<IpAddr, MainThreadError> {
+    async fn startup(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
         let mut guard = self
             .peer_db
             .lock()
@@ -173,9 +176,9 @@ impl Node {
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         match next_peer {
-            Some((ip, _)) => {
-                println!("Able to load a peer from persistence: {}", ip.to_string());
-                Ok(ip)
+            Some(ip) => {
+                println!("Able to load a peer from persistence: {}", ip.0.to_string());
+                Ok((ip.0, Some(ip.1)))
             }
             None => {
                 let mut new_peers = Dns::bootstrap(self.network)
@@ -193,7 +196,7 @@ impl Node {
                         );
                     }
                 }
-                Ok(ret_ip)
+                Ok((ret_ip, None))
             }
         }
     }
