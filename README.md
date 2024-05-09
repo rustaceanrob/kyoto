@@ -10,8 +10,9 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 - [x] Bootstrap peer list with DNS
     - [ ] Home brewed DNS resolver?
     - [ ] Check for DNS flooding/poisoning?
-- [ ] Persist to storage 
+- [x] Persist to storage 
     - [ ] Organize by `/16`?
+    - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
 
 #### Headers
 - [x] Sync to known checkpoints with a designated "sync peer"
@@ -22,21 +23,24 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] Header pass their own PoW
     - [ ] Difficulty retargeting audit: [PR](https://github.com/rust-bitcoin/rust-bitcoin/pull/2740)
     - [ ] Network adjusted time
-- [ ] Handle forks
+- [x] Handle forks [took the Neutrino approach and just disconnect peers if they send forks with less work]
     - [ ] Manage orphaned header chains
-    - [ ] Extend valid forks
+    - [x] Extend valid forks
     - [ ] Create new forks
-    - [ ] Try to reorg when encountering new forks
+    - [x] Try to reorg when encountering new forks
     - [ ] Take the old best chain and make it a fork
 - [x] Persist to storage
     - [x] Determine if the block hash or height should be the primary key
-    - [ ] Speed up writes with pointers
+    - [x] Speed up writes with pointers
+    - [ ] Add "write volatile" to write over heights
+- [ ] Test fork scenarios with Regtest
 
 #### Filters
 - [ ] API
     - [ ] Compute block filter from block
     - [ ] Check set inclusion given filter
-- [ ] 
+- [ ] Chain
+    - [ ] Figure out structure for filter header chain with multiple peers
 
 #### Main thread
 - [x] Respond to peers with next `getheader` message
@@ -45,7 +49,7 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] Poll handles for progress
     - [ ] Designate a "sync" peer
     - [x] Track "network adjusted time"
-- [ ] Have some `State` to manage what messages to send out
+- [x] Have some `State` to manage what messages to send out
 - [ ] Seed with SPKs and wallet "birthday"
 
 #### Peer threads
@@ -55,6 +59,7 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [ ] May limit addresses if peer persistence is saturated
 - [x] Filter messages at the reader level
     - [ ] Add back: `Inv`, `Block`, `TX`, ?   
+    - [ ] Update `Inv` of block headers to header chain
 - [ ] Set up "peer config"
     - [x] TCP timeout
     - [ ] Should ask for addresses
@@ -65,6 +70,9 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [ ] `Ping` if peer has not been heard from
 - [ ] `Disconnect` peers with high latency
 - [ ] Add BIP-324 with V1 fallback
+
+#### Meta
+- [x] Add more error cases for loading faulty headers from persistence
 
 #### Bindings
 - [ ] Add UniFFI to repository

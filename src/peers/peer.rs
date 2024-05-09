@@ -86,16 +86,16 @@ impl Peer {
         stream
             .write_all(&version_message)
             .await
-            .map_err(|_| PeerError::BufferWriteError)?;
+            .map_err(|_| PeerError::BufferWrite)?;
         let (reader, mut writer) = stream.into_split();
         let (tx, mut rx) = mpsc::channel(32);
         let mut peer_reader = Reader::new(reader, tx, self.network);
         let read_handle = tokio::spawn(async move {
             match peer_reader.read_from_remote().await {
                 Ok(_) => return Ok(()),
-                Err(_) => {
-                    println!("Finished connection with a read error");
-                    return Err(PeerError::ReaderError);
+                Err(e) => {
+                    println!("Finished connection with a read error {}", e.to_string());
+                    return Err(PeerError::Reader);
                 }
             }
         });
@@ -158,17 +158,17 @@ impl Peer {
                         message: PeerMessage::Version(version),
                     })
                     .await
-                    .map_err(|_| PeerError::ThreadChannelError)?;
+                    .map_err(|_| PeerError::ThreadChannel)?;
                 println!("Sending Verack");
                 writer
                     .write_all(&message_generator.new_verack())
                     .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                    .map_err(|_| PeerError::BufferWrite)?;
                 println!("Asking for addrs");
                 writer
                     .write_all(&message_generator.new_get_addr())
                     .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                    .map_err(|_| PeerError::BufferWrite)?;
                 // can ask for addresses here depending on if we need them
                 return Ok(());
             }
@@ -179,7 +179,7 @@ impl Peer {
                         message: PeerMessage::Addr(addrs),
                     })
                     .await
-                    .map_err(|_| PeerError::ThreadChannelError)?;
+                    .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
             PeerMessage::Headers(headers) => {
@@ -189,7 +189,7 @@ impl Peer {
                         message: PeerMessage::Headers(headers),
                     })
                     .await
-                    .map_err(|_| PeerError::ThreadChannelError)?;
+                    .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
             PeerMessage::Disconnect => {
@@ -199,7 +199,7 @@ impl Peer {
                         message,
                     })
                     .await
-                    .map_err(|_| PeerError::ThreadChannelError)?;
+                    .map_err(|_| PeerError::ThreadChannel)?;
                 return Err(PeerError::DisconnectCommand);
             }
             PeerMessage::Verack => Ok(()),
@@ -207,7 +207,7 @@ impl Peer {
                 writer
                     .write_all(&message_generator.new_pong(nonce))
                     .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                    .map_err(|_| PeerError::BufferWrite)?;
                 Ok(())
             }
             PeerMessage::Pong(_) => Ok(()),
@@ -225,14 +225,14 @@ impl Peer {
                 writer
                     .write_all(&message_generator.new_get_addr())
                     .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                    .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetHeaders(config) => {
                 let message = message_generator.new_get_headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
                     .await
-                    .map_err(|_| PeerError::BufferWriteError)?;
+                    .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),
         }
@@ -261,11 +261,11 @@ pub enum PeerError {
     #[error("the peer's TCP port was closed or we could not connect")]
     TcpConnectionFailed,
     #[error("a message could not be written to the peer")]
-    BufferWriteError,
+    BufferWrite,
     #[error("experienced an error sending a message over the channel")]
-    ThreadChannelError,
+    ThreadChannel,
     #[error("the main thread advised this peer to disconnect")]
     DisconnectCommand,
     #[error("the ereading thread encountered an error")]
-    ReaderError,
+    Reader,
 }

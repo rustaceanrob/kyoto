@@ -72,14 +72,14 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
+            let _ = self.try_advance_state().await;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
             if node_map.live() < 1 {
-                println!("Not enough peers, finding one...");
+                println!("Not connected to enough peers, finding one...");
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
             }
-            let _ = self.try_advance_state().await;
             if let Ok(Some(peer_thread)) =
                 tokio::time::timeout(Duration::from_secs(10), mrx.recv()).await
             {
@@ -102,7 +102,6 @@ impl Node {
                                 node_map.send_message(peer_thread.nonce, response).await;
                             }
                         }
-                        // remove node from the BTreeMap
                         Err(_) => continue,
                     },
                     PeerMessage::Disconnect => {
@@ -123,13 +122,13 @@ impl Node {
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         match *state {
             NodeState::Behind => {
-                if self
+                let mut header_guard = self
                     .header_chain
                     .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?
-                    .is_synced()
-                {
-                    println!("Moving to next node state");
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                if header_guard.is_synced() {
+                    println!("Headers synced. Auditing our chain with peers");
+                    header_guard.flush_to_disk().await;
                     let mut writer = self
                         .state
                         .write()
@@ -176,19 +175,17 @@ impl Node {
                     .lock()
                     .map_err(|_| MainThreadError::PoisonedGuard)?;
                 let peer_height = version_message.height as u32;
-                if peer_height > self.best_known_height {
+                if peer_height.ge(&self.best_known_height) {
                     self.best_known_height = peer_height;
                     guard.set_best_known_height(peer_height);
-                    let next_headers = GetHeaderConfig {
-                        locators: guard.locators(),
-                        stop_hash: None,
-                    };
-                    let response = MainThreadMessage::GetHeaders(next_headers);
-                    Ok(response)
-                } else {
-                    // we are behind and this peer has a lower height than ours, just disconnect
-                    Ok(MainThreadMessage::Disconnect)
                 }
+                let next_headers = GetHeaderConfig {
+                    locators: guard.locators(),
+                    stop_hash: None,
+                };
+                // even if we start the node as caught up in terms of height, we need to check for reorgs
+                let response = MainThreadMessage::GetHeaders(next_headers);
+                Ok(response)
             }
             NodeState::HeaderAudit => {
                 // update the height if their chain is longer

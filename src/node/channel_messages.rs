@@ -11,6 +11,7 @@ pub(crate) enum MainThreadMessage {
     // more messages
 }
 
+#[derive(Debug)]
 pub struct GetHeaderConfig {
     pub locators: Vec<BlockHash>,
     pub stop_hash: Option<BlockHash>,
@@ -34,7 +35,6 @@ pub(crate) enum PeerMessage {
 }
 
 #[derive(Debug, Clone, Copy)]
-
 pub(crate) struct RemoteVersion {
     pub service_flags: ServiceFlags,
     pub timestamp: i64,

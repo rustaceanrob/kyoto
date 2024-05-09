@@ -11,6 +11,7 @@ use bitcoin::p2p::Address;
 use bitcoin::p2p::Magic;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
+use rand::thread_rng;
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
@@ -20,6 +21,7 @@ use crate::node::channel_messages::PeerMessage;
 use crate::node::channel_messages::RemoteVersion;
 
 const ONE_MONTH: u64 = 2_500_000;
+const ONE_MINUTE: u64 = 60;
 // the peer must have sent at least 10 messages to trigger DOS
 const MINIMUM_DOS_THRESHOLD: u64 = 10;
 // we allow up to 50 messages per second
@@ -27,6 +29,7 @@ const RATE_LIMIT: u64 = 50;
 
 pub(crate) struct Reader {
     num_messages: u64,
+    last_message_time: u64,
     start_time: u64,
     stream: OwnedReadHalf,
     tx: Sender<PeerMessage>,
@@ -41,6 +44,7 @@ impl Reader {
             .as_secs();
         Self {
             num_messages: 0,
+            last_message_time: start_time,
             start_time,
             stream,
             tx,
@@ -56,17 +60,20 @@ impl Reader {
                 .stream
                 .read_exact(&mut message_buf)
                 .await
-                .map_err(|_| PeerReadError::ReadBufferError)?;
+                .map_err(|e| {
+                    println!("{}", e);
+                    PeerReadError::ReadBuffer
+                })?;
             let header: V1Header = deserialize_partial(&message_buf)
-                .map_err(|_| PeerReadError::DeserializationError)?
+                .map_err(|_| PeerReadError::Deserialization)?
                 .0;
             // nonsense for our network
             if header.magic != self.network.magic() {
-                return Err(PeerReadError::DeserializationError);
+                return Err(PeerReadError::Deserialization);
             }
             // message is too long
             if header.length > (1024 * 1024 * 32) as u32 {
-                return Err(PeerReadError::DeserializationError);
+                return Err(PeerReadError::Deserialization);
             }
             // DOS protection
             self.num_messages += 1;
@@ -80,18 +87,24 @@ impl Reader {
             {
                 return Err(PeerReadError::TooManyMessages);
             }
+            // one minute timeout, this peer is too slow
+            if now - self.last_message_time > ONE_MINUTE {
+                let mut _rng = thread_rng();
+                println!("Slow peer");
+            }
+            self.last_message_time = now;
             let mut contents_buf = vec![0_u8; header.length as usize];
             let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
             message_buf.extend_from_slice(&contents_buf);
             let message: RawNetworkMessage =
-                deserialize(&message_buf).map_err(|_| PeerReadError::DeserializationError)?;
+                deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
             let cleaned_message = parse_message(message.payload());
             match cleaned_message {
                 Some(message) => self
                     .tx
                     .send(message)
                     .await
-                    .map_err(|_| PeerReadError::MpscSenderError)?,
+                    .map_err(|_| PeerReadError::MpscChannel)?,
                 None => continue,
             }
         }
@@ -218,11 +231,13 @@ impl Decodable for V1Header {
 #[derive(Error, Debug)]
 pub enum PeerReadError {
     #[error("reading bytes off the stream failed")]
-    ReadBufferError,
+    ReadBuffer,
     #[error("the message could not be properly deserialized")]
-    DeserializationError,
+    Deserialization,
     #[error("DOS proctection")]
     TooManyMessages,
+    #[error("peer timeout")]
+    PeerTimeout,
     #[error("sending over the channel failed")]
-    MpscSenderError,
+    MpscChannel,
 }
