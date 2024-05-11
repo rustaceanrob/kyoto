@@ -4,7 +4,11 @@ use std::{
     time::Duration,
 };
 
-use bitcoin::{block::Header, p2p::Address, BlockHash, Network};
+use bitcoin::{
+    block::Header,
+    p2p::{Address, ServiceFlags},
+    BlockHash, Network,
+};
 use rand::{prelude::SliceRandom, thread_rng};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -24,8 +28,6 @@ use crate::db::sqlite::peer_db::SqlitePeerDb;
 pub enum NodeState {
     // we need to sync headers to the known tip
     Behind,
-    // we need to confirm our chain is of most work with another peer
-    HeaderAudit,
     // we need to start getting filter headers
     HeadersSynced,
     // we need to get the CP filters
@@ -41,6 +43,7 @@ pub struct Node {
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
     best_known_hash: Option<BlockHash>,
+    required_peers: usize,
     network: Network,
 }
 
@@ -64,6 +67,7 @@ impl Node {
             peer_db,
             best_known_height,
             best_known_hash,
+            required_peers: 1,
             network,
         })
     }
@@ -75,7 +79,7 @@ impl Node {
             let _ = self.try_advance_state().await;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
-            if node_map.live() < 1 {
+            if node_map.live() < self.required_peers {
                 println!("Not connected to enough peers, finding one...");
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
@@ -104,6 +108,9 @@ impl Node {
                         }
                         Err(_) => continue,
                     },
+                    PeerMessage::FilterHeaders(_cf_headers) => {
+                        println!("Received compact filter headers");
+                    }
                     PeerMessage::Disconnect => {
                         // remove the node from the BTreeMap
                         node_map.clean().await;
@@ -133,24 +140,9 @@ impl Node {
                         .state
                         .write()
                         .map_err(|_| MainThreadError::PoisonedGuard)?;
-                    *writer = NodeState::HeaderAudit;
-                }
-                return Ok(());
-            }
-            NodeState::HeaderAudit => {
-                if self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?
-                    .is_synced()
-                {
-                    println!("Header audit complete");
-                    let mut writer = self
-                        .state
-                        .write()
-                        .map_err(|_| MainThreadError::PoisonedGuard)?;
                     *writer = NodeState::HeadersSynced;
                 }
+                self.required_peers = 3;
                 return Ok(());
             }
             NodeState::HeadersSynced => return Ok(()),
@@ -163,52 +155,38 @@ impl Node {
         &mut self,
         version_message: RemoteVersion,
     ) -> Result<MainThreadMessage, MainThreadError> {
-        let state = *self
+        let state = self
             .state
             .as_ref()
             .read()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
-        match state {
-            NodeState::Behind => {
-                let mut guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
-                let peer_height = version_message.height as u32;
-                if peer_height.ge(&self.best_known_height) {
-                    self.best_known_height = peer_height;
-                    guard.set_best_known_height(peer_height);
+        match *state {
+            NodeState::Behind => (),
+            _ => {
+                if !version_message
+                    .service_flags
+                    .has(ServiceFlags::COMPACT_FILTERS)
+                {
+                    return Ok(MainThreadMessage::Disconnect);
                 }
-                let next_headers = GetHeaderConfig {
-                    locators: guard.locators(),
-                    stop_hash: None,
-                };
-                // even if we start the node as caught up in terms of height, we need to check for reorgs
-                let response = MainThreadMessage::GetHeaders(next_headers);
-                Ok(response)
             }
-            NodeState::HeaderAudit => {
-                // update the height if their chain is longer
-                let peer_height = version_message.height as u32;
-                if peer_height > self.best_known_height {
-                    self.best_known_height = peer_height;
-                }
-                // we need to audit this new peer to see if they have more information for us to add
-                let guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
-                let next_headers = GetHeaderConfig {
-                    locators: guard.locators(),
-                    stop_hash: None,
-                };
-                let response = MainThreadMessage::GetHeaders(next_headers);
-                Ok(response)
-            }
-            NodeState::HeadersSynced => Ok(MainThreadMessage::Disconnect),
-            NodeState::FilterHeadersSynced => Ok(MainThreadMessage::Disconnect),
-            NodeState::FiltersSynced => Ok(MainThreadMessage::Disconnect),
         }
+        let mut guard = self
+            .header_chain
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let peer_height = version_message.height as u32;
+        if peer_height.ge(&self.best_known_height) {
+            self.best_known_height = peer_height;
+            guard.set_best_known_height(peer_height);
+        }
+        let next_headers = GetHeaderConfig {
+            locators: guard.locators(),
+            stop_hash: None,
+        };
+        // even if we start the node as caught up in terms of height, we need to check for reorgs
+        let response = MainThreadMessage::GetHeaders(next_headers);
+        Ok(response)
     }
 
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) -> Result<(), MainThreadError> {
@@ -260,7 +238,6 @@ impl Node {
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         match state {
             NodeState::Behind => self.any_peer().await,
-            NodeState::HeaderAudit => self.any_peer().await,
             _ => match self.cpf_peer().await {
                 Ok(got_peer) => match got_peer {
                     Some(peer) => Ok(peer),

@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, net::IpAddr};
 
 use bitcoin::{p2p::ServiceFlags, Network};
-use rand::{thread_rng, RngCore};
 use tokio::{
     sync::mpsc::{self, Sender},
     task::JoinHandle,
@@ -22,6 +21,7 @@ pub(crate) struct ManagedPeer {
 }
 
 pub(crate) struct PeerMap {
+    num_peers: u32,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: BTreeMap<u32, ManagedPeer>,
@@ -30,6 +30,7 @@ pub(crate) struct PeerMap {
 impl PeerMap {
     pub fn new(mtx: Sender<PeerThreadMessage>, network: Network) -> Self {
         Self {
+            num_peers: 0,
             network,
             mtx,
             map: BTreeMap::new(),
@@ -77,12 +78,12 @@ impl PeerMap {
 
     pub async fn dispatch(&mut self, ip: IpAddr, port: Option<u16>) {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
-        let mut rng = thread_rng();
-        let nonce = rng.next_u32();
-        let mut peer = Peer::new(nonce, ip, port, self.network, self.mtx.clone(), prx);
+        let peer_num = self.num_peers + 1;
+        self.num_peers = peer_num;
+        let mut peer = Peer::new(peer_num, ip, port, self.network, self.mtx.clone(), prx);
         let handle = tokio::spawn(async move { peer.connect().await });
         self.map.insert(
-            nonce,
+            peer_num,
             ManagedPeer {
                 service_flags: None,
                 net_time: 0,

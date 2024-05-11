@@ -112,7 +112,6 @@ impl Reader {
 }
 
 fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
-    println!("[Peer message]: {}", message.cmd());
     match message {
         NetworkMessage::Version(version) => Some(PeerMessage::Version(RemoteVersion {
             service_flags: version.services,
@@ -158,7 +157,9 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::GetCFilters(_) => None,
         NetworkMessage::CFilter(_) => None,
         NetworkMessage::GetCFHeaders(_) => None,
-        NetworkMessage::CFHeaders(_) => None,
+        NetworkMessage::CFHeaders(cf_headers) => {
+            Some(PeerMessage::FilterHeaders(cf_headers.clone()))
+        }
         NetworkMessage::GetCFCheckpt(_) => None,
         NetworkMessage::CFCheckpt(_) => None,
         NetworkMessage::SendCmpct(_) => None,

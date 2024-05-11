@@ -33,6 +33,7 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] Determine if the block hash or height should be the primary key
     - [x] Speed up writes with pointers
     - [ ] Add "write volatile" to write over heights
+- [ ] Exponential backoff for locators
 - [ ] Test fork scenarios with Regtest
 
 #### Filters

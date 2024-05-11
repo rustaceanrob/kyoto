@@ -9,6 +9,7 @@ use bitcoin::{
     p2p::{
         message::{NetworkMessage, RawNetworkMessage},
         message_blockdata::GetHeadersMessage,
+        message_filter::GetCFHeaders,
         message_network::VersionMessage,
         Address, ServiceFlags,
     },
@@ -77,6 +78,14 @@ impl V1OutboundMessage {
             GetHeadersMessage::new(locator_hashes, stop_hash.unwrap_or(BlockHash::all_zeros()));
         let data =
             &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetHeaders(msg));
+        serialize(&data)
+    }
+
+    pub(crate) fn new_cf_headers(&self, message: GetCFHeaders) -> Vec<u8> {
+        let data = &mut RawNetworkMessage::new(
+            self.network.magic(),
+            NetworkMessage::GetCFHeaders(message),
+        );
         serialize(&data)
     }
 

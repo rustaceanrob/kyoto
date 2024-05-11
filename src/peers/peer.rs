@@ -152,6 +152,7 @@ impl Peer {
     ) -> Result<(), PeerError> {
         match message {
             PeerMessage::Version(version) => {
+                println!("[Peer {}]: sent version", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -164,15 +165,16 @@ impl Peer {
                     .write_all(&message_generator.new_verack())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
-                println!("Asking for addrs");
-                writer
-                    .write_all(&message_generator.new_get_addr())
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                // println!("Asking for addrs");
+                // writer
+                //     .write_all(&message_generator.new_get_addr())
+                //     .await
+                //     .map_err(|_| PeerError::BufferWrite)?;
                 // can ask for addresses here depending on if we need them
                 return Ok(());
             }
             PeerMessage::Addr(addrs) => {
+                println!("[Peer {}]: sent addresses", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -183,6 +185,7 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::Headers(headers) => {
+                println!("[Peer {}]: sent headers", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -192,7 +195,19 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
+            PeerMessage::FilterHeaders(cf_headers) => {
+                println!("[Peer {}]: sent filter headers", self.nonce);
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::FilterHeaders(cf_headers),
+                    })
+                    .await
+                    .map_err(|_| PeerError::ThreadChannel)?;
+                return Ok(());
+            }
             PeerMessage::Disconnect => {
+                println!("[Peer {}]: disconnecting", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -204,6 +219,7 @@ impl Peer {
             }
             PeerMessage::Verack => Ok(()),
             PeerMessage::Ping(nonce) => {
+                println!("[Peer {}]: ping", self.nonce);
                 writer
                     .write_all(&message_generator.new_pong(nonce))
                     .await
@@ -229,6 +245,13 @@ impl Peer {
             }
             MainThreadMessage::GetHeaders(config) => {
                 let message = message_generator.new_get_headers(config.locators, config.stop_hash);
+                writer
+                    .write_all(&message)
+                    .await
+                    .map_err(|_| PeerError::BufferWrite)?;
+            }
+            MainThreadMessage::GetFilterHeaders(config) => {
+                let message = message_generator.new_cf_headers(config);
                 writer
                     .write_all(&message)
                     .await
