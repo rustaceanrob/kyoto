@@ -1,6 +1,6 @@
 use std::{
     net::IpAddr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -37,7 +37,7 @@ pub enum NodeState {
 }
 
 pub struct Node {
-    state: Arc<RwLock<NodeState>>,
+    state: Arc<Mutex<NodeState>>,
     header_chain: Arc<Mutex<HeaderChain>>,
     // fill filter headers, etc
     peer_db: Arc<Mutex<SqlitePeerDb>>,
@@ -49,7 +49,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(network: Network) -> Result<Self, MainThreadError> {
-        let state = Arc::new(RwLock::new(NodeState::Behind));
+        let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
@@ -76,16 +76,18 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
-            let _ = self.try_advance_state().await;
+            let required_peers = self.try_advance_state().await?;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
-            if node_map.live() < self.required_peers {
+            if node_map.live() < required_peers {
+                println!("Required peers: {}", required_peers);
+                println!("Live peers: {}", node_map.live());
                 println!("Not connected to enough peers, finding one...");
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
             }
-            if let Ok(Some(peer_thread)) =
-                tokio::time::timeout(Duration::from_secs(10), mrx.recv()).await
+            while let Ok(Some(peer_thread)) =
+                tokio::time::timeout(Duration::from_secs(5), mrx.recv()).await
             {
                 match peer_thread.message {
                     PeerMessage::Version(version) => {
@@ -121,11 +123,10 @@ impl Node {
         }
     }
 
-    async fn try_advance_state(&mut self) -> Result<(), MainThreadError> {
-        let state = self
+    async fn try_advance_state(&mut self) -> Result<usize, MainThreadError> {
+        let mut state = self
             .state
-            .as_ref()
-            .read()
+            .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         match *state {
             NodeState::Behind => {
@@ -136,18 +137,14 @@ impl Node {
                 if header_guard.is_synced() {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
-                    let mut writer = self
-                        .state
-                        .write()
-                        .map_err(|_| MainThreadError::PoisonedGuard)?;
-                    *writer = NodeState::HeadersSynced;
+                    *state = NodeState::HeadersSynced;
+                    return Ok(3);
                 }
-                self.required_peers = 3;
-                return Ok(());
+                return Ok(1);
             }
-            NodeState::HeadersSynced => return Ok(()),
-            NodeState::FilterHeadersSynced => return Ok(()),
-            NodeState::FiltersSynced => return Ok(()),
+            NodeState::HeadersSynced => return Ok(3),
+            NodeState::FilterHeadersSynced => return Ok(3),
+            NodeState::FiltersSynced => return Ok(3),
         }
     }
 
@@ -157,8 +154,7 @@ impl Node {
     ) -> Result<MainThreadMessage, MainThreadError> {
         let state = self
             .state
-            .as_ref()
-            .read()
+            .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         match *state {
             NodeState::Behind => (),
@@ -167,6 +163,7 @@ impl Node {
                     .service_flags
                     .has(ServiceFlags::COMPACT_FILTERS)
                 {
+                    println!("Connected peer does not serve compact filters");
                     return Ok(MainThreadMessage::Disconnect);
                 }
             }
@@ -233,8 +230,7 @@ impl Node {
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
         let state = *self
             .state
-            .as_ref()
-            .read()
+            .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         match state {
             NodeState::Behind => self.any_peer().await,
