@@ -14,7 +14,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::{
-    headers::header_chain::{HeaderChain, HeaderSyncError},
+    headers::{error::HeaderSyncError, header_chain::HeaderChain},
     node::peer_map::PeerMap,
     peers::dns::Dns,
 };

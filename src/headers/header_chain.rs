@@ -2,13 +2,17 @@ extern crate alloc;
 use core::panic;
 
 use bitcoin::{
-    block::Header, consensus::Params, constants::genesis_block, BlockHash, Network, Work,
+    block::Header, consensus::Params, constants::genesis_block, p2p::message_filter::CFHeaders,
+    BlockHash, Network, Work,
 };
-use thiserror::Error;
 
-use super::checkpoints::HeaderCheckpoints;
+use super::{
+    checkpoints::HeaderCheckpoints,
+    error::{CFHeaderSyncError, HeaderPersistenceError},
+};
 use crate::{
-    db::sqlite::header_db::SqliteHeaderDb, headers::header_batch::HeadersBatch,
+    db::sqlite::header_db::SqliteHeaderDb,
+    headers::{error::HeaderSyncError, header_batch::HeadersBatch},
     prelude::MEDIAN_TIME_PAST,
 };
 
@@ -113,6 +117,11 @@ impl HeaderChain {
     }
 
     // this header chain contains a block hash
+    pub(crate) fn header_at_height(&self, index: usize) -> Option<&Header> {
+        self.headers.get(index)
+    }
+
+    // this header chain contains a block hash
     pub(crate) fn contains_header(&self, header: Header) -> bool {
         self.headers.contains(&header)
     }
@@ -187,12 +196,14 @@ impl HeaderChain {
         }
     }
 
+    // write the chain to disk
     pub(crate) async fn flush_to_disk(&mut self) {
         if let Err(e) = self.db.write(&self.headers).await {
             println!("Error persisting to storage: {}", e);
         }
     }
 
+    // sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // if our chain already has the last header in the message there is no new information
@@ -369,38 +380,8 @@ impl HeaderChain {
             return Err(HeaderSyncError::FloatingHeaders);
         }
     }
-}
 
-#[derive(Error, Debug)]
-pub enum HeaderSyncError {
-    #[error("empty headers message")]
-    EmptyMessage,
-    #[error("the headers received do not connect")]
-    HeadersNotConnected,
-    #[error("one or more headers does not match its own PoW target")]
-    InvalidHeaderWork,
-    #[error("one or more headers does not have a valid block time")]
-    InvalidHeaderTimes,
-    #[error("the sync peer sent us a discontinuous chain")]
-    PreCheckpointFork,
-    #[error("a checkpoint in the chain did not match")]
-    InvalidCheckpoint,
-    #[error("a computed difficulty adjustment did not match")]
-    MiscalculatedDifficulty,
-    #[error("the peer sent us a chain that does not connect to any header of ours")]
-    FloatingHeaders,
-    #[error("less work fork")]
-    LessWorkFork,
-}
-
-#[derive(Error, Debug)]
-pub enum HeaderPersistenceError {
-    #[error("the headers loaded from the persistence layer do not match the network")]
-    GenesisMismatch,
-    #[error("the headers loaded from persistence do not link together")]
-    HeadersDoNotLink,
-    #[error("the headers loaded do not match a known checkpoint")]
-    MismatchedCheckpoints,
-    #[error("the headers could not be loaded from sqlite")]
-    SQLite,
+    pub(crate) async fn sync_cf_headers(cf_headers: CFHeaders) -> Result<(), CFHeaderSyncError> {
+        Ok(())
+    }
 }
