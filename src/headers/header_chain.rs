@@ -12,6 +12,7 @@ use super::{
 };
 use crate::{
     db::sqlite::header_db::SqliteHeaderDb,
+    filters::{cfheader_batch::CFHeaderBatch, cfheader_chain::CFHeaderChain},
     headers::{error::HeaderSyncError, header_batch::HeadersBatch},
     prelude::MEDIAN_TIME_PAST,
 };
@@ -24,6 +25,7 @@ pub(crate) struct HeaderChain {
     checkpoints: HeaderCheckpoints,
     params: Params,
     db: SqliteHeaderDb,
+    cf_header_chain: CFHeaderChain,
     best_known_height: Option<u32>,
 }
 
@@ -37,6 +39,7 @@ impl HeaderChain {
             Network::Regtest => panic!("unimplemented network"),
             _ => unreachable!(),
         };
+        let cf_header_chain = CFHeaderChain::new(None);
         let mut db = SqliteHeaderDb::new(*network, checkpoints.last()).map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
@@ -84,6 +87,7 @@ impl HeaderChain {
             checkpoints,
             params,
             db,
+            cf_header_chain,
             best_known_height: None,
         })
     }
@@ -381,7 +385,35 @@ impl HeaderChain {
         }
     }
 
-    pub(crate) async fn sync_cf_headers(cf_headers: CFHeaders) -> Result<(), CFHeaderSyncError> {
+    pub(crate) async fn sync_cf_headers(
+        &self,
+        cf_headers: CFHeaders,
+    ) -> Result<(), CFHeaderSyncError> {
+        Ok(())
+    }
+
+    async fn audit_cf_headers(
+        &mut self,
+        batch: &CFHeaderBatch,
+        peer_id: u32,
+    ) -> Result<(), CFHeaderSyncError> {
+        if !self.contains_hash(*batch.stop_hash()) {
+            return Err(CFHeaderSyncError::UnknownStophash);
+        }
+        if let Some(prev_header) = self.cf_header_chain.peer_prev_header(peer_id) {
+            if batch.prev_header().ne(&prev_header) {
+                return Err(CFHeaderSyncError::PrevHeaderMismatch);
+            }
+        }
+        let expected_stop_header =
+            self.header_at_height(self.cf_header_chain.peer_height(peer_id) + batch.len() - 1);
+        if let Some(stop_header) = expected_stop_header {
+            if stop_header.block_hash().ne(batch.stop_hash()) {
+                return Err(CFHeaderSyncError::StopHashMismatch);
+            }
+        } else {
+            return Err(CFHeaderSyncError::HeaderChainIndexOverflow);
+        }
         Ok(())
     }
 }
