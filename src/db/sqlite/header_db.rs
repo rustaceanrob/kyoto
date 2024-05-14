@@ -49,7 +49,7 @@ impl SqliteHeaderDb {
     // load all the known headers from storage
     pub fn load(&mut self) -> Result<Vec<Header>> {
         println!("Loading headers from storage");
-        let mut headers: Vec<Header> = Vec::new();
+        let mut headers: Vec<Header> = Vec::with_capacity(200_000);
         let stmt = "SELECT * FROM headers ORDER BY height";
         let mut query = self.conn.prepare(&stmt)?;
         let mut rows = query.query([])?;

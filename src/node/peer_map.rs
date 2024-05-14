@@ -11,10 +11,7 @@ use crate::{
     prelude::Median,
 };
 
-use super::{
-    channel_messages::{MainThreadMessage, PeerThreadMessage},
-    node::NodeState,
-};
+use super::channel_messages::{MainThreadMessage, PeerThreadMessage};
 
 pub(crate) struct ManagedPeer {
     net_time: i64,
@@ -40,16 +37,8 @@ impl PeerMap {
         }
     }
 
-    pub async fn clean(&mut self, state: &NodeState) {
-        self.map.retain(|_, peer| !peer.handle.is_finished());
-        match state {
-            NodeState::Behind => (),
-            _ => self.map.retain(|_, peer| {
-                println!("Removing peers without compact filter support");
-                peer.service_flags
-                    .is_some_and(|services| services.has(ServiceFlags::COMPACT_FILTERS))
-            }),
-        }
+    pub async fn clean(&mut self) {
+        self.map.retain(|_, peer| !peer.handle.is_finished())
     }
 
     pub fn live(&mut self) -> usize {

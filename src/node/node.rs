@@ -6,7 +6,7 @@ use std::{
 
 use bitcoin::{
     block::Header,
-    p2p::{Address, ServiceFlags},
+    p2p::{message_filter::CFHeaders, Address, ServiceFlags},
     BlockHash, Network,
 };
 use rand::{prelude::SliceRandom, thread_rng};
@@ -44,11 +44,15 @@ pub struct Node {
     best_known_height: u32,
     best_known_hash: Option<BlockHash>,
     required_peers: usize,
+    white_list: Option<Vec<(IpAddr, u16)>>,
     network: Network,
 }
 
 impl Node {
-    pub fn new(network: Network) -> Result<Self, MainThreadError> {
+    pub fn new(
+        network: Network,
+        white_list: Option<Vec<(IpAddr, u16)>>,
+    ) -> Result<Self, MainThreadError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
@@ -68,6 +72,7 @@ impl Node {
             best_known_height,
             best_known_hash,
             required_peers: 1,
+            white_list,
             network,
         })
     }
@@ -77,12 +82,12 @@ impl Node {
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
             let required_peers = self.try_advance_state().await?;
-            let state_lock = *self
-                .state
-                .as_ref()
-                .lock()
-                .map_err(|_| MainThreadError::PoisonedGuard)?;
-            node_map.clean(&state_lock).await;
+            // let state_lock = *self
+            //     .state
+            //     .as_ref()
+            //     .lock()
+            //     .map_err(|_| MainThreadError::PoisonedGuard)?;
+            node_map.clean().await;
             // rehydrate on peers when lower than a threshold
             if node_map.live() < required_peers {
                 println!(
@@ -95,7 +100,7 @@ impl Node {
                 node_map.dispatch(ip.0, ip.1).await
             }
             while let Ok(Some(peer_thread)) =
-                tokio::time::timeout(Duration::from_secs(5), mrx.recv()).await
+                tokio::time::timeout(Duration::from_secs(3), mrx.recv()).await
             {
                 match peer_thread.message {
                     PeerMessage::Version(version) => {
@@ -118,17 +123,24 @@ impl Node {
                         }
                         Err(_) => continue,
                     },
-                    PeerMessage::FilterHeaders(_cf_headers) => {
-                        println!("Received compact filter headers");
+                    PeerMessage::FilterHeaders(cf_headers) => {
+                        match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
+                            Ok(response) => {
+                                if let Some(response) = response {
+                                    node_map.broadcast(response).await;
+                                }
+                            }
+                            Err(_) => continue,
+                        }
                     }
                     PeerMessage::Disconnect => {
-                        let state_lock = *self
-                            .state
-                            .as_ref()
-                            .lock()
-                            .map_err(|_| MainThreadError::PoisonedGuard)?;
+                        // let state_lock = *self
+                        //     .state
+                        //     .as_ref()
+                        //     .lock()
+                        //     .map_err(|_| MainThreadError::PoisonedGuard)?;
                         // remove the node from the BTreeMap
-                        node_map.clean(&state_lock).await;
+                        node_map.clean().await;
                     }
                     _ => continue,
                 }
@@ -223,7 +235,16 @@ impl Node {
             .map_err(|_| MainThreadError::PoisonedGuard)?;
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
-                HeaderSyncError::EmptyMessage => return Ok(None),
+                HeaderSyncError::EmptyMessage => {
+                    if !guard.is_synced() {
+                        return Ok(Some(MainThreadMessage::Disconnect));
+                    } else if !guard.is_cf_headers_synced() {
+                        return Ok(Some(MainThreadMessage::GetFilterHeaders(
+                            guard.next_cf_header_message(),
+                        )));
+                    }
+                    return Ok(None);
+                }
                 _ => {
                     println!("{}", e.to_string());
                     return Ok(Some(MainThreadMessage::Disconnect));
@@ -235,15 +256,34 @@ impl Node {
                 locators: guard.locators(),
                 stop_hash: None,
             };
-            println!("need more headers");
             return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
         } else if !guard.is_cf_headers_synced() {
-            println!("requesting filters");
             return Ok(Some(MainThreadMessage::GetFilterHeaders(
                 guard.next_cf_header_message(),
             )));
         }
         Ok(None)
+    }
+
+    async fn handle_cf_headers(
+        &mut self,
+        peer_id: u32,
+        cf_headers: CFHeaders,
+    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
+        let mut guard = self
+            .header_chain
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match guard.sync_cf_headers(peer_id, cf_headers).await {
+            Ok(potential_message) => match potential_message {
+                Some(message) => Ok(Some(MainThreadMessage::GetFilterHeaders(message))),
+                None => Ok(None),
+            },
+            Err(e) => {
+                println!("CF header sync error: {}", e.to_string());
+                Ok(Some(MainThreadMessage::Disconnect))
+            }
+        }
     }
 
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
@@ -261,6 +301,7 @@ impl Node {
                 Err(e) => return Err(e),
             },
         }
+        // self.any_peer().await
     }
 
     async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, MainThreadError> {
@@ -279,6 +320,17 @@ impl Node {
     }
 
     async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+        if let Some(whitelist) = &mut self.white_list {
+            match whitelist.pop() {
+                Some((ip, port)) => {
+                    return {
+                        println!("Using a peer from the white list");
+                        Ok((ip, Some(port)))
+                    }
+                }
+                None => (),
+            }
+        }
         let mut guard = self
             .peer_db
             .lock()

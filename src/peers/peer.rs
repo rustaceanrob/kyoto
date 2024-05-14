@@ -94,7 +94,7 @@ impl Peer {
             match peer_reader.read_from_remote().await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
-                    println!("Finished connection with a read error {}", e.to_string());
+                    println!("Our peer likely closed the connection: {}", e.to_string());
                     return Err(PeerError::Reader);
                 }
             }

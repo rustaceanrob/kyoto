@@ -60,10 +60,7 @@ impl Reader {
                 .stream
                 .read_exact(&mut message_buf)
                 .await
-                .map_err(|e| {
-                    println!("{}", e);
-                    PeerReadError::ReadBuffer
-                })?;
+                .map_err(|_| PeerReadError::ReadBuffer)?;
             let header: V1Header = deserialize_partial(&message_buf)
                 .map_err(|_| PeerReadError::Deserialization)?
                 .0;

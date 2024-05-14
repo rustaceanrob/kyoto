@@ -89,12 +89,12 @@ impl CFHeaderChain {
         self.merged_queue.clear();
         println!(
             "Extended the chain of compact filter headers, synced up to height: {}",
-            self.anchor_height + self.chain.len() - 1
+            self.height()
         );
         Ok(AppendAttempt::Extended)
     }
 
-    pub(crate) fn cf_header_chain_height(&self) -> usize {
+    pub(crate) fn height(&self) -> usize {
         self.anchor_height + self.chain.len() - 1
     }
 
@@ -112,5 +112,14 @@ impl CFHeaderChain {
 
     pub(crate) fn last_stop_hash_request(&mut self) -> &Option<BlockHash> {
         &self.prev_stophash_request
+    }
+
+    pub(crate) fn filter_hash_at_height(&self, height: usize) -> Option<FilterHash> {
+        let adjusted_height = height - self.anchor_height;
+        if let Some((_, hash)) = self.chain.get(adjusted_height) {
+            Some(*hash)
+        } else {
+            None
+        }
     }
 }
