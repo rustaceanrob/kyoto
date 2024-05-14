@@ -7,6 +7,7 @@ use bitcoin::{
     BlockHash,
 };
 
+#[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {
     GetAddr,
     GetHeaders(GetHeaderConfig),
@@ -15,7 +16,7 @@ pub(crate) enum MainThreadMessage {
     // more messages
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GetHeaderConfig {
     pub locators: Vec<BlockHash>,
     pub stop_hash: Option<BlockHash>,

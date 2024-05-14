@@ -37,7 +37,13 @@ impl CFHeaderBatch {
         self.inner.len()
     }
 
-    pub(crate) fn inner(&self) -> &Vec<(FilterHeader, FilterHash)> {
-        &self.inner
+    pub(crate) fn inner(&self) -> Vec<(FilterHeader, FilterHash)> {
+        self.inner.clone()
+    }
+}
+
+impl Into<CFHeaderBatch> for CFHeaders {
+    fn into(self) -> CFHeaderBatch {
+        CFHeaderBatch::new(self)
     }
 }

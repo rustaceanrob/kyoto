@@ -11,7 +11,10 @@ use crate::{
     prelude::Median,
 };
 
-use super::channel_messages::{MainThreadMessage, PeerThreadMessage};
+use super::{
+    channel_messages::{MainThreadMessage, PeerThreadMessage},
+    node::NodeState,
+};
 
 pub(crate) struct ManagedPeer {
     net_time: i64,
@@ -37,8 +40,16 @@ impl PeerMap {
         }
     }
 
-    pub async fn clean(&mut self) {
-        self.map.retain(|_, peer| !peer.handle.is_finished())
+    pub async fn clean(&mut self, state: &NodeState) {
+        self.map.retain(|_, peer| !peer.handle.is_finished());
+        match state {
+            NodeState::Behind => (),
+            _ => self.map.retain(|_, peer| {
+                println!("Removing peers without compact filter support");
+                peer.service_flags
+                    .is_some_and(|services| services.has(ServiceFlags::COMPACT_FILTERS))
+            }),
+        }
     }
 
     pub fn live(&mut self) -> usize {
@@ -102,6 +113,13 @@ impl PeerMap {
     pub async fn send_message(&mut self, nonce: u32, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
+        }
+    }
+
+    pub async fn broadcast(&mut self, message: MainThreadMessage) {
+        let active = self.map.values().filter(|peer| !peer.handle.is_finished());
+        for peer in active {
+            let _ = peer.ptx.send(message.clone()).await;
         }
     }
 }

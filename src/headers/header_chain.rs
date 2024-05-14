@@ -2,18 +2,26 @@ extern crate alloc;
 use core::panic;
 
 use bitcoin::{
-    block::Header, consensus::Params, constants::genesis_block, p2p::message_filter::CFHeaders,
+    block::Header,
+    consensus::Params,
+    constants::genesis_block,
+    p2p::message_filter::{CFHeaders, GetCFHeaders},
     BlockHash, Network, Work,
 };
 
 use super::{
     checkpoints::HeaderCheckpoints,
-    error::{CFHeaderSyncError, HeaderPersistenceError},
+    error::{HeaderPersistenceError, HeaderSyncError},
 };
 use crate::{
     db::sqlite::header_db::SqliteHeaderDb,
-    filters::{cfheader_batch::CFHeaderBatch, cfheader_chain::CFHeaderChain},
-    headers::{error::HeaderSyncError, header_batch::HeadersBatch},
+    filters::{
+        cfheader_batch::CFHeaderBatch,
+        cfheader_chain::{AppendAttempt, CFHeaderChain},
+        error::CFHeaderSyncError,
+        CF_HEADER_BATCH_SIZE,
+    },
+    headers::header_batch::HeadersBatch,
     prelude::MEDIAN_TIME_PAST,
 };
 
@@ -39,7 +47,7 @@ impl HeaderChain {
             Network::Regtest => panic!("unimplemented network"),
             _ => unreachable!(),
         };
-        let cf_header_chain = CFHeaderChain::new(None);
+        let cf_header_chain = CFHeaderChain::new(None, 1);
         let mut db = SqliteHeaderDb::new(*network, checkpoints.last()).map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
@@ -386,27 +394,36 @@ impl HeaderChain {
     }
 
     pub(crate) async fn sync_cf_headers(
-        &self,
+        &mut self,
+        peer_id: u32,
         cf_headers: CFHeaders,
-    ) -> Result<(), CFHeaderSyncError> {
-        Ok(())
+    ) -> Result<Option<GetCFHeaders>, CFHeaderSyncError> {
+        let batch: CFHeaderBatch = cf_headers.into();
+        self.audit_cf_headers(&batch).await?;
+        match self.cf_header_chain.append(peer_id, batch).await? {
+            AppendAttempt::AddedToQueue => Ok(None),
+            AppendAttempt::Extended => Ok(Some(self.next_cf_header_message())),
+            AppendAttempt::Conflict(_) => {
+                println!("Found conflict");
+                Ok(None)
+            }
+        }
     }
 
-    async fn audit_cf_headers(
-        &mut self,
-        batch: &CFHeaderBatch,
-        peer_id: u32,
-    ) -> Result<(), CFHeaderSyncError> {
+    async fn audit_cf_headers(&mut self, batch: &CFHeaderBatch) -> Result<(), CFHeaderSyncError> {
+        // does this stop hash even exist in our chain
         if !self.contains_hash(*batch.stop_hash()) {
             return Err(CFHeaderSyncError::UnknownStophash);
         }
-        if let Some(prev_header) = self.cf_header_chain.peer_prev_header(peer_id) {
+        // does the filter header line up with our current chain of filter headers
+        if let Some(prev_header) = self.cf_header_chain.prev_header() {
             if batch.prev_header().ne(&prev_header) {
                 return Err(CFHeaderSyncError::PrevHeaderMismatch);
             }
         }
+        // did they send us the right amount of headers
         let expected_stop_header =
-            self.header_at_height(self.cf_header_chain.peer_height(peer_id) + batch.len() - 1);
+            self.header_at_height(self.cf_header_chain.cf_header_chain_height() + batch.len());
         if let Some(stop_header) = expected_stop_header {
             if stop_header.block_hash().ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
@@ -414,6 +431,38 @@ impl HeaderChain {
         } else {
             return Err(CFHeaderSyncError::HeaderChainIndexOverflow);
         }
+        // did we request up to this stop hash
+        if let Some(prev_stophash) = self.cf_header_chain.last_stop_hash_request() {
+            if prev_stophash.ne(batch.stop_hash()) {
+                return Err(CFHeaderSyncError::StopHashMismatch);
+            }
+        } else {
+            // if we never asked for a stophash before this was unsolitited
+            return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
+        }
         Ok(())
+    }
+
+    // we need to make this public for new peers that connect to us throughout syncing the filter headers
+    pub(crate) fn next_cf_header_message(&mut self) -> GetCFHeaders {
+        let stop_hash_index = self.cf_header_chain.cf_header_chain_height() + CF_HEADER_BATCH_SIZE;
+        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
+            hash.block_hash()
+        } else {
+            self.tip().block_hash()
+        };
+        self.cf_header_chain.set_last_stop_hash(stop_hash);
+        GetCFHeaders {
+            filter_type: 0x00,
+            start_height: self.cf_header_chain.cf_header_chain_height() as u32,
+            stop_hash,
+        }
+    }
+
+    // are the compact filter headers caught up to the header chain
+    pub(crate) fn is_cf_headers_synced(&self) -> bool {
+        self.cf_header_chain
+            .cf_header_chain_height()
+            .ge(&self.height())
     }
 }

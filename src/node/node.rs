@@ -77,11 +77,19 @@ impl Node {
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
             let required_peers = self.try_advance_state().await?;
-            node_map.clean().await;
+            let state_lock = *self
+                .state
+                .as_ref()
+                .lock()
+                .map_err(|_| MainThreadError::PoisonedGuard)?;
+            node_map.clean(&state_lock).await;
             // rehydrate on peers when lower than a threshold
             if node_map.live() < required_peers {
-                println!("Required peers: {}", required_peers);
-                println!("Live peers: {}", node_map.live());
+                println!(
+                    "Required peers: {}, connected peers: {}",
+                    required_peers,
+                    node_map.live()
+                );
                 println!("Not connected to enough peers, finding one...");
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
@@ -114,8 +122,13 @@ impl Node {
                         println!("Received compact filter headers");
                     }
                     PeerMessage::Disconnect => {
+                        let state_lock = *self
+                            .state
+                            .as_ref()
+                            .lock()
+                            .map_err(|_| MainThreadError::PoisonedGuard)?;
                         // remove the node from the BTreeMap
-                        node_map.clean().await;
+                        node_map.clean(&state_lock).await;
                     }
                     _ => continue,
                 }
@@ -138,13 +151,13 @@ impl Node {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
-                    return Ok(3);
+                    return Ok(1);
                 }
                 return Ok(1);
             }
-            NodeState::HeadersSynced => return Ok(3),
-            NodeState::FilterHeadersSynced => return Ok(3),
-            NodeState::FiltersSynced => return Ok(3),
+            NodeState::HeadersSynced => return Ok(1),
+            NodeState::FilterHeadersSynced => return Ok(1),
+            NodeState::FiltersSynced => return Ok(1),
         }
     }
 
@@ -168,6 +181,7 @@ impl Node {
                 }
             }
         }
+        // even if we start the node as caught up in terms of height, we need to check for reorgs
         let mut guard = self
             .header_chain
             .lock()
@@ -181,7 +195,6 @@ impl Node {
             locators: guard.locators(),
             stop_hash: None,
         };
-        // even if we start the node as caught up in terms of height, we need to check for reorgs
         let response = MainThreadMessage::GetHeaders(next_headers);
         Ok(response)
     }
@@ -222,7 +235,13 @@ impl Node {
                 locators: guard.locators(),
                 stop_hash: None,
             };
+            println!("need more headers");
             return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+        } else if !guard.is_cf_headers_synced() {
+            println!("requesting filters");
+            return Ok(Some(MainThreadMessage::GetFilterHeaders(
+                guard.next_cf_header_message(),
+            )));
         }
         Ok(None)
     }
