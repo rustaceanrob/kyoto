@@ -81,7 +81,7 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
-            let required_peers = self.try_advance_state().await?;
+            // let required_peers = self.try_advance_state().await?;
             // let state_lock = *self
             //     .state
             //     .as_ref()
@@ -89,10 +89,10 @@ impl Node {
             //     .map_err(|_| MainThreadError::PoisonedGuard)?;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
-            if node_map.live() < required_peers {
+            if node_map.live() < 1 {
                 println!(
                     "Required peers: {}, connected peers: {}",
-                    required_peers,
+                    1,
                     node_map.live()
                 );
                 println!("Not connected to enough peers, finding one...");
@@ -144,6 +144,7 @@ impl Node {
                     }
                     _ => continue,
                 }
+                let _ = self.try_advance_state().await?;
             }
         }
     }
@@ -240,7 +241,7 @@ impl Node {
                         return Ok(Some(MainThreadMessage::Disconnect));
                     } else if !guard.is_cf_headers_synced() {
                         return Ok(Some(MainThreadMessage::GetFilterHeaders(
-                            guard.next_cf_header_message(),
+                            guard.next_cf_header_message().unwrap(),
                         )));
                     }
                     return Ok(None);
@@ -259,7 +260,7 @@ impl Node {
             return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
         } else if !guard.is_cf_headers_synced() {
             return Ok(Some(MainThreadMessage::GetFilterHeaders(
-                guard.next_cf_header_message(),
+                guard.next_cf_header_message().unwrap(),
             )));
         }
         Ok(None)
@@ -309,7 +310,6 @@ impl Node {
             .peer_db
             .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
-        // we prefer peers with CPF always
         if let Some(peer) = guard.get_random_cpf_peer().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
@@ -320,6 +320,7 @@ impl Node {
     }
 
     async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+        // empty the whitelist if there is one
         if let Some(whitelist) = &mut self.white_list {
             match whitelist.pop() {
                 Some((ip, port)) => {
@@ -335,7 +336,6 @@ impl Node {
             .peer_db
             .lock()
             .map_err(|_| MainThreadError::PoisonedGuard)?;
-
         // try to get any new peer
         let next_peer = guard.get_random_new().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());

@@ -103,13 +103,16 @@ impl SqlitePeerDb {
 
     pub async fn add_cpf_peers(&mut self, peers: Vec<Address>) -> Result<()> {
         let tx = self.conn_cpf.transaction()?;
+        println!(
+            "Adding peers that have signaled for compact filter support: {}",
+            peers.len()
+        );
         for peer in peers {
             let ip = peer
                 .socket_addr()
                 .expect("peers should have been screened")
                 .ip()
                 .to_string();
-            println!("Adding peer to CP filter peers: {}", ip);
             tx.execute(
                 "INSERT OR IGNORE INTO cpfpeers (ip_addr, port) VALUES (?1, ?2)",
                 params![ip, peer.port],

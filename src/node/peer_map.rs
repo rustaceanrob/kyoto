@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr};
 
 use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
@@ -24,7 +24,7 @@ pub(crate) struct PeerMap {
     num_peers: u32,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
-    map: BTreeMap<u32, ManagedPeer>,
+    map: HashMap<u32, ManagedPeer>,
 }
 
 impl PeerMap {
@@ -33,7 +33,7 @@ impl PeerMap {
             num_peers: 0,
             network,
             mtx,
-            map: BTreeMap::new(),
+            map: HashMap::new(),
         }
     }
 

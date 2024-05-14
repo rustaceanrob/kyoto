@@ -404,7 +404,7 @@ impl HeaderChain {
         }
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(None),
-            AppendAttempt::Extended => Ok(Some(self.next_cf_header_message())),
+            AppendAttempt::Extended => Ok(self.next_cf_header_message()),
             AppendAttempt::Conflict(_) => {
                 println!("Found conflict");
                 Ok(None)
@@ -413,7 +413,6 @@ impl HeaderChain {
     }
 
     async fn audit_cf_headers(&mut self, batch: &CFHeaderBatch) -> Result<(), CFHeaderSyncError> {
-        println!("Auditing compact filter headers");
         // does this stop hash even exist in our chain
         if !self.contains_hash(*batch.stop_hash()) {
             return Err(CFHeaderSyncError::UnknownStophash);
@@ -424,6 +423,10 @@ impl HeaderChain {
                 return Err(CFHeaderSyncError::PrevHeaderMismatch);
             }
         }
+        println!(
+            "Audit stop hash height: {}",
+            self.cf_header_chain.height() + batch.len() - 1
+        );
         // did they send us the right amount of headers
         let expected_stop_header =
             self.header_at_height(self.cf_header_chain.height() + batch.len() - 1);
@@ -432,8 +435,8 @@ impl HeaderChain {
                 "Expected header derived stop hash: {}",
                 stop_header.block_hash().to_string()
             );
+            println!("Got Stophash: {}", batch.stop_hash().to_string());
             if stop_header.block_hash().ne(batch.stop_hash()) {
-                println!("Got Stophash: {}", batch.stop_hash().to_string());
                 return Err(CFHeaderSyncError::StopHashMismatch);
             }
         } else {
@@ -452,24 +455,33 @@ impl HeaderChain {
     }
 
     // we need to make this public for new peers that connect to us throughout syncing the filter headers
-    pub(crate) fn next_cf_header_message(&mut self) -> GetCFHeaders {
+    pub(crate) fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
         let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
             hash.block_hash()
         } else {
             self.tip().block_hash()
         };
-        // println!("Expected Stophash: {}", stop_hash.to_string());
+        // println!(
+        //     "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
+        //     self.cf_header_chain.height(),
+        //     stop_hash_index,
+        //     stop_hash.to_string()
+        // );
         self.cf_header_chain.set_last_stop_hash(stop_hash);
-        GetCFHeaders {
-            filter_type: 0x00,
-            start_height: self.cf_header_chain.height() as u32,
-            stop_hash,
+        if !self.is_cf_headers_synced() {
+            Some(GetCFHeaders {
+                filter_type: 0x00,
+                start_height: self.cf_header_chain.height() as u32,
+                stop_hash,
+            })
+        } else {
+            None
         }
     }
 
     // are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
-        self.cf_header_chain.height().ge(&self.height())
+        self.height().le(&(self.cf_header_chain.height() - 1))
     }
 }

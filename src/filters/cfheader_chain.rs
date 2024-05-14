@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use bitcoin::{BlockHash, FilterHash, FilterHeader};
 
@@ -19,7 +19,7 @@ pub(crate) enum AppendAttempt {
 pub(crate) struct CFHeaderChain {
     anchor_height: usize,
     chain: InternalChain,
-    merged_queue: BTreeMap<u32, InternalChain>,
+    merged_queue: HashMap<u32, InternalChain>,
     prev_stophash_request: Option<BlockHash>,
     quorum_required: usize,
 }
@@ -29,7 +29,7 @@ impl CFHeaderChain {
         Self {
             anchor_height: anchor_height.unwrap_or(180_000),
             chain: vec![],
-            merged_queue: BTreeMap::new(),
+            merged_queue: HashMap::new(),
             prev_stophash_request: None,
             quorum_required,
         }
@@ -95,7 +95,7 @@ impl CFHeaderChain {
     }
 
     pub(crate) fn height(&self) -> usize {
-        self.anchor_height + self.chain.len() - 1
+        self.anchor_height + self.chain.len()
     }
 
     pub(crate) fn prev_header(&self) -> Option<FilterHeader> {
