@@ -1,11 +1,12 @@
 extern crate alloc;
 use core::panic;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::{
     block::Header,
     consensus::Params,
     constants::genesis_block,
-    p2p::message_filter::{CFHeaders, GetCFHeaders},
+    p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     BlockHash, Network, Work,
 };
 
@@ -18,8 +19,10 @@ use crate::{
     filters::{
         cfheader_batch::CFHeaderBatch,
         cfheader_chain::{AppendAttempt, CFHeaderChain},
-        error::CFHeaderSyncError,
-        CF_HEADER_BATCH_SIZE,
+        error::{CFHeaderSyncError, CFilterSyncError},
+        filter::Filter,
+        filter_chain::FilterChain,
+        CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     headers::header_batch::HeadersBatch,
     prelude::MEDIAN_TIME_PAST,
@@ -34,6 +37,7 @@ pub(crate) struct HeaderChain {
     params: Params,
     db: SqliteHeaderDb,
     cf_header_chain: CFHeaderChain,
+    filter_chain: FilterChain,
     best_known_height: Option<u32>,
 }
 
@@ -48,6 +52,7 @@ impl HeaderChain {
             _ => unreachable!(),
         };
         let cf_header_chain = CFHeaderChain::new(None, 1);
+        let filter_chain = FilterChain::new(None);
         let mut db = SqliteHeaderDb::new(*network, checkpoints.last()).map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
@@ -96,6 +101,7 @@ impl HeaderChain {
             params,
             db,
             cf_header_chain,
+            filter_chain,
             best_known_height: None,
         })
     }
@@ -129,7 +135,14 @@ impl HeaderChain {
     }
 
     // this header chain contains a block hash
-    pub(crate) fn header_at_height(&self, index: usize) -> Option<&Header> {
+    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<usize> {
+        self.headers
+            .iter()
+            .position(|header| header.block_hash().eq(&blockhash))
+    }
+
+    // this header chain contains a block hash
+    pub(crate) async fn header_at_height(&self, index: usize) -> Option<&Header> {
         self.headers.get(index)
     }
 
@@ -402,7 +415,7 @@ impl HeaderChain {
         self.audit_cf_headers(&batch).await?;
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(None),
-            AppendAttempt::Extended => Ok(self.next_cf_header_message()),
+            AppendAttempt::Extended => Ok(self.next_cf_header_message().await),
             AppendAttempt::Conflict(_) => {
                 println!("Found conflict");
                 Ok(None)
@@ -422,8 +435,9 @@ impl HeaderChain {
             }
         }
         // did they send us the right amount of headers
-        let expected_stop_header =
-            self.header_at_height(self.cf_header_chain.header_height() + batch.len() - 1);
+        let expected_stop_header = self
+            .header_at_height(self.cf_header_chain.header_height() + batch.len() - 1)
+            .await;
         if let Some(stop_header) = expected_stop_header {
             if stop_header.block_hash().ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
@@ -444,9 +458,9 @@ impl HeaderChain {
     }
 
     // we need to make this public for new peers that connect to us throughout syncing the filter headers
-    pub(crate) fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
+    pub(crate) async fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
         let stop_hash_index = self.cf_header_chain.header_height() + CF_HEADER_BATCH_SIZE;
-        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
+        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
             hash.block_hash()
         } else {
             self.tip().block_hash()
@@ -473,5 +487,89 @@ impl HeaderChain {
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
         self.height()
             .le(&(self.cf_header_chain.header_height() - 1))
+    }
+
+    // handle a filter
+    pub(crate) async fn sync_filter(
+        &mut self,
+        filter_message: CFilter,
+    ) -> Result<Option<GetCFilters>, CFilterSyncError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_secs();
+        if self.is_filters_synced() {
+            return Ok(None);
+        }
+        let filter = Filter::new(filter_message.filter);
+        println!("Computed filter hash: {}", filter.filter_hash().await);
+        self.filter_chain.append(filter).await;
+
+        // if !self.contains_hash(filter_message.block_hash) {
+        //     return Err(CFilterSyncError::UnknownStophash);
+        // }
+        // cannot panic due do the previous check
+        // let height = self
+        //     .height_of_hash(filter_message.block_hash)
+        //     .await
+        //     .unwrap();
+        // let filter_hash = self.cf_header_chain.filter_hash_at_height(height);
+        // if let Some(ref_hash) = filter_hash {
+        //     let filter = Filter::new(filter_message.filter);
+        //     println!("Filter for height {}", height);
+        //     println!("Computed filter hash: {}", filter.filter_hash().await);
+        //     println!("Received filter hash in chain: {}", ref_hash);
+        //     if filter.filter_hash().await.ne(&ref_hash) {
+        //         return Err(CFilterSyncError::MisalignedFilterHash);
+        //     }
+        //     self.filter_chain.append(filter).await;
+        // } else {
+        //     return Err(CFilterSyncError::UnknownFilterHash);
+        // }
+        if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
+            let later = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs();
+            println!("Seconds elapsed {}", later - now);
+            if filter_message.block_hash.eq(stop_hash) {
+                Ok(self.next_filter_message().await)
+            } else {
+                Ok(None)
+            }
+        } else {
+            return Err(CFilterSyncError::UnrequestedStophash);
+        }
+    }
+
+    // next filter message
+    pub(crate) async fn next_filter_message(&mut self) -> Option<GetCFilters> {
+        let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE;
+        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
+            hash.block_hash()
+        } else {
+            self.tip().block_hash()
+        };
+        println!(
+            "Request for filters staring at height {}, ending at height {},\nwith stop hash: {}",
+            self.filter_chain.height(),
+            stop_hash_index,
+            stop_hash.to_string()
+        );
+        self.filter_chain.set_last_stop_hash(stop_hash);
+        if !self.is_filters_synced() {
+            Some(GetCFilters {
+                filter_type: 0x00,
+                start_height: self.filter_chain.height() as u32,
+                stop_hash,
+            })
+        } else {
+            None
+        }
+    }
+
+    // are we synced with filters
+    pub(crate) fn is_filters_synced(&self) -> bool {
+        self.height().le(&(self.filter_chain.height() - 1))
     }
 }

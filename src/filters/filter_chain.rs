@@ -21,9 +21,11 @@ impl FilterChain {
     }
 
     pub(crate) async fn append(&mut self, filter: Filter) {
-        self.chain.push(filter)
+        if !self.chain.contains(&filter) {
+            self.chain.push(filter)
+        }
     }
-    pub(crate) fn header_height(&self) -> usize {
+    pub(crate) fn height(&self) -> usize {
         self.anchor_height + self.chain.len()
     }
 

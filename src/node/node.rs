@@ -6,7 +6,10 @@ use std::{
 
 use bitcoin::{
     block::Header,
-    p2p::{message_filter::CFHeaders, Address, ServiceFlags},
+    p2p::{
+        message_filter::{CFHeaders, CFilter},
+        Address, ServiceFlags,
+    },
     BlockHash, Network,
 };
 use rand::{prelude::SliceRandom, thread_rng};
@@ -81,12 +84,6 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
-            // let required_peers = self.try_advance_state().await?;
-            // let state_lock = *self
-            //     .state
-            //     .as_ref()
-            //     .lock()
-            //     .map_err(|_| MainThreadError::PoisonedGuard)?;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
             if node_map.live() < 1 {
@@ -100,7 +97,7 @@ impl Node {
                 node_map.dispatch(ip.0, ip.1).await
             }
             while let Ok(Some(peer_thread)) =
-                tokio::time::timeout(Duration::from_secs(3), mrx.recv()).await
+                tokio::time::timeout(Duration::from_secs(1), mrx.recv()).await
             {
                 match peer_thread.message {
                     PeerMessage::Version(version) => {
@@ -133,13 +130,17 @@ impl Node {
                             Err(_) => continue,
                         }
                     }
+                    PeerMessage::Filter(filter) => {
+                        match self.handle_filter(peer_thread.nonce, filter).await {
+                            Ok(response) => {
+                                if let Some(response) = response {
+                                    node_map.broadcast(response).await;
+                                }
+                            }
+                            Err(_) => continue,
+                        }
+                    }
                     PeerMessage::Disconnect => {
-                        // let state_lock = *self
-                        //     .state
-                        //     .as_ref()
-                        //     .lock()
-                        //     .map_err(|_| MainThreadError::PoisonedGuard)?;
-                        // remove the node from the BTreeMap
                         node_map.clean().await;
                     }
                     _ => continue,
@@ -251,7 +252,7 @@ impl Node {
                         return Ok(Some(MainThreadMessage::Disconnect));
                     } else if !guard.is_cf_headers_synced() {
                         return Ok(Some(MainThreadMessage::GetFilterHeaders(
-                            guard.next_cf_header_message().unwrap(),
+                            guard.next_cf_header_message().await.unwrap(),
                         )));
                     }
                     return Ok(None);
@@ -270,7 +271,11 @@ impl Node {
             return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
         } else if !guard.is_cf_headers_synced() {
             return Ok(Some(MainThreadMessage::GetFilterHeaders(
-                guard.next_cf_header_message().unwrap(),
+                guard.next_cf_header_message().await.unwrap(),
+            )));
+        } else if !guard.is_filters_synced() {
+            return Ok(Some(MainThreadMessage::GetFilters(
+                guard.next_filter_message().await.unwrap(),
             )));
         }
         Ok(None)
@@ -288,10 +293,39 @@ impl Node {
         match guard.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Ok(Some(MainThreadMessage::GetFilterHeaders(message))),
-                None => Ok(None),
+                None => {
+                    if !guard.is_filters_synced() {
+                        Ok(Some(MainThreadMessage::GetFilters(
+                            guard.next_filter_message().await.unwrap(),
+                        )))
+                    } else {
+                        Ok(None)
+                    }
+                }
             },
             Err(e) => {
                 println!("CF header sync error: {}", e.to_string());
+                Ok(Some(MainThreadMessage::Disconnect))
+            }
+        }
+    }
+
+    async fn handle_filter(
+        &mut self,
+        _peer_id: u32,
+        filter: CFilter,
+    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
+        let mut guard = self
+            .header_chain
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match guard.sync_filter(filter).await {
+            Ok(potential_message) => match potential_message {
+                Some(message) => Ok(Some(MainThreadMessage::GetFilters(message))),
+                None => Ok(None),
+            },
+            Err(e) => {
+                println!("block filter sync error: {}", e.to_string());
                 Ok(Some(MainThreadMessage::Disconnect))
             }
         }
