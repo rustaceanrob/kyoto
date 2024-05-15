@@ -1,7 +1,7 @@
 use bitcoin::{
     block::Header,
     p2p::{
-        message_filter::{CFHeaders, GetCFHeaders},
+        message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
         Address, ServiceFlags,
     },
     BlockHash,
@@ -12,6 +12,7 @@ pub(crate) enum MainThreadMessage {
     GetAddr,
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
+    GetFilters(GetCFilters),
     Disconnect,
     // more messages
 }
@@ -34,6 +35,7 @@ pub(crate) enum PeerMessage {
     Addr(Vec<Address>),
     Headers(Vec<Header>),
     FilterHeaders(CFHeaders),
+    Filter(CFilter),
     Disconnect,
     Verack,
     Ping(u64),

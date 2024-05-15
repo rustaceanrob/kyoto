@@ -399,9 +399,7 @@ impl HeaderChain {
         cf_headers: CFHeaders,
     ) -> Result<Option<GetCFHeaders>, CFHeaderSyncError> {
         let batch: CFHeaderBatch = cf_headers.into();
-        if let Err(e) = self.audit_cf_headers(&batch).await {
-            println!("{}", e.to_string());
-        }
+        self.audit_cf_headers(&batch).await?;
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(None),
             AppendAttempt::Extended => Ok(self.next_cf_header_message()),
@@ -423,19 +421,10 @@ impl HeaderChain {
                 return Err(CFHeaderSyncError::PrevHeaderMismatch);
             }
         }
-        println!(
-            "Audit stop hash height: {}",
-            self.cf_header_chain.height() + batch.len() - 1
-        );
         // did they send us the right amount of headers
         let expected_stop_header =
-            self.header_at_height(self.cf_header_chain.height() + batch.len() - 1);
+            self.header_at_height(self.cf_header_chain.header_height() + batch.len() - 1);
         if let Some(stop_header) = expected_stop_header {
-            println!(
-                "Expected header derived stop hash: {}",
-                stop_header.block_hash().to_string()
-            );
-            println!("Got Stophash: {}", batch.stop_hash().to_string());
             if stop_header.block_hash().ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
             }
@@ -456,7 +445,7 @@ impl HeaderChain {
 
     // we need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
-        let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE;
+        let stop_hash_index = self.cf_header_chain.header_height() + CF_HEADER_BATCH_SIZE;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
             hash.block_hash()
         } else {
@@ -472,7 +461,7 @@ impl HeaderChain {
         if !self.is_cf_headers_synced() {
             Some(GetCFHeaders {
                 filter_type: 0x00,
-                start_height: self.cf_header_chain.height() as u32,
+                start_height: self.cf_header_chain.header_height() as u32,
                 stop_hash,
             })
         } else {
@@ -482,6 +471,7 @@ impl HeaderChain {
 
     // are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
-        self.height().le(&(self.cf_header_chain.height() - 1))
+        self.height()
+            .le(&(self.cf_header_chain.header_height() - 1))
     }
 }

@@ -13,6 +13,8 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 - [x] Persist to storage 
     - [ ] Organize by `/16`?
     - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
+- [ ] Ban peers
+- [x] Add optional whitelist
 
 #### Headers
 - [x] Sync to known checkpoints with a designated "sync peer"
@@ -41,7 +43,10 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [ ] Compute block filter from block
     - [ ] Check set inclusion given filter
 - [ ] Chain
-    - [ ] Figure out structure for filter header chain with multiple peers
+    - [x] Manage a queue of proposed header chains
+    - [x] Find disputes
+    - [x] Broadcast the next CF header message to all peers
+    - [ ] Resolve disputes by downloading blocks
 
 #### Main thread
 - [x] Respond to peers with next `getheader` message

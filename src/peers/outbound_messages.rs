@@ -9,7 +9,7 @@ use bitcoin::{
     p2p::{
         message::{NetworkMessage, RawNetworkMessage},
         message_blockdata::GetHeadersMessage,
-        message_filter::GetCFHeaders,
+        message_filter::{GetCFHeaders, GetCFilters},
         message_network::VersionMessage,
         Address, ServiceFlags,
     },
@@ -86,6 +86,12 @@ impl V1OutboundMessage {
             self.network.magic(),
             NetworkMessage::GetCFHeaders(message),
         );
+        serialize(&data)
+    }
+
+    pub(crate) fn new_filters(&self, message: GetCFilters) -> Vec<u8> {
+        let data =
+            &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFilters(message));
         serialize(&data)
     }
 

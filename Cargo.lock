@@ -392,6 +392,7 @@ name = "light-client"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "bitcoin_hashes",
  "hex",
  "rand",
  "rusqlite",

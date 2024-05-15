@@ -206,6 +206,17 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
+            PeerMessage::Filter(filter) => {
+                println!("[Peer {}]: sent a filter", self.nonce);
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::Filter(filter),
+                    })
+                    .await
+                    .map_err(|_| PeerError::ThreadChannel)?;
+                return Ok(());
+            }
             PeerMessage::Disconnect => {
                 println!("[Peer {}]: disconnecting", self.nonce);
                 self.main_thread_sender
@@ -252,6 +263,13 @@ impl Peer {
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 let message = message_generator.new_cf_headers(config);
+                writer
+                    .write_all(&message)
+                    .await
+                    .map_err(|_| PeerError::BufferWrite)?;
+            }
+            MainThreadMessage::GetFilters(config) => {
+                let message = message_generator.new_filters(config);
                 writer
                     .write_all(&message)
                     .await

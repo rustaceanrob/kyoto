@@ -152,7 +152,7 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::FilterAdd(_) => None,
         NetworkMessage::FilterClear => None,
         NetworkMessage::GetCFilters(_) => None,
-        NetworkMessage::CFilter(_) => None,
+        NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter.clone())),
         NetworkMessage::GetCFHeaders(_) => None,
         NetworkMessage::CFHeaders(cf_headers) => {
             Some(PeerMessage::FilterHeaders(cf_headers.clone()))

@@ -5,6 +5,7 @@ use bitcoin::{BlockHash, FilterHash, FilterHeader};
 use super::{cfheader_batch::CFHeaderBatch, error::CFHeaderSyncError};
 
 type InternalChain = Vec<(FilterHeader, FilterHash)>;
+type FilterChain = Vec<Vec<u8>>;
 
 pub(crate) enum AppendAttempt {
     // nothing to do yet
@@ -18,7 +19,7 @@ pub(crate) enum AppendAttempt {
 #[derive(Debug)]
 pub(crate) struct CFHeaderChain {
     anchor_height: usize,
-    chain: InternalChain,
+    header_chain: InternalChain,
     merged_queue: HashMap<u32, InternalChain>,
     prev_stophash_request: Option<BlockHash>,
     quorum_required: usize,
@@ -28,7 +29,7 @@ impl CFHeaderChain {
     pub(crate) fn new(anchor_height: Option<usize>, quorum_required: usize) -> Self {
         Self {
             anchor_height: anchor_height.unwrap_or(180_000),
-            chain: vec![],
+            header_chain: vec![],
             merged_queue: HashMap::new(),
             prev_stophash_request: None,
             quorum_required,
@@ -84,25 +85,25 @@ impl CFHeaderChain {
             }
         }
         // made it through without finding any conflicts, we can extend the current chain by the reference
-        self.chain.extend_from_slice(&reference_peer);
+        self.header_chain.extend_from_slice(&reference_peer);
         // reset the merge queue
         self.merged_queue.clear();
         println!(
             "Extended the chain of compact filter headers, synced up to height: {}",
-            self.height()
+            self.header_height()
         );
         Ok(AppendAttempt::Extended)
     }
 
-    pub(crate) fn height(&self) -> usize {
-        self.anchor_height + self.chain.len()
+    pub(crate) fn header_height(&self) -> usize {
+        self.anchor_height + self.header_chain.len()
     }
 
     pub(crate) fn prev_header(&self) -> Option<FilterHeader> {
-        if self.chain.is_empty() {
+        if self.header_chain.is_empty() {
             None
         } else {
-            Some(self.chain.last().unwrap().0)
+            Some(self.header_chain.last().unwrap().0)
         }
     }
 
@@ -116,7 +117,7 @@ impl CFHeaderChain {
 
     pub(crate) fn filter_hash_at_height(&self, height: usize) -> Option<FilterHash> {
         let adjusted_height = height - self.anchor_height;
-        if let Some((_, hash)) = self.chain.get(adjusted_height) {
+        if let Some((_, hash)) = self.header_chain.get(adjusted_height) {
             Some(*hash)
         } else {
             None

@@ -168,7 +168,17 @@ impl Node {
                 }
                 return Ok(1);
             }
-            NodeState::HeadersSynced => return Ok(1),
+            NodeState::HeadersSynced => {
+                let header_guard = self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                if header_guard.is_cf_headers_synced() {
+                    println!("CF Headers synced. Downloading block filters.");
+                    *state = NodeState::FilterHeadersSynced;
+                }
+                return Ok(1);
+            }
             NodeState::FilterHeadersSynced => return Ok(1),
             NodeState::FiltersSynced => return Ok(1),
         }
