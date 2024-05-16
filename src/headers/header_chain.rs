@@ -7,7 +7,7 @@ use bitcoin::{
     consensus::Params,
     constants::genesis_block,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    BlockHash, Network, Work,
+    BlockHash, Network, ScriptBuf, Work,
 };
 
 use super::{
@@ -39,10 +39,14 @@ pub(crate) struct HeaderChain {
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     best_known_height: Option<u32>,
+    scripts: Vec<ScriptBuf>,
 }
 
 impl HeaderChain {
-    pub(crate) fn new(network: &Network) -> Result<Self, HeaderPersistenceError> {
+    pub(crate) fn new(
+        network: &Network,
+        scripts: Vec<ScriptBuf>,
+    ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
             Network::Bitcoin => panic!("unimplemented network"),
@@ -103,6 +107,7 @@ impl HeaderChain {
             cf_header_chain,
             filter_chain,
             best_known_height: None,
+            scripts,
         })
     }
 
@@ -494,15 +499,21 @@ impl HeaderChain {
         &mut self,
         filter_message: CFilter,
     ) -> Result<Option<GetCFilters>, CFilterSyncError> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_secs();
         if self.is_filters_synced() {
             return Ok(None);
         }
-        let filter = Filter::new(filter_message.filter);
-        println!("Computed filter hash: {}", filter.filter_hash().await);
+        let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
+        if filter
+            .contains_any(&self.scripts)
+            .await
+            .map_err(|e| CFilterSyncError::Filter(e))?
+        {
+            // add to the block queue
+            println!(
+                "Found script at block: {}",
+                filter_message.block_hash.to_string()
+            );
+        }
         self.filter_chain.append(filter).await;
 
         // if !self.contains_hash(filter_message.block_hash) {
@@ -527,11 +538,6 @@ impl HeaderChain {
         //     return Err(CFilterSyncError::UnknownFilterHash);
         // }
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
-            let later = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs();
-            println!("Seconds elapsed {}", later - now);
             if filter_message.block_hash.eq(stop_hash) {
                 Ok(self.next_filter_message().await)
             } else {
@@ -550,12 +556,7 @@ impl HeaderChain {
         } else {
             self.tip().block_hash()
         };
-        println!(
-            "Request for filters staring at height {}, ending at height {},\nwith stop hash: {}",
-            self.filter_chain.height(),
-            stop_hash_index,
-            stop_hash.to_string()
-        );
+        println!("Filters sycned to height {}", self.filter_chain.height(),);
         self.filter_chain.set_last_stop_hash(stop_hash);
         if !self.is_filters_synced() {
             Some(GetCFilters {

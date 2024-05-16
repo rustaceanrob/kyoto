@@ -207,7 +207,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::Filter(filter) => {
-                println!("[Peer {}]: sent a filter", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,

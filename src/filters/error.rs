@@ -28,4 +28,12 @@ pub enum CFilterSyncError {
     UnknownFilterHash,
     #[error("the filter hash from our header chain and this filter hash do not match")]
     MisalignedFilterHash,
+    #[error("the filter experienced an IO error checking for Script inclusions")]
+    Filter(FilterError),
+}
+
+#[derive(Error, Debug)]
+pub enum FilterError {
+    #[error("unable to read from the contents buffer")]
+    IORead,
 }

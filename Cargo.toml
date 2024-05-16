@@ -11,13 +11,12 @@ bitcoin = { version = "0.32.0", features = [
     "std",
     "serde",
 ], default-features = false }
-console-subscriber = "0.2.0"
+# console-subscriber = "0.2.0"
 hex = "0.4.0"
 rand = "0.8.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 thiserror = { version = "1" }
 tokio = { version = "1", default-features = false, features = [
     "full",
-    "tracing",
 ] } # add feature "tracing" to use the console
 trust-dns-resolver = "0.23"

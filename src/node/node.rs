@@ -10,7 +10,7 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter},
         Address, ServiceFlags,
     },
-    BlockHash, Network,
+    BlockHash, Network, ScriptBuf,
 };
 use rand::{prelude::SliceRandom, thread_rng};
 use thiserror::Error;
@@ -48,6 +48,7 @@ pub struct Node {
     best_known_hash: Option<BlockHash>,
     required_peers: usize,
     white_list: Option<Vec<(IpAddr, u16)>>,
+    addresses: Vec<bitcoin::Address>,
     network: Network,
 }
 
@@ -55,6 +56,7 @@ impl Node {
     pub fn new(
         network: Network,
         white_list: Option<Vec<(IpAddr, u16)>>,
+        addresses: Vec<bitcoin::Address>,
     ) -> Result<Self, MainThreadError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
@@ -62,7 +64,11 @@ impl Node {
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         let peer_db = Arc::new(Mutex::new(peer_db));
-        let loaded_chain = HeaderChain::new(&network)
+        let scripts = addresses
+            .iter()
+            .map(|addr| addr.script_pubkey())
+            .collect::<Vec<ScriptBuf>>();
+        let loaded_chain = HeaderChain::new(&network, scripts)
             .map_err(|_| MainThreadError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
         println!("Headers loaded from storage: {}", best_known_height);
@@ -76,6 +82,7 @@ impl Node {
             best_known_hash,
             required_peers: 1,
             white_list,
+            addresses,
             network,
         })
     }

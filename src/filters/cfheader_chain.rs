@@ -51,10 +51,10 @@ impl CFHeaderChain {
     async fn try_merge(&mut self) -> Result<AppendAttempt, CFHeaderSyncError> {
         let staged_headers = self.merged_queue.values().count();
         if staged_headers.ge(&self.quorum_required) {
-            println!("Trying to extend the filter header chain");
+            // println!("Trying to extend the filter header chain");
             self.append_or_conflict().await
         } else {
-            println!("Added compact filter headers to the queue");
+            // println!("Added compact filter headers to the queue");
             Ok(AppendAttempt::AddedToQueue)
         }
     }
