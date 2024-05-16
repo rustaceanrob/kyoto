@@ -161,6 +161,14 @@ impl Node {
                         }
                         Err(_) => continue,
                     },
+                    PeerMessage::NewBlocks(_blocks) => match self.handle_inventory_blocks().await {
+                        Ok(response) => {
+                            if let Some(response) = response {
+                                node_map.broadcast(response).await;
+                            }
+                        }
+                        Err(_) => continue,
+                    },
                     PeerMessage::Disconnect => {
                         node_map.clean().await;
                     }
@@ -403,6 +411,30 @@ impl Node {
                 })))
             }
             None => Ok(None),
+        }
+    }
+
+    async fn handle_inventory_blocks(
+        &mut self,
+    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match *state {
+            NodeState::Behind => return Ok(None),
+            _ => {
+                let guard = self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                *state = NodeState::HeadersSynced;
+                let next_headers = GetHeaderConfig {
+                    locators: guard.locators(),
+                    stop_hash: None,
+                };
+                return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+            }
         }
     }
 

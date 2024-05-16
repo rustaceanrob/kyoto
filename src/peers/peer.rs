@@ -227,16 +227,16 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
-            PeerMessage::Disconnect => {
-                println!("[Peer {}]: disconnecting", self.nonce);
+            PeerMessage::NewBlocks(block_hashes) => {
+                println!("[Peer {}]: inv (new block hash)", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
-                        message,
+                        message: PeerMessage::NewBlocks(block_hashes),
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Err(PeerError::DisconnectCommand);
+                return Ok(());
             }
             PeerMessage::Verack => Ok(()),
             PeerMessage::Ping(nonce) => {
@@ -248,6 +248,17 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Pong(_) => Ok(()),
+            PeerMessage::Disconnect => {
+                println!("[Peer {}]: disconnecting", self.nonce);
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message,
+                    })
+                    .await
+                    .map_err(|_| PeerError::ThreadChannel)?;
+                return Err(PeerError::DisconnectCommand);
+            }
         }
     }
 

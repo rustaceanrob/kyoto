@@ -7,11 +7,11 @@ use bitcoin::consensus::Decodable;
 use bitcoin::io::BufRead;
 use bitcoin::p2p::message::NetworkMessage;
 use bitcoin::p2p::message::RawNetworkMessage;
+use bitcoin::p2p::message_blockdata::Inventory;
 use bitcoin::p2p::Address;
 use bitcoin::p2p::Magic;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
-use rand::thread_rng;
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
@@ -29,7 +29,6 @@ const RATE_LIMIT: u64 = 500;
 
 pub(crate) struct Reader {
     num_messages: u64,
-    last_message_time: u64,
     start_time: u64,
     stream: OwnedReadHalf,
     tx: Sender<PeerMessage>,
@@ -44,7 +43,6 @@ impl Reader {
             .as_secs();
         Self {
             num_messages: 0,
-            last_message_time: start_time,
             start_time,
             stream,
             tx,
@@ -84,12 +82,6 @@ impl Reader {
             {
                 return Err(PeerReadError::TooManyMessages);
             }
-            // one minute timeout, this peer is too slow
-            if now - self.last_message_time > ONE_MINUTE {
-                let mut _rng = thread_rng();
-                println!("Slow peer");
-            }
-            self.last_message_time = now;
             let mut contents_buf = vec![0_u8; header.length as usize];
             let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
             message_buf.extend_from_slice(&contents_buf);
@@ -135,10 +127,20 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
             Some(PeerMessage::Addr(addresses))
         }
         NetworkMessage::Inv(inventory) => {
+            let mut hashes = Vec::new();
             for i in inventory {
-                println!("{:?}", i);
+                match i {
+                    Inventory::Block(hash) => hashes.push(*hash),
+                    Inventory::CompactBlock(hash) => hashes.push(*hash),
+                    Inventory::WitnessBlock(hash) => hashes.push(*hash),
+                    _ => continue,
+                }
             }
-            None
+            if !hashes.is_empty() {
+                Some(PeerMessage::NewBlocks(hashes))
+            } else {
+                None
+            }
         }
         NetworkMessage::GetData(_) => None,
         NetworkMessage::NotFound(_) => None,

@@ -47,9 +47,10 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] Find disputes
     - [x] Broadcast the next CF header message to all peers
     - [ ] Resolve disputes by downloading blocks
-    - [ ] Add new filters to the chain, verifying with the `FilterHash`
+    - [x] Add new filters to the chain, verifying with the `FilterHash`
 - [ ] Optimizations
     - [ ] Hashmap the `BlockHash` to `FilterHash` relationship in memory
+    - [ ] Persist SPKs that have already been proven to be in a filter
 
 #### Main thread
 - [x] Respond to peers with next `getheader` message
@@ -60,6 +61,7 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] Track "network adjusted time"
 - [x] Have some `State` to manage what messages to send out
 - [ ] Seed with SPKs and wallet "birthday"
+    - [x] Add SPKs
 
 #### Peer threads
 - [x] Reach out with v1 version message
@@ -82,6 +84,9 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 
 #### Meta
 - [x] Add more error cases for loading faulty headers from persistence
+- [ ] Add local unconfirmed transaction DB
+- [ ] Add archival transaction DB
+- [ ] Too many `clone`
 
 #### Bindings
 - [ ] Add UniFFI to repository

@@ -43,6 +43,7 @@ pub(crate) enum PeerMessage {
     FilterHeaders(CFHeaders),
     Filter(CFilter),
     Block(Block),
+    NewBlocks(Vec<BlockHash>),
     Disconnect,
     Verack,
     Ping(u64),
