@@ -4,7 +4,7 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
         Address, ServiceFlags,
     },
-    BlockHash,
+    Block, BlockHash,
 };
 
 #[derive(Debug, Clone)]
@@ -13,6 +13,7 @@ pub(crate) enum MainThreadMessage {
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
+    GetBlock(GetBlockConfig),
     Disconnect,
     // more messages
 }
@@ -21,6 +22,11 @@ pub(crate) enum MainThreadMessage {
 pub struct GetHeaderConfig {
     pub locators: Vec<BlockHash>,
     pub stop_hash: Option<BlockHash>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetBlockConfig {
+    pub locator: BlockHash,
 }
 
 pub(crate) struct PeerThreadMessage {
@@ -36,6 +42,7 @@ pub(crate) enum PeerMessage {
     Headers(Vec<Header>),
     FilterHeaders(CFHeaders),
     Filter(CFilter),
+    Block(Block),
     Disconnect,
     Verack,
     Ping(u64),

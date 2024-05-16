@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::IpAddr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -10,20 +11,21 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter},
         Address, ServiceFlags,
     },
-    BlockHash, Network, ScriptBuf,
+    Block, BlockHash, Network,
 };
 use rand::{prelude::SliceRandom, thread_rng};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::{
-    headers::{error::HeaderSyncError, header_chain::HeaderChain},
+    chain::{chain::HeaderChain, error::HeaderSyncError},
     node::peer_map::PeerMap,
     peers::dns::Dns,
 };
 
 use super::channel_messages::{
-    GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage, RemoteVersion,
+    GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
+    RemoteVersion,
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
@@ -48,7 +50,6 @@ pub struct Node {
     best_known_hash: Option<BlockHash>,
     required_peers: usize,
     white_list: Option<Vec<(IpAddr, u16)>>,
-    addresses: Vec<bitcoin::Address>,
     network: Network,
 }
 
@@ -64,10 +65,8 @@ impl Node {
             MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         let peer_db = Arc::new(Mutex::new(peer_db));
-        let scripts = addresses
-            .iter()
-            .map(|addr| addr.script_pubkey())
-            .collect::<Vec<ScriptBuf>>();
+        let mut scripts = HashSet::new();
+        scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let loaded_chain = HeaderChain::new(&network, scripts)
             .map_err(|_| MainThreadError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
@@ -82,7 +81,6 @@ impl Node {
             best_known_hash,
             required_peers: 1,
             white_list,
-            addresses,
             network,
         })
     }
@@ -102,6 +100,14 @@ impl Node {
                 println!("Not connected to enough peers, finding one...");
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
+            }
+            if let Some(block_request) = self
+                .pop_block_queue()
+                .await
+                .map_err(|_| MainThreadError::PoisonedGuard)?
+            {
+                println!("Sending block request to a random peer");
+                node_map.send_random(block_request).await;
             }
             while let Ok(Some(peer_thread)) =
                 tokio::time::timeout(Duration::from_secs(1), mrx.recv()).await
@@ -147,17 +153,25 @@ impl Node {
                             Err(_) => continue,
                         }
                     }
+                    PeerMessage::Block(block) => match self.handle_block(block).await {
+                        Ok(response) => {
+                            if let Some(response) = response {
+                                node_map.broadcast(response).await;
+                            }
+                        }
+                        Err(_) => continue,
+                    },
                     PeerMessage::Disconnect => {
                         node_map.clean().await;
                     }
                     _ => continue,
                 }
-                let _ = self.try_advance_state().await?;
+                self.advance_state().await?;
             }
         }
     }
 
-    async fn try_advance_state(&mut self) -> Result<usize, MainThreadError> {
+    async fn advance_state(&mut self) -> Result<(), MainThreadError> {
         let mut state = self
             .state
             .lock()
@@ -172,9 +186,9 @@ impl Node {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
-                    return Ok(1);
+                    return Ok(());
                 }
-                return Ok(1);
+                Ok(())
             }
             NodeState::HeadersSynced => {
                 let header_guard = self
@@ -185,10 +199,20 @@ impl Node {
                     println!("CF Headers synced. Downloading block filters.");
                     *state = NodeState::FilterHeadersSynced;
                 }
-                return Ok(1);
+                Ok(())
             }
-            NodeState::FilterHeadersSynced => return Ok(1),
-            NodeState::FiltersSynced => return Ok(1),
+            NodeState::FilterHeadersSynced => {
+                let header_guard = self
+                    .header_chain
+                    .lock()
+                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                if header_guard.is_filters_synced() {
+                    println!("Filters synced. Checking blocks for new inclusions.");
+                    *state = NodeState::FiltersSynced;
+                }
+                Ok(())
+            }
+            NodeState::FiltersSynced => Ok(()),
         }
     }
 
@@ -206,8 +230,9 @@ impl Node {
                 if !version_message
                     .service_flags
                     .has(ServiceFlags::COMPACT_FILTERS)
+                    || !version_message.service_flags.has(ServiceFlags::NETWORK)
                 {
-                    println!("Connected peer does not serve compact filters");
+                    println!("Connected peer does not serve compact filters or blocks");
                     return Ok(MainThreadMessage::Disconnect);
                 }
             }
@@ -338,6 +363,49 @@ impl Node {
         }
     }
 
+    async fn handle_block(
+        &mut self,
+        block: Block,
+    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
+        let state = *self
+            .state
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let mut guard = self
+            .header_chain
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        match state {
+            NodeState::Behind => Ok(Some(MainThreadMessage::Disconnect)),
+            NodeState::HeadersSynced => {
+                // do something with the block to resolve a conflict
+                Ok(None)
+            }
+            NodeState::FilterHeadersSynced => Ok(None),
+            NodeState::FiltersSynced => {
+                let _ = guard.scan_block(&block).await;
+                Ok(None)
+            }
+        }
+    }
+
+    async fn pop_block_queue(&mut self) -> Result<Option<MainThreadMessage>, MainThreadError> {
+        let mut guard = self
+            .header_chain
+            .lock()
+            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let next_block_hash = guard.next_block();
+        match next_block_hash {
+            Some(block_hash) => {
+                println!("Next block in queue: {}", block_hash.to_string());
+                Ok(Some(MainThreadMessage::GetBlock(GetBlockConfig {
+                    locator: block_hash,
+                })))
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
         let state = *self
             .state
@@ -428,7 +496,7 @@ impl Node {
 pub enum MainThreadError {
     #[error("the lock acquired on the mutex may have left data in an indeterminant state")]
     PoisonedGuard,
-    #[error("tpersistence failed")]
+    #[error("persistence failed")]
     LoadError(PersistenceError),
     #[error("dns bootstrap failed")]
     DnsFailure,

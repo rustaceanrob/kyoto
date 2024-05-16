@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bitcoin::{bip158::BlockFilter, BlockHash, FilterHash, ScriptBuf};
 use bitcoin_hashes::{sha256d, Hash};
 
@@ -25,7 +27,10 @@ impl Filter {
         FilterHash::from_raw_hash(hash)
     }
 
-    pub async fn contains_any(&mut self, scripts: &Vec<ScriptBuf>) -> Result<bool, FilterError> {
+    pub async fn contains_any(
+        &mut self,
+        scripts: &HashSet<ScriptBuf>,
+    ) -> Result<bool, FilterError> {
         self.block_filter
             .match_any(
                 &self.block_hash,

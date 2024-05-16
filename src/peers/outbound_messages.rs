@@ -8,13 +8,15 @@ use bitcoin::{
     hashes::Hash,
     p2p::{
         message::{NetworkMessage, RawNetworkMessage},
-        message_blockdata::GetHeadersMessage,
+        message_blockdata::{GetHeadersMessage, Inventory},
         message_filter::{GetCFHeaders, GetCFilters},
         message_network::VersionMessage,
         Address, ServiceFlags,
     },
     BlockHash, Network,
 };
+
+use crate::node::channel_messages::GetBlockConfig;
 
 pub const PROTOCOL_VERSION: u32 = 70015;
 
@@ -92,6 +94,13 @@ impl V1OutboundMessage {
     pub(crate) fn new_filters(&self, message: GetCFilters) -> Vec<u8> {
         let data =
             &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFilters(message));
+        serialize(&data)
+    }
+
+    pub(crate) fn new_block(&self, config: GetBlockConfig) -> Vec<u8> {
+        let inv = Inventory::Block(config.locator);
+        let data =
+            &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetData(vec![inv]));
         serialize(&data)
     }
 

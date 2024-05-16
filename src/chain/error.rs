@@ -33,3 +33,9 @@ pub enum HeaderPersistenceError {
     #[error("the headers could not be loaded from sqlite")]
     SQLite,
 }
+
+#[derive(Error, Debug)]
+pub enum BlockScanError {
+    #[error("the headers loaded from the persistence layer do not match the network")]
+    GenesisMismatch,
+}

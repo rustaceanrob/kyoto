@@ -41,12 +41,15 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 #### Filters
 - [ ] API
     - [ ] Compute block filter from block
-    - [ ] Check set inclusion given filter
+    - [x] Check set inclusion given filter
 - [ ] Chain
     - [x] Manage a queue of proposed header chains
     - [x] Find disputes
     - [x] Broadcast the next CF header message to all peers
     - [ ] Resolve disputes by downloading blocks
+    - [ ] Add new filters to the chain, verifying with the `FilterHash`
+- [ ] Optimizations
+    - [ ] Hashmap the `BlockHash` to `FilterHash` relationship in memory
 
 #### Main thread
 - [x] Respond to peers with next `getheader` message

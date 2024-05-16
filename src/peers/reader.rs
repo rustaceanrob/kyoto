@@ -134,14 +134,19 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
                 .collect();
             Some(PeerMessage::Addr(addresses))
         }
-        NetworkMessage::Inv(_) => None,
+        NetworkMessage::Inv(inventory) => {
+            for i in inventory {
+                println!("{:?}", i);
+            }
+            None
+        }
         NetworkMessage::GetData(_) => None,
         NetworkMessage::NotFound(_) => None,
         NetworkMessage::GetBlocks(_) => None,
         NetworkMessage::GetHeaders(_) => None,
         NetworkMessage::MemPool => None,
         NetworkMessage::Tx(_) => None,
-        NetworkMessage::Block(_) => None,
+        NetworkMessage::Block(block) => Some(PeerMessage::Block(block.clone())),
         NetworkMessage::Headers(headers) => Some(PeerMessage::Headers(headers.clone())),
         NetworkMessage::SendHeaders => None,
         NetworkMessage::GetAddr => None,
@@ -164,7 +169,13 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::GetBlockTxn(_) => None,
         NetworkMessage::BlockTxn(_) => None,
         NetworkMessage::Alert(_) => None,
-        NetworkMessage::Reject(_) => None,
+        NetworkMessage::Reject(reject) => {
+            println!(
+                "Received Reject. Message: {}, Reason: {}",
+                reject.message, reject.reason
+            );
+            None
+        }
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {
@@ -232,7 +243,7 @@ pub enum PeerReadError {
     ReadBuffer,
     #[error("the message could not be properly deserialized")]
     Deserialization,
-    #[error("DOS proctection")]
+    #[error("DOS protection")]
     TooManyMessages,
     #[error("peer timeout")]
     PeerTimeout,

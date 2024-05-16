@@ -14,7 +14,7 @@ pub(crate) struct FilterChain {
 impl FilterChain {
     pub(crate) fn new(anchor_height: Option<usize>) -> Self {
         Self {
-            anchor_height: anchor_height.unwrap_or(180_000),
+            anchor_height: anchor_height.unwrap_or(190_000),
             chain: vec![],
             prev_stophash_request: None,
         }

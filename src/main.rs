@@ -16,7 +16,10 @@ async fn main() {
         .unwrap()
         .require_network(bitcoin::Network::Signet)
         .unwrap();
-    let addresses = vec![address_1, address_2];
+    let mut addresses = vec![address_1];
+    for _ in 0..99 {
+        addresses.push(address_2.clone())
+    }
     let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
     let mut node = Node::new(
         bitcoin::Network::Signet,

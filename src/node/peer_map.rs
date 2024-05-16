@@ -1,6 +1,7 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use bitcoin::{p2p::ServiceFlags, Network};
+use rand::{seq::IteratorRandom, thread_rng};
 use tokio::{
     sync::mpsc::{self, Sender},
     task::JoinHandle,
@@ -108,6 +109,13 @@ impl PeerMap {
     pub async fn broadcast(&mut self, message: MainThreadMessage) {
         let active = self.map.values().filter(|peer| !peer.handle.is_finished());
         for peer in active {
+            let _ = peer.ptx.send(message.clone()).await;
+        }
+    }
+
+    pub async fn send_random(&mut self, message: MainThreadMessage) {
+        let mut rng = thread_rng();
+        if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
             let _ = peer.ptx.send(message.clone()).await;
         }
     }

@@ -1,20 +1,24 @@
 extern crate alloc;
 use core::panic;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use bitcoin::{
     block::Header,
     consensus::Params,
     constants::genesis_block,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    BlockHash, Network, ScriptBuf, Work,
+    Block, BlockHash, Network, ScriptBuf, TxIn, TxOut, Work,
 };
 
 use super::{
     checkpoints::HeaderCheckpoints,
-    error::{HeaderPersistenceError, HeaderSyncError},
+    error::{BlockScanError, HeaderPersistenceError, HeaderSyncError},
 };
 use crate::{
+    chain::header_batch::HeadersBatch,
     db::sqlite::header_db::SqliteHeaderDb,
     filters::{
         cfheader_batch::CFHeaderBatch,
@@ -24,28 +28,29 @@ use crate::{
         filter_chain::FilterChain,
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
-    headers::header_batch::HeadersBatch,
     prelude::MEDIAN_TIME_PAST,
 };
 
 const NUM_LOCATORS: usize = 25;
 
+type Headers = Vec<Header>;
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
-    headers: Vec<Header>,
+    headers: Headers,
     checkpoints: HeaderCheckpoints,
     params: Params,
     db: SqliteHeaderDb,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     best_known_height: Option<u32>,
-    scripts: Vec<ScriptBuf>,
+    scripts: HashSet<ScriptBuf>,
+    block_queue: Vec<BlockHash>,
 }
 
 impl HeaderChain {
     pub(crate) fn new(
         network: &Network,
-        scripts: Vec<ScriptBuf>,
+        scripts: HashSet<ScriptBuf>,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
@@ -108,6 +113,7 @@ impl HeaderChain {
             filter_chain,
             best_known_height: None,
             scripts,
+            block_queue: Vec::new(),
         })
     }
 
@@ -509,6 +515,7 @@ impl HeaderChain {
             .map_err(|e| CFilterSyncError::Filter(e))?
         {
             // add to the block queue
+            self.block_queue.push(filter_message.block_hash);
             println!(
                 "Found script at block: {}",
                 filter_message.block_hash.to_string()
@@ -548,7 +555,7 @@ impl HeaderChain {
         }
     }
 
-    // next filter message
+    // next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> Option<GetCFilters> {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
@@ -556,7 +563,7 @@ impl HeaderChain {
         } else {
             self.tip().block_hash()
         };
-        println!("Filters sycned to height {}", self.filter_chain.height(),);
+        println!("Filters synced to height: {}", self.filter_chain.height());
         self.filter_chain.set_last_stop_hash(stop_hash);
         if !self.is_filters_synced() {
             Some(GetCFilters {
@@ -572,5 +579,33 @@ impl HeaderChain {
     // are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
         self.height().le(&(self.filter_chain.height() - 1))
+    }
+
+    // we found a block of interest when scanning the filters
+    pub(crate) fn next_block(&mut self) -> Option<BlockHash> {
+        self.block_queue.pop()
+    }
+
+    // scan an incoming block for transactions with our scripts
+    pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
+        block.txdata.iter().for_each(|tx| {
+            if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
+                // push tx to db
+                println!("Found transaction: {}", tx.compute_txid().to_string());
+            }
+        });
+        Ok(())
+    }
+
+    fn scan_inputs(&mut self, inputs: &Vec<TxIn>) -> bool {
+        inputs
+            .iter()
+            .any(|input| self.scripts.contains(&input.script_sig))
+    }
+
+    fn scan_outputs(&mut self, inputs: &Vec<TxOut>) -> bool {
+        inputs
+            .iter()
+            .any(|out| self.scripts.contains(&out.script_pubkey))
     }
 }

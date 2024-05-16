@@ -6,7 +6,7 @@ use bitcoin::params::Params;
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
 
-use crate::headers::checkpoints::HeaderCheckpoint;
+use crate::chain::checkpoints::HeaderCheckpoint;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,

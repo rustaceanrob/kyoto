@@ -216,6 +216,17 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 return Ok(());
             }
+            PeerMessage::Block(block) => {
+                println!("[Peer {}]: sent block", self.nonce);
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::Block(block),
+                    })
+                    .await
+                    .map_err(|_| PeerError::ThreadChannel)?;
+                return Ok(());
+            }
             PeerMessage::Disconnect => {
                 println!("[Peer {}]: disconnecting", self.nonce);
                 self.main_thread_sender
@@ -269,6 +280,13 @@ impl Peer {
             }
             MainThreadMessage::GetFilters(config) => {
                 let message = message_generator.new_filters(config);
+                writer
+                    .write_all(&message)
+                    .await
+                    .map_err(|_| PeerError::BufferWrite)?;
+            }
+            MainThreadMessage::GetBlock(message) => {
+                let message = message_generator.new_block(message);
                 writer
                     .write_all(&message)
                     .await
