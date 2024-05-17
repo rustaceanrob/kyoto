@@ -4,6 +4,19 @@
 
 Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the standard slim client for [LND](https://github.com/lightningnetwork/lnd), integrations with existing Rust clients for [LDK](https://github.com/lightningdevkit) and [BDK](https://github.com/bitcoindevkit) haven't come to furition. The [Nakamoto](https://github.com/cloudhead/nakamoto) project is complete with some very modular, elegant programming, but the lead maintainer has other projects to focus on. [Murmel](https://github.com/rust-bitcoin/murmel) is yet another light client in Rust, but the last commit was 4 years ago at the time of writing. The Rust community of crates has evolved quickly in terms of asynchronus frameworks and runtime executors. Like the [LDK node](https://github.com/lightningdevkit/ldk-node?tab=readme-ov-file) project, this project leverages the use of the `tokio` runtime with plans to integrate UniFFI in the future. By leveraging how these frameworks have developed over the years, the hope is a light client in Rust should be significantly easier to maintain. The greatest advantage when in comes to getting light clients on mobile is the ability to use UniFFI bindings to build native code in Swift and Kotlin. Once the client is functional, there will be a great focus on lower resource devices like smart phones.
 
+## Scope
+
+#### Functional Goals
+- [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
+- [x] Provide an archival index for transactions related to a set of `scriptPubKey`, presumably because the user is interested in transactions with these scripts involved.
+- [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Once BIP-324 is integrated, access to the P2P will also be encrypted.
+- [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network.
+
+With these few simple goals in mind, the tools are set out for developers to create Bitcoin applications that directly interface with the Bitcoin protocol. The scope of such wallets is incredibly large, from a Lightning Network wallet running on a mobile device to a federated mint where some members do not always index the full blockchain. The privacy tradeoffs of using a light client like Kyoto far exceed that of using a chain oracle where the user inquires for transactions _directly_. With Kyoto, full network nodes only know that they have sent you an entire _block_, which can, and most likely will, contain thousands of transactions.
+
+#### Out of Scope
+- Any wallet functionality beyond indexing transactions. This includes balances, transaction construction, etc. Why? Bitcoin wallets are complex for a number of reasons, and additional functionality within this scope would detract from other improvements.
+
 ## Checklist
 
 #### Peers
@@ -23,7 +36,8 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
     - [x] All headers connect
     - [x] No forks before last known checkpoint
     - [x] Header pass their own PoW
-    - [ ] Difficulty retargeting audit: [PR](https://github.com/rust-bitcoin/rust-bitcoin/pull/2740)
+    - [ ] Difficulty retargeting audit: 
+        - [x] [PR](https://github.com/rust-bitcoin/rust-bitcoin/pull/2740)
     - [ ] Network adjusted time
 - [x] Handle forks [took the Neutrino approach and just disconnect peers if they send forks with less work]
     - [ ] Manage orphaned header chains
@@ -69,11 +83,13 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 - [x] Send `Verack` and eagerly send `GetAddr`
     - [ ] May limit addresses if peer persistence is saturated
 - [x] Filter messages at the reader level
-    - [ ] Add back: `Inv`, `Block`, `TX`, ?   
-    - [ ] Update `Inv` of block headers to header chain
+    - [ ] Add back: `Inv`, `Block`, `TX`, ?  
+        - [x] `Inv` (blocks)
+        - [x] `Block` 
+    - [x] Update `Inv` of block headers to header chain
 - [ ] Set up "peer config"
     - [x] TCP timeout
-    - [ ] Should ask for addresses
+    - [ ] Should ask for IP addresses
         - [ ] Filter by CPF
     - [ ] Should serve CPF
 - [ ] Set up "timer"

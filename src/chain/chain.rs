@@ -581,7 +581,7 @@ impl HeaderChain {
         self.height().le(&(self.filter_chain.height() - 1))
     }
 
-    // we found a block of interest when scanning the filters
+    // pop a block from the queue of interesting blocks
     pub(crate) fn next_block(&mut self) -> Option<BlockHash> {
         self.block_queue.pop()
     }

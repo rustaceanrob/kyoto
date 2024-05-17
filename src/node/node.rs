@@ -428,7 +428,7 @@ impl Node {
                     .header_chain
                     .lock()
                     .map_err(|_| MainThreadError::PoisonedGuard)?;
-                *state = NodeState::HeadersSynced;
+                *state = NodeState::Behind;
                 let next_headers = GetHeaderConfig {
                     locators: guard.locators(),
                     stop_hash: None,
