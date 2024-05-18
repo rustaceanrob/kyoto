@@ -7,7 +7,7 @@ pub(crate) struct CFHeaderBatch {
 }
 
 impl CFHeaderBatch {
-    // although BIP 157 specifies two new message types,
+    // Although BIP 157 specifies two new message types,
     // the CFHeader message may make it easier to detect
     // faulty peers sooner
     pub(crate) fn new(batch: CFHeaders) -> Self {

@@ -104,7 +104,7 @@ impl Peer {
                 return Ok(());
             }
             select! {
-                // the peer sent us a message
+                // The peer sent us a message
                 peer_message = rx.recv() => {
                     match peer_message {
                         Some(message) => {
@@ -112,7 +112,7 @@ impl Peer {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
-                                        // we were told by the reader thread to disconnect from this peer
+                                        // We were told by the reader thread to disconnect from this peer
                                         PeerError::DisconnectCommand => return Ok(()),
                                         _ => continue,
                                     }
@@ -122,7 +122,7 @@ impl Peer {
                         None => continue,
                     }
                 }
-                // the main thread sent us a message
+                // The main thread sent us a message
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
@@ -130,7 +130,7 @@ impl Peer {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
-                                        // we were told by the main thread to disconnect from this peer
+                                        // We were told by the main thread to disconnect from this peer
                                         PeerError::DisconnectCommand => return Ok(()),
                                         _ => continue,
                                     }

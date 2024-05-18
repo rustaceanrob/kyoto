@@ -49,13 +49,13 @@ impl Dns {
         for host in seeds {
             let ips = match resolver.lookup_ip(host).await {
                 Ok(ips) => ips,
-                // ignore individual errors for DNS queries
+                // Ignore individual errors for DNS queries
                 Err(_) => continue,
             };
             ips.iter().for_each(|ip| ip_addrs.push(ip));
         }
 
-        // arbitrary number for now
+        // Arbitrary number for now
         if ip_addrs.len() < MIN_PEERS {
             return Err(DnsBootstrapError::NotEnoughPeersError);
         }

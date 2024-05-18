@@ -117,7 +117,7 @@ impl HeaderChain {
         })
     }
 
-    // the genesis block or base of alternative chain
+    // The genesis block
     pub(crate) fn root(&self) -> &Header {
         &self
             .headers
@@ -125,7 +125,7 @@ impl HeaderChain {
             .expect("all header chains have at least one element")
     }
 
-    // top of the chain
+    // Top of the chain
     pub(crate) fn tip(&self) -> &Header {
         &self
             .headers
@@ -133,36 +133,36 @@ impl HeaderChain {
             .expect("all header chains have at least one element")
     }
 
-    // the canoncial height of the chain, one less than the length
+    // The canoncial height of the chain, one less than the length
     pub(crate) fn height(&self) -> usize {
         self.headers.len() - 1
     }
 
-    // this header chain contains a block hash
+    // This header chain contains a block hash
     pub(crate) fn contains_hash(&self, blockhash: BlockHash) -> bool {
         self.headers
             .iter()
             .any(|header| header.block_hash().eq(&blockhash))
     }
 
-    // this header chain contains a block hash
+    // This header chain contains a block hash
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<usize> {
         self.headers
             .iter()
             .position(|header| header.block_hash().eq(&blockhash))
     }
 
-    // this header chain contains a block hash
+    // This header chain contains a block hash
     pub(crate) async fn header_at_height(&self, index: usize) -> Option<&Header> {
         self.headers.get(index)
     }
 
-    // this header chain contains a block hash
+    // This header chain contains a block hash
     pub(crate) fn contains_header(&self, header: Header) -> bool {
         self.headers.contains(&header)
     }
 
-    // canoncial chainwork
+    // Canoncial chainwork
     pub(crate) fn chainwork(&self) -> Work {
         self.headers
             .iter()
@@ -171,7 +171,7 @@ impl HeaderChain {
             .expect("all chains have at least one header")
     }
 
-    // calculate the chainwork after a fork height to evalutate the fork
+    // Calculate the chainwork after a fork height to evalutate the fork
     pub(crate) fn chainwork_after_height(&self, height: usize) -> Work {
         assert!(height + 1 <= self.height());
         self.headers
@@ -183,7 +183,7 @@ impl HeaderChain {
             .expect("all chains have at least one header")
     }
 
-    // human readable chainwork
+    // Human readable chainwork
     pub(crate) fn log2_work(&self) -> f64 {
         self.headers
             .iter()
@@ -192,18 +192,18 @@ impl HeaderChain {
             .expect("all chains have at least one header")
     }
 
-    // have we hit the known checkpoints
+    // Have we hit the known checkpoints
     pub(crate) fn checkpoints_complete(&self) -> bool {
         self.checkpoints.is_exhausted()
     }
 
-    // set the best known height to our peer
+    // Set the best known height to our peer
     pub(crate) fn set_best_known_height(&mut self, height: u32) {
         println!("Best known peer height: {}", height);
         self.best_known_height = Some(height);
     }
 
-    // do we have best known height and is our height equal to it
+    // Do we have best known height and is our height equal to it
     pub(crate) fn is_synced(&self) -> bool {
         if let Some(height) = self.best_known_height {
             if (self.height() as u32).ge(&height) {
@@ -216,7 +216,7 @@ impl HeaderChain {
         }
     }
 
-    // the "locators" are the headers we inform our peers we know about
+    // The "locators" are the headers we inform our peers we know about
     pub(crate) fn locators(&self) -> Vec<BlockHash> {
         if !self.checkpoints_complete() {
             vec![self.tip().block_hash()]
@@ -232,14 +232,14 @@ impl HeaderChain {
         }
     }
 
-    // write the chain to disk
+    // Write the chain to disk
     pub(crate) async fn flush_to_disk(&mut self) {
         if let Err(e) = self.db.write(&self.headers).await {
             println!("Error persisting to storage: {}", e);
         }
     }
 
-    // sync the chain with headers from a peer, adjusting to reorgs if needed
+    // Sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // if our chain already has the last header in the message there is no new information
@@ -274,12 +274,12 @@ impl HeaderChain {
         Ok(())
     }
 
-    // these are invariants in all batches of headers we receive
+    // These are invariants in all batches of headers we receive
     async fn sanity_check(&self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
-        // some basic sanity checks that should result in peer bans on errors
+        // Some basic sanity checks that should result in peer bans on errors
 
-        // if we aren't synced up to the checkpoints we don't accept any forks
+        // If we aren't synced up to the checkpoints we don't accept any forks
         if initially_syncing
             && self
                 .tip()
@@ -289,17 +289,17 @@ impl HeaderChain {
             return Err(HeaderSyncError::PreCheckpointFork);
         }
 
-        // all the headers connect with each other
+        // All the headers connect with each other
         if !header_batch.all_connected().await {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
-        // all headers pass their own proof of work and the network minimum
+        // All headers pass their own proof of work and the network minimum
         if !header_batch.individually_valid_pow().await {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
-        // the headers have times that are greater than the median of the previous 11 blocks
+        // The headers have times that are greater than the median of the previous 11 blocks
         let mut last_relevant_mtp: Vec<Header> = self
             .headers
             .iter()
@@ -313,7 +313,7 @@ impl HeaderChain {
             .valid_median_time_past(&mut last_relevant_mtp)
             .await
         {
-            // the first validation may be incorrect because of median miscalculation,
+            // The first validation may be incorrect because of median miscalculation,
             // but it is cheap to detect the peer is lying later from checkpoints
             // and difficulty of the SHA256 algorithm
             if self.height() > 1 {
@@ -325,13 +325,13 @@ impl HeaderChain {
 
     async fn catch_up_sync(&mut self, header_batch: HeadersBatch) -> Result<(), HeaderSyncError> {
         assert!(!self.checkpoints.is_exhausted());
-        // eagerly append the batch to the chain
+        // Eagerly append the batch to the chain
         let last_best_index = self.append_naive(header_batch);
         let checkpoint = self
             .checkpoints
             .next()
             .expect("checkpoints are not exhausted");
-        // we need to check a hard-coded checkpoint
+        // We need to check a hard-coded checkpoint
         if self.height().ge(&checkpoint.height) {
             if self.headers[checkpoint.height]
                 .block_hash()
@@ -360,23 +360,23 @@ impl HeaderChain {
 
     // audit the difficulty adjustment of the blocks we received
 
-    // rollback the chain to an index, inclusive
+    // Rollback the chain to an index, inclusive
     fn rollback_to_index(&mut self, index: usize) {
         self.headers.truncate(index + 1);
     }
 
-    // append a new batch and return the length of the chain before the merge
+    // Append a new batch and return the length of the chain before the merge
     fn append_naive(&mut self, batch: HeadersBatch) -> usize {
         let ind = self.height();
         self.headers.extend_from_slice(batch.inner());
         ind
     }
 
-    // this function draws from the neutrino implemention, where even if a fork is valid
+    // This function draws from the neutrino implemention, where even if a fork is valid
     // we only accept it if there is more work provided. otherwise, we disconnect the peer sending
     // us this fork
     async fn evaluate_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        // we only care about the headers these two chains do not have in common
+        // We only care about the headers these two chains do not have in common
         println!("Evaluting a potential fork...");
         let uncommon: Vec<Header> = header_batch
             .inner()
@@ -435,17 +435,17 @@ impl HeaderChain {
     }
 
     async fn audit_cf_headers(&mut self, batch: &CFHeaderBatch) -> Result<(), CFHeaderSyncError> {
-        // does this stop hash even exist in our chain
+        // Does this stop hash even exist in our chain
         if !self.contains_hash(*batch.stop_hash()) {
             return Err(CFHeaderSyncError::UnknownStophash);
         }
-        // does the filter header line up with our current chain of filter headers
+        // Does the filter header line up with our current chain of filter headers
         if let Some(prev_header) = self.cf_header_chain.prev_header() {
             if batch.prev_header().ne(&prev_header) {
                 return Err(CFHeaderSyncError::PrevHeaderMismatch);
             }
         }
-        // did they send us the right amount of headers
+        // Did they send us the right amount of headers
         let expected_stop_header = self
             .header_at_height(self.cf_header_chain.header_height() + batch.len() - 1)
             .await;
@@ -456,19 +456,19 @@ impl HeaderChain {
         } else {
             return Err(CFHeaderSyncError::HeaderChainIndexOverflow);
         }
-        // did we request up to this stop hash
+        // Did we request up to this stop hash
         if let Some(prev_stophash) = self.cf_header_chain.last_stop_hash_request() {
             if prev_stophash.ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
             }
         } else {
-            // if we never asked for a stophash before this was unsolitited
+            // If we never asked for a stophash before this was unsolitited
             return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
         }
         Ok(())
     }
 
-    // we need to make this public for new peers that connect to us throughout syncing the filter headers
+    // We need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) async fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
         let stop_hash_index = self.cf_header_chain.header_height() + CF_HEADER_BATCH_SIZE;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
@@ -494,13 +494,13 @@ impl HeaderChain {
         }
     }
 
-    // are the compact filter headers caught up to the header chain
+    // Are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
         self.height()
             .le(&(self.cf_header_chain.header_height() - 1))
     }
 
-    // handle a filter
+    // Handle a new filter
     pub(crate) async fn sync_filter(
         &mut self,
         filter_message: CFilter,
@@ -514,7 +514,7 @@ impl HeaderChain {
             .await
             .map_err(|e| CFilterSyncError::Filter(e))?
         {
-            // add to the block queue
+            // Add to the block queue
             self.block_queue.push(filter_message.block_hash);
             println!(
                 "Found script at block: {}",
@@ -555,7 +555,7 @@ impl HeaderChain {
         }
     }
 
-    // next filter message, if there is one
+    // Next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> Option<GetCFilters> {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
@@ -576,17 +576,17 @@ impl HeaderChain {
         }
     }
 
-    // are we synced with filters
+    // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
         self.height().le(&(self.filter_chain.height() - 1))
     }
 
-    // pop a block from the queue of interesting blocks
+    // Pop a block from the queue of interesting blocks
     pub(crate) fn next_block(&mut self) -> Option<BlockHash> {
         self.block_queue.pop()
     }
 
-    // scan an incoming block for transactions with our scripts
+    // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
         block.txdata.iter().for_each(|tx| {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {

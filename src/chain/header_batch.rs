@@ -7,8 +7,8 @@ pub(crate) struct HeadersBatch {
     batch: Vec<Header>,
 }
 
-// the expected response for the majority of getheaders messages are 2000 headers that should be in order.
-// this struct provides basic sanity checks and helper methods.
+// The expected response for the majority of getheaders messages are 2000 headers that should be in order.
+// This struct provides basic sanity checks and helper methods.
 impl HeadersBatch {
     pub(crate) fn new(batch: Vec<Header>) -> Result<Self, HeadersBatchError> {
         if batch.len() < 1 {
@@ -17,7 +17,7 @@ impl HeadersBatch {
         Ok(HeadersBatch { batch })
     }
 
-    // are they all logically connected?
+    // Are they all logically connected?
     pub(crate) async fn all_connected(&self) -> bool {
         self.batch
             .iter()
@@ -25,7 +25,7 @@ impl HeadersBatch {
             .all(|(first, second)| first.block_hash().eq(&second.prev_blockhash))
     }
 
-    // are all the blocks of sufficient work and meet their own target?
+    // Are all the blocks of sufficient work and meet their own target?
     pub(crate) async fn individually_valid_pow(&self) -> bool {
         !self.batch.iter().any(|header| {
             let target = header.target();
@@ -34,7 +34,7 @@ impl HeadersBatch {
         })
     }
 
-    // do the blocks pass the time requirements
+    // Do the blocks pass the time requirements
     pub(crate) async fn valid_median_time_past(&self, previous_buffer: &mut Vec<Header>) -> bool {
         previous_buffer.extend_from_slice(&self.batch);
         let median_times: Vec<u32> = previous_buffer
@@ -48,14 +48,14 @@ impl HeadersBatch {
             .all(|(median, header)| header.time > *median)
     }
 
-    // the tip of the list
+    // The tip of the list
     pub(crate) fn last(&self) -> &Header {
         self.batch
             .last()
             .expect("headers have at least one element by construction")
     }
 
-    // this should connect to the last header we have
+    // This should connect to the last header we have
     pub(crate) fn first(&self) -> &Header {
         self.batch
             .first()

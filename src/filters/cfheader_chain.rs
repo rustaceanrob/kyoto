@@ -8,11 +8,11 @@ type InternalChain = Vec<(FilterHeader, FilterHash)>;
 type FilterChain = Vec<Vec<u8>>;
 
 pub(crate) enum AppendAttempt {
-    // nothing to do yet
+    // Nothing to do yet
     AddedToQueue,
-    // we sucessfully extended the current chain and should broadcast the next round of CF header messages
+    // We sucessfully extended the current chain and should broadcast the next round of CF header messages
     Extended,
-    // we found a conflict in the peers CF header messages at this index
+    // We found a conflict in the peers CF header messages at this index
     Conflict(usize),
 }
 
@@ -64,15 +64,15 @@ impl CFHeaderChain {
             .merged_queue
             .values_mut()
             .collect::<Vec<&mut Vec<(FilterHeader, FilterHash)>>>();
-        // take any reference from the queue, we will start comparing the other peers to this one
+        // Take any reference from the queue, we will start comparing the other peers to this one
         let reference_peer = ready.first().expect("all quorums have at least one peer");
-        // move over the peers, skipping the reference
+        // Move over the peers, skipping the reference
         for peer in ready.iter().skip(1) {
-            // iterate over each index in the reference
+            // Iterate over each index in the reference
             for index in 0..reference_peer.len() {
-                // take the reference header
+                // Take the reference header
                 let (header, _) = reference_peer[index];
-                // compare it to the other peer
+                // Compare it to the other peer
                 if let Some(comparitor) = peer.get(index) {
                     if header.ne(&comparitor.0) {
                         println!(
@@ -84,9 +84,9 @@ impl CFHeaderChain {
                 }
             }
         }
-        // made it through without finding any conflicts, we can extend the current chain by the reference
+        // Made it through without finding any conflicts, we can extend the current chain by the reference
         self.header_chain.extend_from_slice(&reference_peer);
-        // reset the merge queue
+        // Reset the merge queue
         self.merged_queue.clear();
         println!(
             "Extended the chain of compact filter headers, synced up to height: {}",

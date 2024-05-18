@@ -22,9 +22,9 @@ use crate::node::channel_messages::RemoteVersion;
 
 const ONE_MONTH: u64 = 2_500_000;
 const ONE_MINUTE: u64 = 60;
-// the peer must have sent at least 10 messages to trigger DOS
+// The peer must have sent at least 10 messages to trigger DOS
 const MINIMUM_DOS_THRESHOLD: u64 = 10;
-// we allow up to 500 messages per second
+// We allow up to 500 messages per second
 const RATE_LIMIT: u64 = 500;
 
 pub(crate) struct Reader {
@@ -62,11 +62,11 @@ impl Reader {
             let header: V1Header = deserialize_partial(&message_buf)
                 .map_err(|_| PeerReadError::Deserialization)?
                 .0;
-            // nonsense for our network
+            // Nonsense for our network
             if header.magic != self.network.magic() {
                 return Err(PeerReadError::Deserialization);
             }
-            // message is too long
+            // Message is too long
             if header.length > (1024 * 1024 * 32) as u32 {
                 return Err(PeerReadError::Deserialization);
             }

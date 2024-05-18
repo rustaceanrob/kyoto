@@ -31,20 +31,19 @@ use crate::db::sqlite::peer_db::SqlitePeerDb;
 
 #[derive(Debug, Clone, Copy)]
 pub enum NodeState {
-    // we need to sync headers to the known tip
+    // We need to sync headers to the known tip
     Behind,
-    // we need to start getting filter headers
+    // We need to start getting filter headers
     HeadersSynced,
-    // we need to get the CP filters
+    // We need to get the CP filters
     FilterHeadersSynced,
-    // we can start asking for blocks with matches
+    // We can start asking for blocks with matches
     FiltersSynced,
 }
 
 pub struct Node {
     state: Arc<Mutex<NodeState>>,
     header_chain: Arc<Mutex<HeaderChain>>,
-    // fill filter headers, etc
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
     best_known_hash: Option<BlockHash>,
