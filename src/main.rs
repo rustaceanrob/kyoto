@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use light_client::node::node::Node;
+use light_client::node::builder::NodeBuilder;
 
 #[tokio::main]
 async fn main() {
@@ -21,13 +21,12 @@ async fn main() {
         addresses.push(address_2.clone())
     }
     let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
-    let (mut node, mut client) = Node::new(
-        bitcoin::Network::Signet,
-        Some(vec![(pref_peer, 38333)]),
-        addresses,
-    )
-    .await
-    .unwrap();
+    let builder = NodeBuilder::new(bitcoin::Network::Signet);
+    let (mut node, mut client) = builder
+        .add_peers(vec![(pref_peer, 38333)])
+        .add_scripts(addresses)
+        .build_node()
+        .await;
     let _ = tokio::task::spawn(async move { node.run().await });
     client.wait_until_synced().await;
     println!("Done! Shutting down.");

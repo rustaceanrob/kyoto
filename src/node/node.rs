@@ -63,7 +63,7 @@ impl Node {
     ) -> Result<(Self, Client), NodeError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
-            println!("Persistence failure: {}", e.to_string());
+            eprintln!("Persistence failure: {}", e.to_string());
             NodeError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         let peer_db = Arc::new(Mutex::new(peer_db));
@@ -97,6 +97,7 @@ impl Node {
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
+            self.advance_state().await;
             node_map.clean().await;
             // rehydrate on peers when lower than a threshold
             if node_map.live() < 1 {
@@ -120,71 +121,57 @@ impl Node {
                     PeerMessage::Version(version) => {
                         node_map.set_offset(peer_thread.nonce, version.timestamp);
                         node_map.set_services(peer_thread.nonce, version.service_flags);
-                        if let Ok(response) = self.handle_version(version).await {
+                        let response = self.handle_version(version).await;
+                        node_map.send_message(peer_thread.nonce, response).await;
+                    }
+                    PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
+                    PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
+                        Some(response) => {
+                            let _ = self.client_sender.send(NodeMessage::Headers).await;
                             node_map.send_message(peer_thread.nonce, response).await;
                         }
-                    }
-                    PeerMessage::Addr(addresses) => {
-                        if let Err(e) = self.handle_new_addrs(addresses).await {
-                            println!("Error storing new addresses: {}", e);
-                        }
-                    }
-                    PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
-                        Ok(response) => {
-                            if let Some(response) = response {
-                                let _ = self.client_sender.send(NodeMessage::Headers).await;
-                                node_map.send_message(peer_thread.nonce, response).await;
-                            }
-                        }
-                        Err(_) => continue,
+                        None => continue,
                     },
                     PeerMessage::FilterHeaders(cf_headers) => {
                         match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
-                            Ok(response) => {
-                                if let Some(response) = response {
-                                    node_map.broadcast(response).await;
-                                }
+                            Some(response) => {
+                                // match depending on disconnect
+                                node_map.broadcast(response).await;
                             }
-                            Err(_) => continue,
+                            None => continue,
                         }
                     }
                     PeerMessage::Filter(filter) => {
                         match self.handle_filter(peer_thread.nonce, filter).await {
-                            Ok(response) => {
-                                if let Some(response) = response {
-                                    node_map.broadcast(response).await;
-                                }
+                            Some(response) => {
+                                node_map.broadcast(response).await;
                             }
-                            Err(_) => continue,
+                            None => continue,
                         }
                     }
                     PeerMessage::Block(block) => match self.handle_block(block).await {
-                        Ok(response) => {
-                            if let Some(response) = response {
-                                node_map.broadcast(response).await;
-                            }
+                        Some(response) => {
+                            node_map.broadcast(response).await;
                         }
-                        Err(_) => continue,
+                        None => continue,
                     },
                     PeerMessage::NewBlocks(_blocks) => match self.handle_inventory_blocks().await {
-                        Ok(response) => {
-                            if let Some(response) = response {
-                                node_map.broadcast(response).await;
-                            }
+                        Some(response) => {
+                            node_map.broadcast(response).await;
                         }
-                        Err(_) => continue,
+                        None => continue,
                     },
                     PeerMessage::Disconnect => {
                         node_map.clean().await;
                     }
                     _ => continue,
                 }
-                self.advance_state().await?;
+                self.advance_state().await;
             }
         }
     }
 
-    async fn advance_state(&mut self) -> Result<(), NodeError> {
+    async fn advance_state(&mut self) {
         let mut state = self.state.lock().await;
         match *state {
             NodeState::Behind => {
@@ -193,9 +180,8 @@ impl Node {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
-                    return Ok(());
                 }
-                Ok(())
+                return;
             }
             NodeState::HeadersSynced => {
                 let header_guard = self.header_chain.lock().await;
@@ -203,7 +189,7 @@ impl Node {
                     println!("CF Headers synced. Downloading block filters.");
                     *state = NodeState::FilterHeadersSynced;
                 }
-                Ok(())
+                return;
             }
             NodeState::FilterHeadersSynced => {
                 let header_guard = self.header_chain.lock().await;
@@ -211,7 +197,7 @@ impl Node {
                     println!("Filters synced. Checking blocks for new inclusions.");
                     *state = NodeState::FiltersSynced;
                 }
-                Ok(())
+                return;
             }
             NodeState::FiltersSynced => {
                 let header_guard = self.header_chain.lock().await;
@@ -219,16 +205,13 @@ impl Node {
                     *state = NodeState::TransactionsSynced;
                     let _ = self.client_sender.send(NodeMessage::Synced).await;
                 }
-                Ok(())
+                return;
             }
-            NodeState::TransactionsSynced => Ok(()),
+            NodeState::TransactionsSynced => return,
         }
     }
 
-    async fn handle_version(
-        &mut self,
-        version_message: RemoteVersion,
-    ) -> Result<MainThreadMessage, NodeError> {
+    async fn handle_version(&mut self, version_message: RemoteVersion) -> MainThreadMessage {
         let state = self.state.lock().await;
         match *state {
             NodeState::Behind => (),
@@ -239,7 +222,7 @@ impl Node {
                     || !version_message.service_flags.has(ServiceFlags::NETWORK)
                 {
                     println!("Connected peer does not serve compact filters or blocks");
-                    return Ok(MainThreadMessage::Disconnect);
+                    return MainThreadMessage::Disconnect;
                 }
             }
         }
@@ -255,10 +238,10 @@ impl Node {
             stop_hash: None,
         };
         let response = MainThreadMessage::GetHeaders(next_headers);
-        Ok(response)
+        response
     }
 
-    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) -> Result<(), NodeError> {
+    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
         let mut guard = self.peer_db.lock().await;
         if let Err(e) = guard.add_cpf_peers(new_peers).await {
             println!(
@@ -266,29 +249,25 @@ impl Node {
                 e.to_string()
             );
         }
-        Ok(())
     }
 
-    async fn handle_headers(
-        &mut self,
-        headers: Vec<Header>,
-    ) -> Result<Option<MainThreadMessage>, NodeError> {
+    async fn handle_headers(&mut self, headers: Vec<Header>) -> Option<MainThreadMessage> {
         let mut guard = self.header_chain.lock().await;
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
                     if !guard.is_synced() {
-                        return Ok(Some(MainThreadMessage::Disconnect));
+                        return Some(MainThreadMessage::Disconnect);
                     } else if !guard.is_cf_headers_synced() {
-                        return Ok(Some(MainThreadMessage::GetFilterHeaders(
+                        return Some(MainThreadMessage::GetFilterHeaders(
                             guard.next_cf_header_message().await.unwrap(),
-                        )));
+                        ));
                     }
-                    return Ok(None);
+                    return None;
                 }
                 _ => {
-                    println!("{}", e.to_string());
-                    return Ok(Some(MainThreadMessage::Disconnect));
+                    eprintln!("{}", e.to_string());
+                    return Some(MainThreadMessage::Disconnect);
                 }
             }
         }
@@ -297,78 +276,76 @@ impl Node {
                 locators: guard.locators(),
                 stop_hash: None,
             };
-            return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+            return Some(MainThreadMessage::GetHeaders(next_headers));
         } else if !guard.is_cf_headers_synced() {
-            return Ok(Some(MainThreadMessage::GetFilterHeaders(
+            return Some(MainThreadMessage::GetFilterHeaders(
                 guard.next_cf_header_message().await.unwrap(),
-            )));
+            ));
         } else if !guard.is_filters_synced() {
-            return Ok(Some(MainThreadMessage::GetFilters(
+            return Some(MainThreadMessage::GetFilters(
                 guard.next_filter_message().await.unwrap(),
-            )));
+            ));
         }
-        Ok(None)
+        None
     }
 
     async fn handle_cf_headers(
         &mut self,
         peer_id: u32,
         cf_headers: CFHeaders,
-    ) -> Result<Option<MainThreadMessage>, NodeError> {
+    ) -> Option<MainThreadMessage> {
         let mut guard = self.header_chain.lock().await;
         match guard.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
-                Some(message) => Ok(Some(MainThreadMessage::GetFilterHeaders(message))),
+                Some(message) => Some(MainThreadMessage::GetFilterHeaders(message)),
                 None => {
                     if !guard.is_filters_synced() {
-                        Ok(Some(MainThreadMessage::GetFilters(
+                        return Some(MainThreadMessage::GetFilters(
                             guard.next_filter_message().await.unwrap(),
-                        )))
+                        ));
                     } else {
-                        Ok(None)
+                        return None;
                     }
                 }
             },
             Err(e) => {
                 println!("CF header sync error: {}", e.to_string());
-                Ok(Some(MainThreadMessage::Disconnect))
+                return Some(MainThreadMessage::Disconnect);
             }
         }
     }
 
-    async fn handle_filter(
-        &mut self,
-        _peer_id: u32,
-        filter: CFilter,
-    ) -> Result<Option<MainThreadMessage>, NodeError> {
+    async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
         let mut guard = self.header_chain.lock().await;
         match guard.sync_filter(filter).await {
             Ok(potential_message) => match potential_message {
-                Some(message) => Ok(Some(MainThreadMessage::GetFilters(message))),
-                None => Ok(None),
+                Some(message) => Some(MainThreadMessage::GetFilters(message)),
+                None => None,
             },
             Err(e) => {
-                println!("block filter sync error: {}", e.to_string());
-                Ok(Some(MainThreadMessage::Disconnect))
+                eprintln!("Block filter sync error: {}", e.to_string());
+                Some(MainThreadMessage::Disconnect)
             }
         }
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<Option<MainThreadMessage>, NodeError> {
+    async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
         let state = *self.state.lock().await;
         let mut guard = self.header_chain.lock().await;
         match state {
-            NodeState::Behind => Ok(Some(MainThreadMessage::Disconnect)),
+            NodeState::Behind => Some(MainThreadMessage::Disconnect),
             NodeState::HeadersSynced => {
                 // do something with the block to resolve a conflict
-                Ok(None)
+                None
             }
-            NodeState::FilterHeadersSynced => Ok(None),
+            NodeState::FilterHeadersSynced => None,
             NodeState::FiltersSynced => {
-                let _ = guard.scan_block(&block).await;
-                Ok(None)
+                if let Err(e) = guard.scan_block(&block).await {
+                    eprintln!("{}", e.to_string());
+                }
+                None
             }
-            NodeState::TransactionsSynced => Ok(None),
+            NodeState::TransactionsSynced => None,
         }
     }
 
@@ -386,10 +363,10 @@ impl Node {
         }
     }
 
-    async fn handle_inventory_blocks(&mut self) -> Result<Option<MainThreadMessage>, NodeError> {
+    async fn handle_inventory_blocks(&mut self) -> Option<MainThreadMessage> {
         let mut state = self.state.lock().await;
         match *state {
-            NodeState::Behind => return Ok(None),
+            NodeState::Behind => return None,
             _ => {
                 let guard = self.header_chain.lock().await;
                 *state = NodeState::Behind;
@@ -397,7 +374,7 @@ impl Node {
                     locators: guard.locators(),
                     stop_hash: None,
                 };
-                return Ok(Some(MainThreadMessage::GetHeaders(next_headers)));
+                return Some(MainThreadMessage::GetHeaders(next_headers));
             }
         }
     }
@@ -467,7 +444,7 @@ impl Node {
                 let ret_ip = new_peers[0];
                 for peer in new_peers {
                     if let Err(e) = guard.add_new(peer, None, None).await {
-                        println!(
+                        eprintln!(
                             "Encountered error adding peer to persistence: {}",
                             e.to_string()
                         );

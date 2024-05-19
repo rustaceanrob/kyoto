@@ -1,3 +1,4 @@
+pub mod builder;
 pub mod channel_messages;
 pub mod client;
 pub mod config;

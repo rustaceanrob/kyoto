@@ -592,6 +592,7 @@ impl HeaderChain {
         self.block_queue.pop()
     }
 
+    // Are there any blocks left in the queue
     pub(crate) fn block_queue_empty(&self) -> bool {
         self.block_queue.is_empty()
     }
@@ -601,7 +602,6 @@ impl HeaderChain {
         let height_of_block = self.height_of_hash(block.block_hash()).await;
         for tx in &block.txdata {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
-                // push tx to db
                 self.tx_store
                     .add_transaction(&ScriptBuf::new(), &tx, height_of_block, &block.block_hash())
                     .await

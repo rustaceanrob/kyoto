@@ -1,16 +1,17 @@
 use std::net::IpAddr;
 
-use bitcoin::Network;
+pub struct NodeConfig {
+    pub required_peers: usize,
+    pub white_list: Option<Vec<(IpAddr, u16)>>,
+    pub addresses: Vec<bitcoin::Address>,
+}
 
-use crate::tx::store::TransactionStore;
-
-pub struct NodeConfig<S>
-where
-    S: TransactionStore,
-{
-    required_peers: usize,
-    white_list: Option<Vec<(IpAddr, u16)>>,
-    network: Network,
-    addresses: Vec<bitcoin::Address>,
-    tx_store: S,
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            required_peers: 1,
+            white_list: Default::default(),
+            addresses: Default::default(),
+        }
+    }
 }
