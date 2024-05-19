@@ -12,6 +12,7 @@ use bitcoin::{
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     Block, BlockHash, Network, ScriptBuf, TxIn, TxOut, Work,
 };
+use tokio::sync::RwLock;
 
 use super::{
     checkpoints::HeaderCheckpoints,
@@ -41,7 +42,7 @@ pub(crate) struct HeaderChain {
     headers: Headers,
     checkpoints: HeaderCheckpoints,
     params: Params,
-    db: SqliteHeaderDb,
+    db: RwLock<SqliteHeaderDb>,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     best_known_height: Option<u32>,
@@ -51,7 +52,7 @@ pub(crate) struct HeaderChain {
 }
 
 impl HeaderChain {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
         tx_store: MemoryTransactionCache,
@@ -70,7 +71,7 @@ impl HeaderChain {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
         })?;
-        let loaded_headers = db.load().map_err(|e| {
+        let loaded_headers = db.load().await.map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
         })?;
@@ -112,7 +113,7 @@ impl HeaderChain {
             headers,
             checkpoints,
             params,
-            db,
+            db: RwLock::new(db),
             cf_header_chain,
             filter_chain,
             best_known_height: None,
@@ -239,7 +240,7 @@ impl HeaderChain {
 
     // Write the chain to disk
     pub(crate) async fn flush_to_disk(&mut self) {
-        if let Err(e) = self.db.write(&self.headers).await {
+        if let Err(e) = self.db.write().await.write(&self.headers).await {
             println!("Error persisting to storage: {}", e);
         }
     }
@@ -346,7 +347,7 @@ impl HeaderChain {
                 println!("Accumulated log base 2 chainwork: {}", self.log2_work());
                 println!("Writing progress to disk...");
                 self.checkpoints.advance();
-                if let Err(e) = self.db.write(&self.headers).await {
+                if let Err(e) = self.db.write().await.write(&self.headers).await {
                     println!("Error persisting to storage: {}", e);
                 }
             } else {
@@ -589,6 +590,10 @@ impl HeaderChain {
     // Pop a block from the queue of interesting blocks
     pub(crate) fn next_block(&mut self) -> Option<BlockHash> {
         self.block_queue.pop()
+    }
+
+    pub(crate) fn block_queue_empty(&self) -> bool {
+        self.block_queue.is_empty()
     }
 
     // Scan an incoming block for transactions with our scripts

@@ -21,11 +21,14 @@ async fn main() {
         addresses.push(address_2.clone())
     }
     let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
-    let mut node = Node::new(
+    let (mut node, mut client) = Node::new(
         bitcoin::Network::Signet,
         Some(vec![(pref_peer, 38333)]),
         addresses,
     )
+    .await
     .unwrap();
-    node.run().await.unwrap();
+    let _ = tokio::task::spawn(async move { node.run().await });
+    client.wait_until_synced().await;
+    println!("Done! Shutting down.");
 }

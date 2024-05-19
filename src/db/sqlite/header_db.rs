@@ -1,10 +1,12 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use bitcoin::block::{Header, Version};
 use bitcoin::constants::genesis_block;
 use bitcoin::params::Params;
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
+use tokio::sync::Mutex;
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
@@ -23,7 +25,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
 pub(crate) struct SqliteHeaderDb {
     genesis_header: Header,
     network: Network,
-    conn: Connection,
+    conn: Arc<Mutex<Connection>>,
     last_checkpoint: HeaderCheckpoint,
 }
 
@@ -41,17 +43,18 @@ impl SqliteHeaderDb {
         Ok(Self {
             genesis_header: genesis,
             network,
-            conn,
+            conn: Arc::new(Mutex::new(conn)),
             last_checkpoint,
         })
     }
 
     // load all the known headers from storage
-    pub fn load(&mut self) -> Result<Vec<Header>> {
+    pub async fn load(&mut self) -> Result<Vec<Header>> {
         println!("Loading headers from storage");
         let mut headers: Vec<Header> = Vec::with_capacity(200_000);
         let stmt = "SELECT * FROM headers ORDER BY height";
-        let mut query = self.conn.prepare(&stmt)?;
+        let write_lock = self.conn.lock().await;
+        let mut query = write_lock.prepare(&stmt)?;
         let mut rows = query.query([])?;
         while let Some(row) = rows.next()? {
             let _height: u32 = row.get(0)?;
@@ -98,7 +101,8 @@ impl SqliteHeaderDb {
     }
 
     pub async fn write(&mut self, header_chain: &Vec<Header>) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let mut write_lock = self.conn.lock().await;
+        let tx = write_lock.transaction()?;
         let count: u64 = tx.query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))?;
         let adjusted_count = count.checked_sub(1).unwrap_or(0);
         for (height, header) in header_chain.iter().enumerate() {

@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use bitcoin::{BlockHash, ScriptBuf, Transaction};
-use std::convert::Infallible;
 
-use super::{store::TransactionStore, types::IndexedTransaction};
+use super::{error::TransactionStoreError, store::TransactionStore, types::IndexedTransaction};
 
 #[derive(Debug)]
 pub struct MemoryTransactionCache {
@@ -18,14 +17,14 @@ impl MemoryTransactionCache {
 }
 
 #[async_trait]
-impl TransactionStore<Infallible> for MemoryTransactionCache {
+impl TransactionStore for MemoryTransactionCache {
     async fn add_transaction(
         &mut self,
         script: &ScriptBuf,
         transaction: &Transaction,
         height: Option<usize>,
         hash: &BlockHash,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), TransactionStoreError> {
         self.transactions.push(IndexedTransaction {
             script: script.clone(),
             transaction: transaction.clone(),

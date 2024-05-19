@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    net::IpAddr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashSet, net::IpAddr, sync::Arc, time::Duration};
 
 use bitcoin::{
     block::Header,
@@ -13,9 +8,10 @@ use bitcoin::{
     },
     Block, Network,
 };
-use rand::{prelude::SliceRandom, thread_rng};
+use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::Mutex;
 
 use crate::{
     chain::{chain::HeaderChain, error::HeaderSyncError},
@@ -24,9 +20,13 @@ use crate::{
     tx::memory::MemoryTransactionCache,
 };
 
-use super::channel_messages::{
-    GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
-    RemoteVersion,
+use super::{
+    channel_messages::{
+        GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
+        RemoteVersion,
+    },
+    client::Client,
+    node_messages::NodeMessage,
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
@@ -40,6 +40,8 @@ pub enum NodeState {
     FilterHeadersSynced,
     // We can start asking for blocks with matches
     FiltersSynced,
+    // We found all known transactions to the wallet
+    TransactionsSynced,
 }
 
 pub struct Node {
@@ -50,39 +52,47 @@ pub struct Node {
     required_peers: usize,
     white_list: Option<Vec<(IpAddr, u16)>>,
     network: Network,
+    client_sender: Sender<NodeMessage>,
 }
 
 impl Node {
-    pub fn new(
+    pub async fn new(
         network: Network,
         white_list: Option<Vec<(IpAddr, u16)>>,
         addresses: Vec<bitcoin::Address>,
-    ) -> Result<Self, MainThreadError> {
+    ) -> Result<(Self, Client), NodeError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network).map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
-            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
+            NodeError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         let peer_db = Arc::new(Mutex::new(peer_db));
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let in_memory_cache = MemoryTransactionCache::new();
         let loaded_chain = HeaderChain::new(&network, scripts, in_memory_cache)
-            .map_err(|_| MainThreadError::LoadError(PersistenceError::HeaderLoadError))?;
+            .await
+            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
         println!("Headers loaded from storage: {}", best_known_height);
         let header_chain = Arc::new(Mutex::new(loaded_chain));
-        Ok(Self {
-            state,
-            header_chain,
-            peer_db,
-            best_known_height,
-            required_peers: 1,
-            white_list,
-            network,
-        })
+        let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
+        let client = Client::new(nrx);
+        Ok((
+            Self {
+                state,
+                header_chain,
+                peer_db,
+                best_known_height,
+                required_peers: 1,
+                white_list,
+                network,
+                client_sender: ntx,
+            },
+            client,
+        ))
     }
-    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + '_>> {
+    pub async fn run(&mut self) -> Result<(), NodeError> {
         println!("Starting node");
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
@@ -99,11 +109,7 @@ impl Node {
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
             }
-            if let Some(block_request) = self
-                .pop_block_queue()
-                .await
-                .map_err(|_| MainThreadError::PoisonedGuard)?
-            {
+            if let Some(block_request) = self.pop_block_queue().await {
                 println!("Sending block request to a random peer");
                 node_map.send_random(block_request).await;
             }
@@ -126,6 +132,7 @@ impl Node {
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
                         Ok(response) => {
                             if let Some(response) = response {
+                                let _ = self.client_sender.send(NodeMessage::Headers).await;
                                 node_map.send_message(peer_thread.nonce, response).await;
                             }
                         }
@@ -177,17 +184,11 @@ impl Node {
         }
     }
 
-    async fn advance_state(&mut self) -> Result<(), MainThreadError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn advance_state(&mut self) -> Result<(), NodeError> {
+        let mut state = self.state.lock().await;
         match *state {
             NodeState::Behind => {
-                let mut header_guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let mut header_guard = self.header_chain.lock().await;
                 if header_guard.is_synced() {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
@@ -197,10 +198,7 @@ impl Node {
                 Ok(())
             }
             NodeState::HeadersSynced => {
-                let header_guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let header_guard = self.header_chain.lock().await;
                 if header_guard.is_cf_headers_synced() {
                     println!("CF Headers synced. Downloading block filters.");
                     *state = NodeState::FilterHeadersSynced;
@@ -208,28 +206,30 @@ impl Node {
                 Ok(())
             }
             NodeState::FilterHeadersSynced => {
-                let header_guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let header_guard = self.header_chain.lock().await;
                 if header_guard.is_filters_synced() {
                     println!("Filters synced. Checking blocks for new inclusions.");
                     *state = NodeState::FiltersSynced;
                 }
                 Ok(())
             }
-            NodeState::FiltersSynced => Ok(()),
+            NodeState::FiltersSynced => {
+                let header_guard = self.header_chain.lock().await;
+                if header_guard.block_queue_empty() {
+                    *state = NodeState::TransactionsSynced;
+                    let _ = self.client_sender.send(NodeMessage::Synced).await;
+                }
+                Ok(())
+            }
+            NodeState::TransactionsSynced => Ok(()),
         }
     }
 
     async fn handle_version(
         &mut self,
         version_message: RemoteVersion,
-    ) -> Result<MainThreadMessage, MainThreadError> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    ) -> Result<MainThreadMessage, NodeError> {
+        let state = self.state.lock().await;
         match *state {
             NodeState::Behind => (),
             _ => {
@@ -244,10 +244,7 @@ impl Node {
             }
         }
         // even if we start the node as caught up in terms of height, we need to check for reorgs
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let mut guard = self.header_chain.lock().await;
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
             self.best_known_height = peer_height;
@@ -261,11 +258,8 @@ impl Node {
         Ok(response)
     }
 
-    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) -> Result<(), MainThreadError> {
-        let mut guard = self
-            .peer_db
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) -> Result<(), NodeError> {
+        let mut guard = self.peer_db.lock().await;
         if let Err(e) = guard.add_cpf_peers(new_peers).await {
             println!(
                 "Encountered error adding peer to persistence: {}",
@@ -278,11 +272,8 @@ impl Node {
     async fn handle_headers(
         &mut self,
         headers: Vec<Header>,
-    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    ) -> Result<Option<MainThreadMessage>, NodeError> {
+        let mut guard = self.header_chain.lock().await;
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
@@ -323,11 +314,8 @@ impl Node {
         &mut self,
         peer_id: u32,
         cf_headers: CFHeaders,
-    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    ) -> Result<Option<MainThreadMessage>, NodeError> {
+        let mut guard = self.header_chain.lock().await;
         match guard.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Ok(Some(MainThreadMessage::GetFilterHeaders(message))),
@@ -352,11 +340,8 @@ impl Node {
         &mut self,
         _peer_id: u32,
         filter: CFilter,
-    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    ) -> Result<Option<MainThreadMessage>, NodeError> {
+        let mut guard = self.header_chain.lock().await;
         match guard.sync_filter(filter).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Ok(Some(MainThreadMessage::GetFilters(message))),
@@ -369,18 +354,9 @@ impl Node {
         }
     }
 
-    async fn handle_block(
-        &mut self,
-        block: Block,
-    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let state = *self
-            .state
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn handle_block(&mut self, block: Block) -> Result<Option<MainThreadMessage>, NodeError> {
+        let state = *self.state.lock().await;
+        let mut guard = self.header_chain.lock().await;
         match state {
             NodeState::Behind => Ok(Some(MainThreadMessage::Disconnect)),
             NodeState::HeadersSynced => {
@@ -392,40 +368,30 @@ impl Node {
                 let _ = guard.scan_block(&block).await;
                 Ok(None)
             }
+            NodeState::TransactionsSynced => Ok(None),
         }
     }
 
-    async fn pop_block_queue(&mut self) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let mut guard = self
-            .header_chain
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
+        let mut guard = self.header_chain.lock().await;
         let next_block_hash = guard.next_block();
         match next_block_hash {
             Some(block_hash) => {
                 println!("Next block in queue: {}", block_hash.to_string());
-                Ok(Some(MainThreadMessage::GetBlock(GetBlockConfig {
+                Some(MainThreadMessage::GetBlock(GetBlockConfig {
                     locator: block_hash,
-                })))
+                }))
             }
-            None => Ok(None),
+            None => None,
         }
     }
 
-    async fn handle_inventory_blocks(
-        &mut self,
-    ) -> Result<Option<MainThreadMessage>, MainThreadError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn handle_inventory_blocks(&mut self) -> Result<Option<MainThreadMessage>, NodeError> {
+        let mut state = self.state.lock().await;
         match *state {
             NodeState::Behind => return Ok(None),
             _ => {
-                let guard = self
-                    .header_chain
-                    .lock()
-                    .map_err(|_| MainThreadError::PoisonedGuard)?;
+                let guard = self.header_chain.lock().await;
                 *state = NodeState::Behind;
                 let next_headers = GetHeaderConfig {
                     locators: guard.locators(),
@@ -436,11 +402,8 @@ impl Node {
         }
     }
 
-    async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
-        let state = *self
-            .state
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
+        let state = *self.state.lock().await;
         match state {
             NodeState::Behind => self.any_peer().await,
             _ => match self.cpf_peer().await {
@@ -454,21 +417,18 @@ impl Node {
         // self.any_peer().await
     }
 
-    async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, MainThreadError> {
-        let mut guard = self
-            .peer_db
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+    async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, NodeError> {
+        let mut guard = self.peer_db.lock().await;
         if let Some(peer) = guard.get_random_cpf_peer().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
-            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
+            NodeError::LoadError(PersistenceError::PeerLoadFailure)
         })? {
             return Ok(Some((peer.0, Some(peer.1))));
         }
         Ok(None)
     }
 
-    async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), MainThreadError> {
+    async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
         // empty the whitelist if there is one
         if let Some(whitelist) = &mut self.white_list {
             match whitelist.pop() {
@@ -481,14 +441,11 @@ impl Node {
                 None => (),
             }
         }
-        let mut guard = self
-            .peer_db
-            .lock()
-            .map_err(|_| MainThreadError::PoisonedGuard)?;
+        let mut guard = self.peer_db.lock().await;
         // try to get any new peer
         let next_peer = guard.get_random_new().await.map_err(|e| {
             println!("Persistence failure: {}", e.to_string());
-            MainThreadError::LoadError(PersistenceError::PeerLoadFailure)
+            NodeError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
         match next_peer {
             // we found some peer to use but may not be reachable
@@ -503,8 +460,8 @@ impl Node {
             None => {
                 let mut new_peers = Dns::bootstrap(self.network)
                     .await
-                    .map_err(|_| MainThreadError::DnsFailure)?;
-                let mut rng = thread_rng();
+                    .map_err(|_| NodeError::DnsFailure)?;
+                let mut rng = StdRng::from_entropy();
                 new_peers.shuffle(&mut rng);
                 // DNS fails if there is an insufficient number of peers
                 let ret_ip = new_peers[0];
@@ -523,9 +480,7 @@ impl Node {
 }
 
 #[derive(Error, Debug)]
-pub enum MainThreadError {
-    #[error("the lock acquired on the mutex may have left data in an indeterminant state")]
-    PoisonedGuard,
+pub enum NodeError {
     #[error("persistence failed")]
     LoadError(PersistenceError),
     #[error("dns bootstrap failed")]
