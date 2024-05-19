@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -30,7 +32,11 @@ pub(crate) struct SqliteHeaderDb {
 }
 
 impl SqliteHeaderDb {
-    pub fn new(network: Network, last_checkpoint: HeaderCheckpoint) -> Result<Self> {
+    pub fn new(
+        network: Network,
+        last_checkpoint: HeaderCheckpoint,
+        path: Option<PathBuf>,
+    ) -> Result<Self> {
         let genesis = match network {
             Network::Bitcoin => panic!("unimplemented"),
             Network::Testnet => genesis_block(Params::new(network)).header,
@@ -38,7 +44,16 @@ impl SqliteHeaderDb {
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
         };
-        let conn = Connection::open("./data/headers.db")?;
+        let path = path.unwrap_or_else(|| {
+            let mut default_path = PathBuf::from(".");
+            default_path.push("data");
+            default_path.push(network.to_string());
+            default_path
+        });
+        if !path.exists() {
+            fs::create_dir_all(&path).unwrap();
+        }
+        let conn = Connection::open(path.join("headers.db"))?;
         conn.execute(SCHEMA, [])?;
         Ok(Self {
             genesis_header: genesis,

@@ -70,7 +70,7 @@ impl Node {
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let in_memory_cache = MemoryTransactionCache::new();
-        let loaded_chain = HeaderChain::new(&network, scripts, in_memory_cache)
+        let loaded_chain = HeaderChain::new(&network, scripts, None, in_memory_cache)
             .await
             .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;

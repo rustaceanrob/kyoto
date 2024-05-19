@@ -2,6 +2,7 @@ extern crate alloc;
 use core::panic;
 use std::{
     collections::HashSet,
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -55,6 +56,7 @@ impl HeaderChain {
     pub(crate) async fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
+        path: Option<PathBuf>,
         tx_store: MemoryTransactionCache,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
@@ -67,7 +69,7 @@ impl HeaderChain {
         };
         let cf_header_chain = CFHeaderChain::new(None, 1);
         let filter_chain = FilterChain::new(None);
-        let mut db = SqliteHeaderDb::new(*network, checkpoints.last()).map_err(|e| {
+        let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), path).map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
         })?;
