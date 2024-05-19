@@ -11,7 +11,7 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter},
         Address, ServiceFlags,
     },
-    Block, BlockHash, Network,
+    Block, Network,
 };
 use rand::{prelude::SliceRandom, thread_rng};
 use thiserror::Error;
@@ -21,6 +21,7 @@ use crate::{
     chain::{chain::HeaderChain, error::HeaderSyncError},
     node::peer_map::PeerMap,
     peers::dns::Dns,
+    tx::memory::MemoryTransactionCache,
 };
 
 use super::channel_messages::{
@@ -46,7 +47,6 @@ pub struct Node {
     header_chain: Arc<Mutex<HeaderChain>>,
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
-    best_known_hash: Option<BlockHash>,
     required_peers: usize,
     white_list: Option<Vec<(IpAddr, u16)>>,
     network: Network,
@@ -66,18 +66,17 @@ impl Node {
         let peer_db = Arc::new(Mutex::new(peer_db));
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
-        let loaded_chain = HeaderChain::new(&network, scripts)
+        let in_memory_cache = MemoryTransactionCache::new();
+        let loaded_chain = HeaderChain::new(&network, scripts, in_memory_cache)
             .map_err(|_| MainThreadError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
         println!("Headers loaded from storage: {}", best_known_height);
         let header_chain = Arc::new(Mutex::new(loaded_chain));
-        let best_known_hash = None;
         Ok(Self {
             state,
             header_chain,
             peer_db,
             best_known_height,
-            best_known_hash,
             required_peers: 1,
             white_list,
             network,

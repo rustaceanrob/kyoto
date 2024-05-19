@@ -29,11 +29,13 @@ use crate::{
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     prelude::MEDIAN_TIME_PAST,
+    tx::{memory::MemoryTransactionCache, store::TransactionStore},
 };
 
 const NUM_LOCATORS: usize = 25;
 
 type Headers = Vec<Header>;
+
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
     headers: Headers,
@@ -45,12 +47,14 @@ pub(crate) struct HeaderChain {
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
     block_queue: Vec<BlockHash>,
+    tx_store: MemoryTransactionCache,
 }
 
 impl HeaderChain {
     pub(crate) fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
+        tx_store: MemoryTransactionCache,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
@@ -114,6 +118,7 @@ impl HeaderChain {
             best_known_height: None,
             scripts,
             block_queue: Vec::new(),
+            tx_store,
         })
     }
 
@@ -588,12 +593,17 @@ impl HeaderChain {
 
     // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
-        block.txdata.iter().for_each(|tx| {
+        let height_of_block = self.height_of_hash(block.block_hash()).await;
+        for tx in &block.txdata {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
                 // push tx to db
+                self.tx_store
+                    .add_transaction(&ScriptBuf::new(), &tx, height_of_block, &block.block_hash())
+                    .await
+                    .unwrap();
                 println!("Found transaction: {}", tx.compute_txid().to_string());
             }
-        });
+        }
         Ok(())
     }
 

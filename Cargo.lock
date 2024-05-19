@@ -391,6 +391,7 @@ dependencies = [
 name = "light-client"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bitcoin",
  "bitcoin_hashes",
  "hex",
