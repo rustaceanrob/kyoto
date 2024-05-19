@@ -62,7 +62,7 @@ impl Node {
         addresses: Vec<bitcoin::Address>,
     ) -> Result<(Self, Client), NodeError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
-        let peer_db = SqlitePeerDb::new(network).map_err(|e| {
+        let peer_db = SqlitePeerDb::new(network, None).map_err(|e| {
             eprintln!("Persistence failure: {}", e.to_string());
             NodeError::LoadError(PersistenceError::PeerLoadFailure)
         })?;
@@ -127,7 +127,6 @@ impl Node {
                     PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
                         Some(response) => {
-                            let _ = self.client_sender.send(NodeMessage::Headers).await;
                             node_map.send_message(peer_thread.nonce, response).await;
                         }
                         None => continue,
@@ -169,6 +168,10 @@ impl Node {
                 self.advance_state().await;
             }
         }
+    }
+
+    async fn send_dialog(&self, message: String) {
+        let _ = self.client_sender.send(NodeMessage::Dialog(message)).await;
     }
 
     async fn advance_state(&mut self) {

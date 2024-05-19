@@ -2,7 +2,9 @@ use bitcoin::p2p::Address;
 use bitcoin::Network;
 use rusqlite::params;
 use rusqlite::{Connection, Result};
+use std::fs;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -40,7 +42,7 @@ pub(crate) struct SqlitePeerDb {
 }
 
 impl SqlitePeerDb {
-    pub fn new(network: Network) -> Result<Self> {
+    pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self> {
         let default_port = match network {
             Network::Bitcoin => 8333,
             Network::Testnet => 18333,
@@ -48,11 +50,20 @@ impl SqlitePeerDb {
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
         };
-        let conn_new = Connection::open("./data/peers_new.db")?;
-        let conn_tried = Connection::open("./data/peers_tried.db")?;
-        let conn_evict = Connection::open("./data/peers_evict.db")?;
-        let conn_cpf = Connection::open("./data/peers_cpf.db")?;
-        let conn_ban = Connection::open("./data/peers_ban.db")?;
+        let path = path.unwrap_or_else(|| {
+            let mut default_path = PathBuf::from(".");
+            default_path.push("data");
+            default_path.push(network.to_string());
+            default_path
+        });
+        if !path.exists() {
+            fs::create_dir_all(&path).unwrap();
+        }
+        let conn_new = Connection::open(path.join("peers_new.db"))?;
+        let conn_tried = Connection::open(path.join("peers_tried.db"))?;
+        let conn_evict = Connection::open(path.join("peers_evict.db"))?;
+        let conn_cpf = Connection::open(path.join("peers_cpf.db"))?;
+        let conn_ban = Connection::open(path.join("peers_ban.db"))?;
         conn_new.execute(NEW_SCHEMA, [])?;
         conn_evict.execute(NEW_SCHEMA, [])?;
         conn_tried.execute(TRIED_SCHEMA, [])?;

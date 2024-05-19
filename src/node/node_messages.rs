@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub(crate) enum NodeMessage {
-    Headers,
+    Dialog(String),
     Synced,
 }
 
