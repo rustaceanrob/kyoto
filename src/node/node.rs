@@ -1,4 +1,4 @@
-use std::{collections::HashSet, net::IpAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use bitcoin::{
     block::Header,
@@ -14,7 +14,7 @@ use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Mutex;
 
 use crate::{
-    chain::{chain::HeaderChain, error::HeaderSyncError},
+    chain::{chain::Chain, error::HeaderSyncError},
     node::peer_map::PeerMap,
     peers::dns::Dns,
     tx::memory::MemoryTransactionCache,
@@ -26,6 +26,7 @@ use super::{
         RemoteVersion,
     },
     client::Client,
+    config::NodeConfig,
     node_messages::NodeMessage,
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
@@ -46,7 +47,7 @@ pub enum NodeState {
 
 pub struct Node {
     state: Arc<Mutex<NodeState>>,
-    header_chain: Arc<Mutex<HeaderChain>>,
+    header_chain: Arc<Mutex<Chain>>,
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
     required_peers: usize,
@@ -56,10 +57,12 @@ pub struct Node {
 }
 
 impl Node {
-    pub async fn new(
+    pub(crate) async fn new(
         network: Network,
         white_list: Option<Vec<(IpAddr, u16)>>,
         addresses: Vec<bitcoin::Address>,
+        data_path: Option<PathBuf>,
+        _required_peers: usize,
     ) -> Result<(Self, Client), NodeError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network, None).map_err(|e| {
@@ -70,7 +73,7 @@ impl Node {
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let in_memory_cache = MemoryTransactionCache::new();
-        let loaded_chain = HeaderChain::new(&network, scripts, None, in_memory_cache)
+        let loaded_chain = Chain::new(&network, scripts, data_path, in_memory_cache)
             .await
             .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
@@ -92,6 +95,21 @@ impl Node {
             client,
         ))
     }
+
+    pub(crate) async fn new_from_config(
+        config: &NodeConfig,
+        network: Network,
+    ) -> Result<(Self, Client), NodeError> {
+        Node::new(
+            network,
+            config.white_list.clone(),
+            config.addresses.clone(),
+            config.data_path.clone(),
+            config.required_peers as usize,
+        )
+        .await
+    }
+
     pub async fn run(&mut self) -> Result<(), NodeError> {
         println!("Starting node");
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
@@ -99,8 +117,8 @@ impl Node {
         loop {
             self.advance_state().await;
             node_map.clean().await;
-            // rehydrate on peers when lower than a threshold
-            if node_map.live() < 1 {
+            // Rehydrate on peers when lower than a threshold
+            if node_map.live() < self.next_required_peers().await {
                 println!(
                     "Required peers: {}, connected peers: {}",
                     1,
@@ -214,6 +232,14 @@ impl Node {
         }
     }
 
+    async fn next_required_peers(&self) -> usize {
+        let state = self.state.lock().await;
+        match *state {
+            NodeState::Behind => 1,
+            _ => self.required_peers,
+        }
+    }
+
     async fn handle_version(&mut self, version_message: RemoteVersion) -> MainThreadMessage {
         let state = self.state.lock().await;
         match *state {
@@ -247,7 +273,7 @@ impl Node {
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
         let mut guard = self.peer_db.lock().await;
         if let Err(e) = guard.add_cpf_peers(new_peers).await {
-            println!(
+            eprintln!(
                 "Encountered error adding peer to persistence: {}",
                 e.to_string()
             );
@@ -382,6 +408,9 @@ impl Node {
         }
     }
 
+    // First we seach the whitelist for peers that we trust. Then, depending on the state
+    // we either need to catch up on block headers or we may start requesting filters and blocks.
+    // When requesting filters, we try to select peers that have signaled for CPF support.
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
         let state = *self.state.lock().await;
         match state {

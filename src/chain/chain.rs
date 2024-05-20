@@ -39,7 +39,7 @@ const NUM_LOCATORS: usize = 25;
 type Headers = Vec<Header>;
 
 #[derive(Debug)]
-pub(crate) struct HeaderChain {
+pub(crate) struct Chain {
     headers: Headers,
     checkpoints: HeaderCheckpoints,
     params: Params,
@@ -52,11 +52,11 @@ pub(crate) struct HeaderChain {
     tx_store: MemoryTransactionCache,
 }
 
-impl HeaderChain {
+impl Chain {
     pub(crate) async fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
-        path: Option<PathBuf>,
+        db_path: Option<PathBuf>,
         tx_store: MemoryTransactionCache,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
@@ -69,7 +69,7 @@ impl HeaderChain {
         };
         let cf_header_chain = CFHeaderChain::new(None, 1);
         let filter_chain = FilterChain::new(None);
-        let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), path).map_err(|e| {
+        let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), db_path).map_err(|e| {
             println!("{}", e.to_string());
             HeaderPersistenceError::SQLite
         })?;
@@ -111,7 +111,7 @@ impl HeaderChain {
             }
             loaded_headers
         };
-        Ok(HeaderChain {
+        Ok(Chain {
             headers,
             checkpoints,
             params,

@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, path::PathBuf};
 
 use bitcoin::Network;
 
@@ -27,13 +27,19 @@ impl NodeBuilder {
         self
     }
 
+    pub fn add_data_dir(mut self, path: PathBuf) -> Self {
+        self.config.data_path = Some(path);
+        self
+    }
+
+    pub fn num_required_peers(mut self, num_peers: u8) -> Self {
+        self.config.required_peers = num_peers;
+        self
+    }
+
     pub async fn build_node(&self) -> (Node, Client) {
-        Node::new(
-            self.network,
-            self.config.white_list.clone(),
-            self.config.addresses.clone(),
-        )
-        .await
-        .unwrap()
+        Node::new_from_config(&self.config, self.network)
+            .await
+            .unwrap()
     }
 }

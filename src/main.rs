@@ -21,6 +21,7 @@ async fn main() {
         addresses.push(address_2.clone())
     }
     let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
+
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     let (mut node, mut client) = builder
         .add_peers(vec![(pref_peer, 38333)])
