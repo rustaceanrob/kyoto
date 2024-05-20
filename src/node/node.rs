@@ -47,7 +47,7 @@ pub enum NodeState {
 
 pub struct Node {
     state: Arc<Mutex<NodeState>>,
-    header_chain: Arc<Mutex<Chain>>,
+    chain: Arc<Mutex<Chain>>,
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
     required_peers: usize,
@@ -78,13 +78,13 @@ impl Node {
             .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
         println!("Headers loaded from storage: {}", best_known_height);
-        let header_chain = Arc::new(Mutex::new(loaded_chain));
+        let chain = Arc::new(Mutex::new(loaded_chain));
         let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
         let client = Client::new(nrx);
         Ok((
             Self {
                 state,
-                header_chain,
+                chain,
                 peer_db,
                 best_known_height,
                 required_peers: 1,
@@ -196,7 +196,7 @@ impl Node {
         let mut state = self.state.lock().await;
         match *state {
             NodeState::Behind => {
-                let mut header_guard = self.header_chain.lock().await;
+                let mut header_guard = self.chain.lock().await;
                 if header_guard.is_synced() {
                     println!("Headers synced. Auditing our chain with peers");
                     header_guard.flush_to_disk().await;
@@ -205,7 +205,7 @@ impl Node {
                 return;
             }
             NodeState::HeadersSynced => {
-                let header_guard = self.header_chain.lock().await;
+                let header_guard = self.chain.lock().await;
                 if header_guard.is_cf_headers_synced() {
                     println!("CF Headers synced. Downloading block filters.");
                     *state = NodeState::FilterHeadersSynced;
@@ -213,7 +213,7 @@ impl Node {
                 return;
             }
             NodeState::FilterHeadersSynced => {
-                let header_guard = self.header_chain.lock().await;
+                let header_guard = self.chain.lock().await;
                 if header_guard.is_filters_synced() {
                     println!("Filters synced. Checking blocks for new inclusions.");
                     *state = NodeState::FiltersSynced;
@@ -221,7 +221,7 @@ impl Node {
                 return;
             }
             NodeState::FiltersSynced => {
-                let header_guard = self.header_chain.lock().await;
+                let header_guard = self.chain.lock().await;
                 if header_guard.block_queue_empty() {
                     *state = NodeState::TransactionsSynced;
                     let _ = self.client_sender.send(NodeMessage::Synced).await;
@@ -256,7 +256,7 @@ impl Node {
             }
         }
         // even if we start the node as caught up in terms of height, we need to check for reorgs
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
             self.best_known_height = peer_height;
@@ -281,7 +281,7 @@ impl Node {
     }
 
     async fn handle_headers(&mut self, headers: Vec<Header>) -> Option<MainThreadMessage> {
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         if let Err(e) = guard.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
@@ -323,7 +323,7 @@ impl Node {
         peer_id: u32,
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         match guard.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Some(MainThreadMessage::GetFilterHeaders(message)),
@@ -345,7 +345,7 @@ impl Node {
     }
 
     async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         match guard.sync_filter(filter).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Some(MainThreadMessage::GetFilters(message)),
@@ -360,7 +360,7 @@ impl Node {
 
     async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
         let state = *self.state.lock().await;
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         match state {
             NodeState::Behind => Some(MainThreadMessage::Disconnect),
             NodeState::HeadersSynced => {
@@ -379,7 +379,7 @@ impl Node {
     }
 
     async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
-        let mut guard = self.header_chain.lock().await;
+        let mut guard = self.chain.lock().await;
         let next_block_hash = guard.next_block();
         match next_block_hash {
             Some(block_hash) => {
@@ -397,7 +397,7 @@ impl Node {
         match *state {
             NodeState::Behind => return None,
             _ => {
-                let guard = self.header_chain.lock().await;
+                let guard = self.chain.lock().await;
                 *state = NodeState::Behind;
                 let next_headers = GetHeaderConfig {
                     locators: guard.locators(),
