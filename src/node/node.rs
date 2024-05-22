@@ -14,7 +14,7 @@ use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Mutex;
 
 use crate::{
-    chain::{chain::Chain, error::HeaderSyncError},
+    chain::{chain::Chain, checkpoints::HeaderCheckpoint, error::HeaderSyncError},
     node::peer_map::PeerMap,
     peers::dns::Dns,
     tx::memory::MemoryTransactionCache,
@@ -62,6 +62,7 @@ impl Node {
         white_list: Option<Vec<(IpAddr, u16)>>,
         addresses: Vec<bitcoin::Address>,
         data_path: Option<PathBuf>,
+        header_checkpoint: Option<HeaderCheckpoint>,
         _required_peers: usize,
     ) -> Result<(Self, Client), NodeError> {
         let state = Arc::new(Mutex::new(NodeState::Behind));
@@ -73,11 +74,17 @@ impl Node {
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let in_memory_cache = MemoryTransactionCache::new();
-        let loaded_chain = Chain::new(&network, scripts, data_path, in_memory_cache)
-            .await
-            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
+        let loaded_chain = Chain::new(
+            &network,
+            scripts,
+            data_path,
+            in_memory_cache,
+            header_checkpoint,
+        )
+        .await
+        .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
-        println!("Headers loaded from storage: {}", best_known_height);
+        println!("Starting sync from height: {}", best_known_height);
         let chain = Arc::new(Mutex::new(loaded_chain));
         let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
         let client = Client::new(nrx);
@@ -105,6 +112,7 @@ impl Node {
             config.white_list.clone(),
             config.addresses.clone(),
             config.data_path.clone(),
+            config.header_checkpoint,
             config.required_peers as usize,
         )
         .await
@@ -255,7 +263,7 @@ impl Node {
                 }
             }
         }
-        // even if we start the node as caught up in terms of height, we need to check for reorgs
+        // Even if we start the node as caught up in terms of height, we need to check for reorgs
         let mut guard = self.chain.lock().await;
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
@@ -295,7 +303,7 @@ impl Node {
                     return None;
                 }
                 _ => {
-                    eprintln!("{}", e.to_string());
+                    println!("{}", e.to_string());
                     return Some(MainThreadMessage::Disconnect);
                 }
             }

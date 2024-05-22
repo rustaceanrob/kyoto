@@ -1,20 +1,22 @@
 use bitcoin::BlockHash;
 
+use crate::chain::checkpoints::HeaderCheckpoint;
+
 use super::filter::Filter;
 
 type Filters = Vec<Filter>;
 
 #[derive(Debug)]
 pub(crate) struct FilterChain {
-    anchor_height: usize,
+    anchor_checkpoint: HeaderCheckpoint,
     chain: Filters,
     prev_stophash_request: Option<BlockHash>,
 }
 
 impl FilterChain {
-    pub(crate) fn new(anchor_height: Option<usize>) -> Self {
+    pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint) -> Self {
         Self {
-            anchor_height: anchor_height.unwrap_or(190_000),
+            anchor_checkpoint,
             chain: vec![],
             prev_stophash_request: None,
         }
@@ -26,7 +28,7 @@ impl FilterChain {
         }
     }
     pub(crate) fn height(&self) -> usize {
-        self.anchor_height + self.chain.len()
+        self.anchor_checkpoint.height + self.chain.len()
     }
 
     pub(crate) fn set_last_stop_hash(&mut self, stop_hash: BlockHash) {
@@ -37,12 +39,21 @@ impl FilterChain {
         &self.prev_stophash_request
     }
 
+    fn adjusted_height(&self, height: usize) -> Option<usize> {
+        height.checked_sub(self.anchor_checkpoint.height + 1)
+    }
+
     pub(crate) fn filter_at_height(&self, height: usize) -> Option<Filter> {
-        let adjusted_height = height - self.anchor_height;
-        if let Some(filter) = self.chain.get(adjusted_height) {
-            Some(filter.clone())
-        } else {
-            None
+        let adjusted_height = self.adjusted_height(height);
+        match adjusted_height {
+            Some(height) => {
+                if let Some(filter) = self.chain.get(height) {
+                    Some(filter.clone())
+                } else {
+                    None
+                }
+            }
+            None => None,
         }
     }
 }

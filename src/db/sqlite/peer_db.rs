@@ -50,12 +50,9 @@ impl SqlitePeerDb {
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
         };
-        let path = path.unwrap_or_else(|| {
-            let mut default_path = PathBuf::from(".");
-            default_path.push("data");
-            default_path.push(network.to_string());
-            default_path
-        });
+        let mut path = path.unwrap_or_else(|| PathBuf::from("."));
+        path.push("data");
+        path.push(network.to_string());
         if !path.exists() {
             fs::create_dir_all(&path).unwrap();
         }

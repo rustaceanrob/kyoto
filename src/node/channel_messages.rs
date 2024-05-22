@@ -35,7 +35,6 @@ pub(crate) struct PeerThreadMessage {
 }
 
 #[derive(Debug)]
-
 pub(crate) enum PeerMessage {
     Version(RemoteVersion),
     Addr(Vec<Address>),

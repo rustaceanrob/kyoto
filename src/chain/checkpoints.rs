@@ -9,6 +9,10 @@ pub const TESTNET_HEADER_CP: &[(usize, &str)] = &[(
 
 pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
     (
+        0,
+        "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+    ),
+    (
         10000,
         "000000ade699ac51fe9f23005115eccafe986e9d0c97f87403579698d31f1692",
     ),
@@ -88,7 +92,7 @@ pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
 
 #[derive(Debug, Clone, Copy)]
 
-pub(crate) struct HeaderCheckpoint {
+pub struct HeaderCheckpoint {
     pub height: usize,
     pub hash: BlockHash,
 }
@@ -139,5 +143,21 @@ impl HeaderCheckpoints {
 
     pub fn last(&self) -> HeaderCheckpoint {
         self.last
+    }
+
+    pub fn prune_up_to(&mut self, checkpoint: HeaderCheckpoint) {
+        while let Some(header_checkpoint) = self.next() {
+            if header_checkpoint.height.le(&checkpoint.height) {
+                self.advance()
+            } else {
+                return;
+            }
+        }
+    }
+
+    pub fn skip_all(&mut self) {
+        while !self.is_exhausted() {
+            self.advance()
+        }
     }
 }

@@ -2,6 +2,8 @@ use std::{net::IpAddr, path::PathBuf};
 
 use bitcoin::Network;
 
+use crate::chain::checkpoints::HeaderCheckpoint;
+
 use super::{client::Client, config::NodeConfig, node::Node};
 
 pub struct NodeBuilder {
@@ -34,6 +36,11 @@ impl NodeBuilder {
 
     pub fn num_required_peers(mut self, num_peers: u8) -> Self {
         self.config.required_peers = num_peers;
+        self
+    }
+
+    pub fn from_checkpoint(mut self, checkpoint: HeaderCheckpoint) -> Self {
+        self.config.header_checkpoint = Some(checkpoint);
         self
     }
 

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use bitcoin::{BlockHash, FilterHash, FilterHeader};
 
+use crate::chain::checkpoints::HeaderCheckpoint;
+
 use super::{cfheader_batch::CFHeaderBatch, error::CFHeaderSyncError};
 
 type InternalChain = Vec<(FilterHeader, FilterHash)>;
@@ -18,7 +20,7 @@ pub(crate) enum AppendAttempt {
 
 #[derive(Debug)]
 pub(crate) struct CFHeaderChain {
-    anchor_height: usize,
+    anchor_checkpoint: HeaderCheckpoint,
     header_chain: InternalChain,
     merged_queue: HashMap<u32, InternalChain>,
     prev_stophash_request: Option<BlockHash>,
@@ -26,9 +28,9 @@ pub(crate) struct CFHeaderChain {
 }
 
 impl CFHeaderChain {
-    pub(crate) fn new(anchor_height: Option<usize>, quorum_required: usize) -> Self {
+    pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint, quorum_required: usize) -> Self {
         Self {
-            anchor_height: anchor_height.unwrap_or(190_000),
+            anchor_checkpoint,
             header_chain: vec![],
             merged_queue: HashMap::new(),
             prev_stophash_request: None,
@@ -77,9 +79,11 @@ impl CFHeaderChain {
                     if header.ne(&comparitor.0) {
                         println!(
                             "Found a conflict with CF headers at height: {}",
-                            self.anchor_height + index
+                            self.anchor_checkpoint.height + index
                         );
-                        return Ok(AppendAttempt::Conflict(self.anchor_height + index));
+                        return Ok(AppendAttempt::Conflict(
+                            self.anchor_checkpoint.height + index,
+                        ));
                     }
                 }
             }
@@ -90,13 +94,13 @@ impl CFHeaderChain {
         self.merged_queue.clear();
         println!(
             "Extended the chain of compact filter headers, synced up to height: {}",
-            self.header_height()
+            self.height()
         );
         Ok(AppendAttempt::Extended)
     }
 
-    pub(crate) fn header_height(&self) -> usize {
-        self.anchor_height + self.header_chain.len()
+    pub(crate) fn height(&self) -> usize {
+        self.anchor_checkpoint.height + self.header_chain.len()
     }
 
     pub(crate) fn prev_header(&self) -> Option<FilterHeader> {
@@ -115,12 +119,21 @@ impl CFHeaderChain {
         &self.prev_stophash_request
     }
 
+    fn adjusted_height(&self, height: usize) -> Option<usize> {
+        height.checked_sub(self.anchor_checkpoint.height + 1)
+    }
+
     pub(crate) fn filter_hash_at_height(&self, height: usize) -> Option<FilterHash> {
-        let adjusted_height = height - self.anchor_height;
-        if let Some((_, hash)) = self.header_chain.get(adjusted_height) {
-            Some(*hash)
-        } else {
-            None
+        let adjusted_height = self.adjusted_height(height);
+        match adjusted_height {
+            Some(height) => {
+                if let Some((_, hash)) = self.header_chain.get(height) {
+                    Some(*hash)
+                } else {
+                    None
+                }
+            }
+            None => None,
         }
     }
 }

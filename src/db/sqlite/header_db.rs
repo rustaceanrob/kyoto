@@ -28,6 +28,8 @@ pub(crate) struct SqliteHeaderDb {
     genesis_header: Header,
     network: Network,
     conn: Arc<Mutex<Connection>>,
+    anchor_height: u64,
+    anchor_hash: BlockHash,
     last_checkpoint: HeaderCheckpoint,
 }
 
@@ -35,6 +37,7 @@ impl SqliteHeaderDb {
     pub fn new(
         network: Network,
         last_checkpoint: HeaderCheckpoint,
+        anchor_checkpoint: HeaderCheckpoint,
         path: Option<PathBuf>,
     ) -> Result<Self> {
         let genesis = match network {
@@ -44,12 +47,9 @@ impl SqliteHeaderDb {
             Network::Regtest => panic!("unimplemented"),
             _ => unreachable!(),
         };
-        let path = path.unwrap_or_else(|| {
-            let mut default_path = PathBuf::from(".");
-            default_path.push("data");
-            default_path.push(network.to_string());
-            default_path
-        });
+        let mut path = path.unwrap_or_else(|| PathBuf::from("."));
+        path.push("kyoto");
+        path.push(network.to_string());
         if !path.exists() {
             fs::create_dir_all(&path).unwrap();
         }
@@ -59,6 +59,8 @@ impl SqliteHeaderDb {
             genesis_header: genesis,
             network,
             conn: Arc::new(Mutex::new(conn)),
+            anchor_height: anchor_checkpoint.height as u64,
+            anchor_hash: anchor_checkpoint.hash,
             last_checkpoint,
         })
     }
@@ -66,7 +68,7 @@ impl SqliteHeaderDb {
     // load all the known headers from storage
     pub async fn load(&mut self) -> Result<Vec<Header>> {
         println!("Loading headers from storage");
-        let mut headers: Vec<Header> = Vec::with_capacity(200_000);
+        let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height);
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
         let mut query = write_lock.prepare(&stmt)?;
@@ -89,28 +91,27 @@ impl SqliteHeaderDb {
                 bits: CompactTarget::from_consensus(bits),
                 nonce,
             };
-
             assert_eq!(
                 BlockHash::from_str(&hash).unwrap(),
                 next_header.block_hash(),
                 "db corruption. incorrect header hash."
             );
-
-            if let Some(header) = headers.last() {
-                assert_eq!(
-                    header.block_hash(),
-                    next_header.prev_blockhash,
-                    "db corruption. headers do not link."
-                );
-                headers.push(next_header);
-            } else {
-                assert_eq!(
-                    next_header.block_hash(),
-                    self.genesis_header.block_hash(),
-                    "db corruption. genesis mismatch."
-                );
-                headers.push(next_header);
+            match headers.last() {
+                Some(header) => {
+                    assert_eq!(
+                        header.block_hash(),
+                        next_header.prev_blockhash,
+                        "db corruption. headers do not link."
+                    );
+                }
+                None => {
+                    assert_eq!(
+                        next_header.prev_blockhash, self.anchor_hash,
+                        "db corruption. headers do not link to anchor."
+                    );
+                }
             }
+            headers.push(next_header);
         }
         Ok(headers)
     }
@@ -119,9 +120,10 @@ impl SqliteHeaderDb {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction()?;
         let count: u64 = tx.query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))?;
-        let adjusted_count = count.checked_sub(1).unwrap_or(0);
+        let adjusted_count = count.checked_sub(1).unwrap_or(0) + self.anchor_height;
         for (height, header) in header_chain.iter().enumerate() {
-            if height.ge(&(adjusted_count as usize)) {
+            let adjusted_height = self.anchor_height + 1 + height as u64;
+            if adjusted_height.ge(&(adjusted_count)) {
                 let hash: String = header.block_hash().to_string();
                 let version: i32 = header.version.to_consensus();
                 let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
@@ -138,7 +140,7 @@ impl SqliteHeaderDb {
                 tx.execute(
                     &stmt,
                     params![
-                        height as u32,
+                        adjusted_height,
                         hash,
                         version,
                         prev_hash,

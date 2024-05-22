@@ -24,7 +24,7 @@ async fn main() {
 
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     let (mut node, mut client) = builder
-        .add_peers(vec![(pref_peer, 38333)])
+        // .add_peers(vec![(pref_peer, 38333)])
         .add_scripts(addresses)
         .build_node()
         .await;
