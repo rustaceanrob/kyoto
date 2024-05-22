@@ -171,13 +171,7 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::GetBlockTxn(_) => None,
         NetworkMessage::BlockTxn(_) => None,
         NetworkMessage::Alert(_) => None,
-        NetworkMessage::Reject(reject) => {
-            println!(
-                "Received Reject. Message: {}, Reason: {}",
-                reject.message, reject.reason
-            );
-            None
-        }
+        NetworkMessage::Reject(_) => None,
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {

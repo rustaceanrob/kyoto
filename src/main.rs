@@ -39,6 +39,5 @@ async fn main() {
         .build_node()
         .await;
     let _ = tokio::task::spawn(async move { node.run().await });
-    client.wait_until_synced().await;
-    println!("Done! Shutting down.");
+    client.print_log_stream().await;
 }

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use bitcoin::{BlockHash, ScriptBuf, Transaction};
+use bitcoin::{BlockHash, Transaction};
 
 use super::{error::TransactionStoreError, types::IndexedTransaction};
 
@@ -7,7 +7,6 @@ use super::{error::TransactionStoreError, types::IndexedTransaction};
 pub trait TransactionStore {
     async fn add_transaction(
         &mut self,
-        script: &ScriptBuf,
         transaction: &Transaction,
         height: Option<usize>,
         hash: &BlockHash,

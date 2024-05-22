@@ -55,10 +55,8 @@ impl CFHeaderChain {
     async fn try_merge(&mut self) -> Result<AppendAttempt, CFHeaderSyncError> {
         let staged_headers = self.merged_queue.values().count();
         if staged_headers.ge(&self.quorum_required) {
-            // println!("Trying to extend the filter header chain");
             self.append_or_conflict().await
         } else {
-            // println!("Added compact filter headers to the queue");
             Ok(AppendAttempt::AddedToQueue)
         }
     }
@@ -79,10 +77,6 @@ impl CFHeaderChain {
                 // Compare it to the other peer
                 if let Some(comparitor) = peer.get(index) {
                     if header.ne(&comparitor.0) {
-                        println!(
-                            "Found a conflict with CF headers at height: {}",
-                            self.anchor_checkpoint.height + index
-                        );
                         return Ok(AppendAttempt::Conflict(
                             self.anchor_checkpoint.height + index,
                         ));
@@ -94,10 +88,6 @@ impl CFHeaderChain {
         self.header_chain.extend_from_slice(&reference_peer);
         // Reset the merge queue
         self.merged_queue.clear();
-        println!(
-            "Extended the chain of compact filter headers, synced up to height: {}",
-            self.height()
-        );
         Ok(AppendAttempt::Extended)
     }
 

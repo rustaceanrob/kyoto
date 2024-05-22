@@ -1,10 +1,6 @@
 extern crate alloc;
 use core::panic;
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashSet, path::PathBuf};
 
 use bitcoin::{
     block::Header,
@@ -12,7 +8,7 @@ use bitcoin::{
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     Block, BlockHash, Network, ScriptBuf, TxIn, TxOut, Work,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc::Sender, RwLock};
 
 use super::{
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
@@ -30,6 +26,7 @@ use crate::{
         filter_chain::FilterChain,
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
+    node::node_messages::NodeMessage,
     prelude::MEDIAN_TIME_PAST,
     tx::{memory::MemoryTransactionCache, store::TransactionStore},
 };
@@ -46,6 +43,7 @@ pub(crate) struct Chain {
     scripts: HashSet<ScriptBuf>,
     block_queue: Vec<BlockHash>,
     tx_store: MemoryTransactionCache,
+    dialog: Sender<NodeMessage>,
 }
 
 impl Chain {
@@ -55,6 +53,7 @@ impl Chain {
         db_path: Option<PathBuf>,
         tx_store: MemoryTransactionCache,
         from_checkpoint: Option<HeaderCheckpoint>,
+        dialog: Sender<NodeMessage>,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
@@ -67,14 +66,11 @@ impl Chain {
         let checkpoint = from_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
         let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), checkpoint, db_path)
-            .map_err(|e| {
-                println!("{}", e.to_string());
-                HeaderPersistenceError::SQLite
-            })?;
-        let loaded_headers = db.load().await.map_err(|e| {
-            println!("{}", e.to_string());
-            HeaderPersistenceError::SQLite
-        })?;
+            .map_err(|_| HeaderPersistenceError::SQLite)?;
+        let loaded_headers = db
+            .load()
+            .await
+            .map_err(|_| HeaderPersistenceError::SQLite)?;
         if loaded_headers.len().gt(&0) {
             if loaded_headers
                 .first()
@@ -82,14 +78,18 @@ impl Chain {
                 .prev_blockhash
                 .ne(&checkpoint.hash)
             {
-                println!("Checkpoint anchor mismatch");
+                let _ = dialog
+                    .send(NodeMessage::Warning("Checkpoint anchor mismatch".into()))
+                    .await;
                 return Err(HeaderPersistenceError::GenesisMismatch);
             } else if loaded_headers
                 .iter()
                 .zip(loaded_headers.iter().skip(1))
                 .any(|(first, second)| first.block_hash().ne(&second.prev_blockhash))
             {
-                println!("Blockhash pointer mismatch");
+                let _ = dialog
+                    .send(NodeMessage::Warning("Blockhash pointer mismatch".into()))
+                    .await;
                 return Err(HeaderPersistenceError::HeadersDoNotLink);
             }
             // for (height, header) in loaded_headers.iter().enumerate() {
@@ -119,6 +119,7 @@ impl Chain {
             scripts,
             block_queue: Vec::new(),
             tx_store,
+            dialog,
         })
     }
 
@@ -178,8 +179,9 @@ impl Chain {
     }
 
     // Set the best known height to our peer
-    pub(crate) fn set_best_known_height(&mut self, height: u32) {
-        println!("Best known peer height: {}", height);
+    pub(crate) async fn set_best_known_height(&mut self, height: u32) {
+        self.send_dialog(format!("Best known peer height: {}", height))
+            .await;
         self.best_known_height = Some(height);
     }
 
@@ -214,7 +216,8 @@ impl Chain {
             .write(&self.header_chain.headers())
             .await
         {
-            println!("Error persisting to storage: {}", e);
+            self.send_warning(format!("Error persisting to storage: {}", e))
+                .await;
         }
     }
 
@@ -303,21 +306,21 @@ impl Chain {
                 .block_hash()
                 .eq(&checkpoint.hash)
             {
-                println!("Hit checkpoint, height: {}", checkpoint.height);
-                println!("Accumulated log base 2 chainwork: {}", self.log2_work());
-                println!("Writing progress to disk...");
+                self.send_dialog(format!("Hit checkpoint, height: {}", checkpoint.height))
+                    .await;
+                self.send_dialog(format!(
+                    "Accumulated log base 2 chainwork: {}",
+                    self.log2_work()
+                ))
+                .await;
+                self.send_dialog("Writing progress to disk...".into()).await;
                 self.checkpoints.advance();
                 self.flush_to_disk().await;
             } else {
-                println!("Expecting {}", checkpoint.hash);
-                println!(
-                    "Got {}",
-                    self.header_chain
-                        .header_at_height(checkpoint.height)
-                        .await
-                        .expect("height is greater than the base checkpoint")
-                        .block_hash()
-                );
+                self.send_warning(
+                    "Peer is sending us malicious headers, restarting header sync.".into(),
+                )
+                .await;
                 self.header_chain.clear_all();
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
@@ -332,8 +335,9 @@ impl Chain {
     // we only accept it if there is more work provided. otherwise, we disconnect the peer sending
     // us this fork
     async fn evaluate_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
+        self.send_warning("Evaluting a potential fork...".into())
+            .await;
         // We only care about the headers these two chains do not have in common
-        println!("Evaluting a potential fork...");
         let uncommon: Vec<Header> = header_batch
             .inner()
             .iter()
@@ -355,11 +359,14 @@ impl Chain {
         if let Some(stem) = stem_position {
             let current_chainwork = self.chainwork_after_height(stem);
             if current_chainwork.lt(&challenge_chainwork) {
-                println!("Valid reorganization found");
+                self.send_dialog("Valid reorganization found".into()).await;
                 self.header_chain.extend(&uncommon);
                 return Ok(());
             } else {
-                println!("Peer sent us a fork with less work than the current chain");
+                self.send_warning(
+                    "Peer sent us a fork with less work than the current chain".into(),
+                )
+                .await;
                 return Err(HeaderSyncError::LessWorkFork);
             }
         } else {
@@ -378,7 +385,8 @@ impl Chain {
             AppendAttempt::AddedToQueue => Ok(None),
             AppendAttempt::Extended => Ok(self.next_cf_header_message().await),
             AppendAttempt::Conflict(_) => {
-                println!("Found conflict");
+                self.send_warning("Found a conflict while peers are sending filter headers".into())
+                    .await;
                 Ok(None)
             }
         }
@@ -426,12 +434,13 @@ impl Chain {
         } else {
             self.tip()
         };
-        // println!(
-        //     "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
-        //     self.cf_header_chain.height(),
-        //     stop_hash_index,
-        //     stop_hash.to_string()
-        // );
+        self.send_dialog(format!(
+            "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
+            self.cf_header_chain.height(),
+            stop_hash_index,
+            stop_hash.to_string()
+        ))
+        .await;
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         if !self.is_cf_headers_synced() {
             Some(GetCFHeaders {
@@ -466,10 +475,11 @@ impl Chain {
         {
             // Add to the block queue
             self.block_queue.push(filter_message.block_hash);
-            println!(
+            self.send_dialog(format!(
                 "Found script at block: {}",
                 filter_message.block_hash.to_string()
-            );
+            ))
+            .await;
         }
         let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
         if let Some(ref_hash) = expected_filter_hash {
@@ -497,7 +507,11 @@ impl Chain {
         } else {
             self.tip()
         };
-        println!("Filters synced to height: {}", self.filter_chain.height());
+        self.send_dialog(format!(
+            "Filters synced to height: {}",
+            self.filter_chain.height()
+        ))
+        .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
         if !self.is_filters_synced() {
             Some(GetCFilters {
@@ -531,10 +545,14 @@ impl Chain {
         for tx in &block.txdata {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
                 self.tx_store
-                    .add_transaction(&ScriptBuf::new(), &tx, height_of_block, &block.block_hash())
+                    .add_transaction(&tx, height_of_block, &block.block_hash())
                     .await
                     .unwrap();
-                println!("Found transaction: {}", tx.compute_txid().to_string());
+                self.send_dialog(format!(
+                    "Found transaction: {}",
+                    tx.compute_txid().to_string()
+                ))
+                .await;
             }
         }
         Ok(())
@@ -550,5 +568,13 @@ impl Chain {
         inputs
             .iter()
             .any(|out| self.scripts.contains(&out.script_pubkey))
+    }
+
+    async fn send_dialog(&self, message: String) {
+        let _ = self.dialog.send(NodeMessage::Dialog(message)).await;
+    }
+
+    async fn send_warning(&self, message: String) {
+        let _ = self.dialog.send(NodeMessage::Warning(message)).await;
     }
 }

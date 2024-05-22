@@ -1,7 +1,8 @@
 pub mod builder;
-pub mod channel_messages;
+pub(crate) mod channel_messages;
 pub mod client;
 pub mod config;
+pub mod error;
 pub mod node;
 pub mod node_messages;
-pub mod peer_map;
+mod peer_map;

@@ -32,7 +32,6 @@ pub(crate) struct Dns {}
 
 impl Dns {
     pub async fn bootstrap(network: Network) -> Result<Vec<IpAddr>, DnsBootstrapError> {
-        println!("Bootstrapping peers with DNS seeds");
         let seeds = match network {
             Network::Bitcoin => MAINNET_SEEDS.to_vec(),
             Network::Testnet => TESTNET_SEEDS.to_vec(),

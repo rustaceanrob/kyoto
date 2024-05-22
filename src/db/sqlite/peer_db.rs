@@ -82,7 +82,6 @@ impl SqlitePeerDb {
         port: Option<u16>,
         last_seen: Option<u32>,
     ) -> Result<()> {
-        println!("Adding new peer {}", ip.to_string());
         let lock = self.conn_new.lock().await;
         let new_count: i64 = lock.query_row("SELECT COUNT(*) FROM peers", [], |row| row.get(0))?;
         let peer_banned = self.is_banned(&ip).await?;
@@ -113,10 +112,6 @@ impl SqlitePeerDb {
     pub async fn add_cpf_peers(&mut self, peers: Vec<Address>) -> Result<()> {
         let mut lock = self.conn_cpf.lock().await;
         let tx = lock.transaction()?;
-        println!(
-            "Adding peers that have signaled for compact filter support: {}",
-            peers.len()
-        );
         for peer in peers {
             let ip = peer
                 .socket_addr()
@@ -155,12 +150,9 @@ impl SqlitePeerDb {
     }
 
     pub async fn get_random_new(&mut self) -> Result<Option<(IpAddr, u16)>> {
-        println!("Fetching random peer");
         if let Ok(Some(peer)) = self.get_random_from_evict().await {
-            println!("Got peer from eviction table");
             return Ok(Some(peer));
         }
-        println!("Could not find a peer from eviction table. Trying a new peer.");
         let lock = self.conn_new.lock().await;
         let mut stmt = lock.prepare("SELECT ip_addr, port FROM peers ORDER BY RANDOM() LIMIT 1")?;
         let mut rows = stmt.query([])?;

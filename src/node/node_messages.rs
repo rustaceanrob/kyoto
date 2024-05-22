@@ -1,10 +1,17 @@
+use bitcoin::Block;
+
+use crate::tx::types::IndexedTransaction;
+
 #[derive(Debug)]
-pub(crate) enum NodeMessage {
+pub enum NodeMessage {
     Dialog(String),
+    Warning(String),
+    Transaction(IndexedTransaction),
+    Block(Block),
     Synced,
 }
 
 #[derive(Debug)]
-pub(crate) enum ClientMessage {
+pub enum ClientMessage {
     Shutdown,
 }

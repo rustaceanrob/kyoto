@@ -9,13 +9,12 @@ use bitcoin::{
     Block, Network,
 };
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
-use thiserror::Error;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Mutex;
 
 use crate::{
     chain::{chain::Chain, checkpoints::HeaderCheckpoint, error::HeaderSyncError},
-    node::peer_map::PeerMap,
+    node::{error::PersistenceError, peer_map::PeerMap},
     peers::dns::Dns,
     tx::memory::MemoryTransactionCache,
 };
@@ -27,6 +26,7 @@ use super::{
     },
     client::Client,
     config::NodeConfig,
+    error::NodeError,
     node_messages::NodeMessage,
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
@@ -65,11 +65,11 @@ impl Node {
         header_checkpoint: Option<HeaderCheckpoint>,
         _required_peers: usize,
     ) -> Result<(Self, Client), NodeError> {
+        let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
+        let client = Client::new(nrx);
         let state = Arc::new(Mutex::new(NodeState::Behind));
-        let peer_db = SqlitePeerDb::new(network, None).map_err(|e| {
-            eprintln!("Persistence failure: {}", e.to_string());
-            NodeError::LoadError(PersistenceError::PeerLoadFailure)
-        })?;
+        let peer_db = SqlitePeerDb::new(network, None)
+            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         let peer_db = Arc::new(Mutex::new(peer_db));
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
@@ -80,14 +80,18 @@ impl Node {
             data_path,
             in_memory_cache,
             header_checkpoint,
+            ntx.clone(),
         )
         .await
         .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         let best_known_height = loaded_chain.height() as u32;
-        println!("Starting sync from height: {}", best_known_height);
         let chain = Arc::new(Mutex::new(loaded_chain));
-        let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
-        let client = Client::new(nrx);
+        let _ = ntx
+            .send(NodeMessage::Dialog(format!(
+                "Starting sync from {}",
+                best_known_height
+            )))
+            .await;
         Ok((
             Self {
                 state,
@@ -119,7 +123,7 @@ impl Node {
     }
 
     pub async fn run(&mut self) -> Result<(), NodeError> {
-        println!("Starting node");
+        self.send_dialog("Starting node".into()).await;
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
@@ -127,17 +131,20 @@ impl Node {
             node_map.clean().await;
             // Rehydrate on peers when lower than a threshold
             if node_map.live() < self.next_required_peers().await {
-                println!(
+                self.send_dialog(format!(
                     "Required peers: {}, connected peers: {}",
-                    1,
+                    self.required_peers,
                     node_map.live()
-                );
-                println!("Not connected to enough peers, finding one...");
+                ))
+                .await;
+                self.send_dialog("Not connected to enough peers, finding one...".into())
+                    .await;
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
             }
             if let Some(block_request) = self.pop_block_queue().await {
-                println!("Sending block request to a random peer");
+                self.send_dialog("Sending block request to a random peer".into())
+                    .await;
                 node_map.send_random(block_request).await;
             }
             while let Ok(Some(peer_thread)) =
@@ -149,6 +156,8 @@ impl Node {
                         node_map.set_services(peer_thread.nonce, version.service_flags);
                         let response = self.handle_version(version).await;
                         node_map.send_message(peer_thread.nonce, response).await;
+                        self.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
+                            .await;
                     }
                     PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                     PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
@@ -196,17 +205,14 @@ impl Node {
         }
     }
 
-    async fn send_dialog(&self, message: String) {
-        let _ = self.client_sender.send(NodeMessage::Dialog(message)).await;
-    }
-
     async fn advance_state(&mut self) {
         let mut state = self.state.lock().await;
         match *state {
             NodeState::Behind => {
                 let mut header_guard = self.chain.lock().await;
                 if header_guard.is_synced() {
-                    println!("Headers synced. Auditing our chain with peers");
+                    self.send_dialog("Headers synced. Auditing our chain with peers".into())
+                        .await;
                     header_guard.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
                 }
@@ -215,7 +221,8 @@ impl Node {
             NodeState::HeadersSynced => {
                 let header_guard = self.chain.lock().await;
                 if header_guard.is_cf_headers_synced() {
-                    println!("CF Headers synced. Downloading block filters.");
+                    self.send_dialog("CF Headers synced. Downloading block filters.".into())
+                        .await;
                     *state = NodeState::FilterHeadersSynced;
                 }
                 return;
@@ -223,7 +230,8 @@ impl Node {
             NodeState::FilterHeadersSynced => {
                 let header_guard = self.chain.lock().await;
                 if header_guard.is_filters_synced() {
-                    println!("Filters synced. Checking blocks for new inclusions.");
+                    self.send_dialog("Filters synced. Checking blocks for new inclusions.".into())
+                        .await;
                     *state = NodeState::FiltersSynced;
                 }
                 return;
@@ -258,7 +266,10 @@ impl Node {
                     .has(ServiceFlags::COMPACT_FILTERS)
                     || !version_message.service_flags.has(ServiceFlags::NETWORK)
                 {
-                    println!("Connected peer does not serve compact filters or blocks");
+                    self.send_warning(
+                        "Connected peer does not serve compact filters or blocks".into(),
+                    )
+                    .await;
                     return MainThreadMessage::Disconnect;
                 }
             }
@@ -268,7 +279,7 @@ impl Node {
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
             self.best_known_height = peer_height;
-            guard.set_best_known_height(peer_height);
+            guard.set_best_known_height(peer_height).await;
         }
         let next_headers = GetHeaderConfig {
             locators: guard.locators(),
@@ -281,10 +292,11 @@ impl Node {
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
         let mut guard = self.peer_db.lock().await;
         if let Err(e) = guard.add_cpf_peers(new_peers).await {
-            eprintln!(
+            self.send_warning(format!(
                 "Encountered error adding peer to persistence: {}",
                 e.to_string()
-            );
+            ))
+            .await;
         }
     }
 
@@ -303,7 +315,11 @@ impl Node {
                     return None;
                 }
                 _ => {
-                    println!("{}", e.to_string());
+                    self.send_warning(format!(
+                        "Unexpected header syncing error: {}",
+                        e.to_string()
+                    ))
+                    .await;
                     return Some(MainThreadMessage::Disconnect);
                 }
             }
@@ -346,7 +362,11 @@ impl Node {
                 }
             },
             Err(e) => {
-                println!("CF header sync error: {}", e.to_string());
+                self.send_warning(format!(
+                    "Compact filter header syncing encountered an error: {}",
+                    e.to_string()
+                ))
+                .await;
                 return Some(MainThreadMessage::Disconnect);
             }
         }
@@ -360,7 +380,11 @@ impl Node {
                 None => None,
             },
             Err(e) => {
-                eprintln!("Block filter sync error: {}", e.to_string());
+                self.send_warning(format!(
+                    "Compact filter syncing encountered an error: {}",
+                    e.to_string()
+                ))
+                .await;
                 Some(MainThreadMessage::Disconnect)
             }
         }
@@ -378,7 +402,11 @@ impl Node {
             NodeState::FilterHeadersSynced => None,
             NodeState::FiltersSynced => {
                 if let Err(e) = guard.scan_block(&block).await {
-                    eprintln!("{}", e.to_string());
+                    self.send_warning(format!(
+                        "Unexpected block scanning error: {}",
+                        e.to_string()
+                    ))
+                    .await;
                 }
                 None
             }
@@ -391,7 +419,8 @@ impl Node {
         let next_block_hash = guard.next_block();
         match next_block_hash {
             Some(block_hash) => {
-                println!("Next block in queue: {}", block_hash.to_string());
+                self.send_dialog(format!("Next block in queue: {}", block_hash.to_string()))
+                    .await;
                 Some(MainThreadMessage::GetBlock(GetBlockConfig {
                     locator: block_hash,
                 }))
@@ -436,10 +465,11 @@ impl Node {
 
     async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, NodeError> {
         let mut guard = self.peer_db.lock().await;
-        if let Some(peer) = guard.get_random_cpf_peer().await.map_err(|e| {
-            println!("Persistence failure: {}", e.to_string());
-            NodeError::LoadError(PersistenceError::PeerLoadFailure)
-        })? {
+        if let Some(peer) = guard
+            .get_random_cpf_peer()
+            .await
+            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?
+        {
             return Ok(Some((peer.0, Some(peer.1))));
         }
         Ok(None)
@@ -451,7 +481,8 @@ impl Node {
             match whitelist.pop() {
                 Some((ip, port)) => {
                     return {
-                        println!("Using a peer from the white list");
+                        self.send_dialog("Using a peer from the white list".into())
+                            .await;
                         Ok((ip, Some(port)))
                     }
                 }
@@ -460,17 +491,18 @@ impl Node {
         }
         let mut guard = self.peer_db.lock().await;
         // try to get any new peer
-        let next_peer = guard.get_random_new().await.map_err(|e| {
-            println!("Persistence failure: {}", e.to_string());
-            NodeError::LoadError(PersistenceError::PeerLoadFailure)
-        })?;
+        let next_peer = guard
+            .get_random_new()
+            .await
+            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         match next_peer {
             // we found some peer to use but may not be reachable
             Some(peer) => {
-                println!(
-                    "Able to load a peer from persistence: {}",
+                self.send_dialog(format!(
+                    "Loaded peer from the database {}",
                     peer.0.to_string()
-                );
+                ))
+                .await;
                 Ok((peer.0, Some(peer.1)))
             }
             // we have no peers in our DB, try DNS
@@ -484,30 +516,23 @@ impl Node {
                 let ret_ip = new_peers[0];
                 for peer in new_peers {
                     if let Err(e) = guard.add_new(peer, None, None).await {
-                        eprintln!(
-                            "Encountered error adding peer to persistence: {}",
+                        self.send_warning(format!(
+                            "Encountered error adding a peer to the database: {}",
                             e.to_string()
-                        );
+                        ))
+                        .await;
                     }
                 }
                 Ok((ret_ip, None))
             }
         }
     }
-}
 
-#[derive(Error, Debug)]
-pub enum NodeError {
-    #[error("persistence failed")]
-    LoadError(PersistenceError),
-    #[error("dns bootstrap failed")]
-    DnsFailure,
-}
+    async fn send_dialog(&self, message: String) {
+        let _ = self.client_sender.send(NodeMessage::Dialog(message)).await;
+    }
 
-#[derive(Error, Debug)]
-pub enum PersistenceError {
-    #[error("there was an error loading the headers from persistence")]
-    HeaderLoadError,
-    #[error("there was an error loading peers from the database")]
-    PeerLoadFailure,
+    async fn send_warning(&self, message: String) {
+        let _ = self.client_sender.send(NodeMessage::Warning(message)).await;
+    }
 }

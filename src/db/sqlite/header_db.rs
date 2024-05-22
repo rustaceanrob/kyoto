@@ -67,7 +67,6 @@ impl SqliteHeaderDb {
 
     // load all the known headers from storage
     pub async fn load(&mut self) -> Result<Vec<Header>> {
-        println!("Loading headers from storage");
         let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height);
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
@@ -153,7 +152,6 @@ impl SqliteHeaderDb {
             }
         }
         tx.commit()?;
-        println!("Wrote headers to db.");
         Ok(())
     }
 }

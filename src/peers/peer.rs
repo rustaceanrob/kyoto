@@ -59,7 +59,6 @@ impl Peer {
     }
 
     pub async fn connect(&mut self) -> Result<(), PeerError> {
-        println!("Trying TCP connection to {}", self.ip_addr.to_string());
         let timeout = tokio::time::timeout(
             Duration::from_secs(5),
             TcpStream::connect((self.ip_addr, self.port)),
@@ -68,7 +67,6 @@ impl Peer {
         .map_err(|_| PeerError::TcpConnectionFailed)?;
         let mut stream: TcpStream;
         if let Ok(tcp) = timeout {
-            println!("Socket accepted");
             stream = tcp;
         } else {
             let _ = self
@@ -81,7 +79,6 @@ impl Peer {
             return Err(PeerError::TcpConnectionFailed);
         }
         let outbound_messages = V1OutboundMessage::new(self.network);
-        println!("Writing version message to remote");
         let version_message = outbound_messages.new_version_message(None);
         stream
             .write_all(&version_message)
@@ -93,8 +90,7 @@ impl Peer {
         let read_handle = tokio::spawn(async move {
             match peer_reader.read_from_remote().await {
                 Ok(_) => return Ok(()),
-                Err(e) => {
-                    println!("Our peer likely closed the connection: {}", e.to_string());
+                Err(_) => {
                     return Err(PeerError::Reader);
                 }
             }
@@ -152,7 +148,6 @@ impl Peer {
     ) -> Result<(), PeerError> {
         match message {
             PeerMessage::Version(version) => {
-                println!("[Peer {}]: sent version", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -160,12 +155,10 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                println!("Sending Verack");
                 writer
                     .write_all(&message_generator.new_verack())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
-                // println!("Asking for addrs");
                 // writer
                 //     .write_all(&message_generator.new_get_addr())
                 //     .await
@@ -174,7 +167,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::Addr(addrs) => {
-                println!("[Peer {}]: sent addresses", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -185,7 +177,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::Headers(headers) => {
-                println!("[Peer {}]: sent headers", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -196,7 +187,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::FilterHeaders(cf_headers) => {
-                println!("[Peer {}]: sent filter headers", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -217,7 +207,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::Block(block) => {
-                println!("[Peer {}]: sent block", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -228,7 +217,6 @@ impl Peer {
                 return Ok(());
             }
             PeerMessage::NewBlocks(block_hashes) => {
-                println!("[Peer {}]: inv (new block hash)", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -240,7 +228,6 @@ impl Peer {
             }
             PeerMessage::Verack => Ok(()),
             PeerMessage::Ping(nonce) => {
-                println!("[Peer {}]: ping", self.nonce);
                 writer
                     .write_all(&message_generator.new_pong(nonce))
                     .await
@@ -249,7 +236,6 @@ impl Peer {
             }
             PeerMessage::Pong(_) => Ok(()),
             PeerMessage::Disconnect => {
-                println!("[Peer {}]: disconnecting", self.nonce);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
