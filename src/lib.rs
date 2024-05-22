@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-mod chain;
+pub mod chain;
 mod db;
 mod filters;
 pub mod node;

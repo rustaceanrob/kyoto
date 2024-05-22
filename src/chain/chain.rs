@@ -226,7 +226,7 @@ impl Chain {
             return Ok(());
         }
         let initially_syncing = !self.checkpoints.is_exhausted();
-        //w e check first if the peer is sending us nonsense
+        //we check first if the peer is sending us nonsense
         self.sanity_check(&header_batch).await?;
         // How we handle forks depends on if we are caught up through all checkpoints or not
         if initially_syncing {
@@ -309,6 +309,15 @@ impl Chain {
                 self.checkpoints.advance();
                 self.flush_to_disk().await;
             } else {
+                println!("Expecting {}", checkpoint.hash);
+                println!(
+                    "Got {}",
+                    self.header_chain
+                        .header_at_height(checkpoint.height)
+                        .await
+                        .expect("height is greater than the base checkpoint")
+                        .block_hash()
+                );
                 self.header_chain.clear_all();
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
@@ -417,12 +426,12 @@ impl Chain {
         } else {
             self.tip()
         };
-        println!(
-            "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
-            self.cf_header_chain.height(),
-            stop_hash_index,
-            stop_hash.to_string()
-        );
+        // println!(
+        //     "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
+        //     self.cf_header_chain.height(),
+        //     stop_hash_index,
+        //     stop_hash.to_string()
+        // );
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         if !self.is_cf_headers_synced() {
             Some(GetCFHeaders {
@@ -431,6 +440,7 @@ impl Chain {
                 stop_hash,
             })
         } else {
+            self.cf_header_chain.join(self.header_chain.headers()).await;
             None
         }
     }
@@ -461,29 +471,13 @@ impl Chain {
                 filter_message.block_hash.to_string()
             );
         }
+        let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
+        if let Some(ref_hash) = expected_filter_hash {
+            if filter.filter_hash().await.ne(&ref_hash) {
+                return Err(CFilterSyncError::MisalignedFilterHash);
+            }
+        }
         self.filter_chain.append(filter).await;
-
-        // if !self.contains_hash(filter_message.block_hash) {
-        //     return Err(CFilterSyncError::UnknownStophash);
-        // }
-        // cannot panic due do the previous check
-        // let height = self
-        //     .height_of_hash(filter_message.block_hash)
-        //     .await
-        //     .unwrap();
-        // let filter_hash = self.cf_header_chain.filter_hash_at_height(height);
-        // if let Some(ref_hash) = filter_hash {
-        //     let filter = Filter::new(filter_message.filter);
-        //     println!("Filter for height {}", height);
-        //     println!("Computed filter hash: {}", filter.filter_hash().await);
-        //     println!("Received filter hash in chain: {}", ref_hash);
-        //     if filter.filter_hash().await.ne(&ref_hash) {
-        //         return Err(CFilterSyncError::MisalignedFilterHash);
-        //     }
-        //     self.filter_chain.append(filter).await;
-        // } else {
-        //     return Err(CFilterSyncError::UnknownFilterHash);
-        // }
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
                 Ok(self.next_filter_message().await)

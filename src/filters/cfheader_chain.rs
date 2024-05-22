@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::{BlockHash, FilterHash, FilterHeader};
+use bitcoin::{block::Header, BlockHash, FilterHash, FilterHeader};
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
@@ -23,6 +23,7 @@ pub(crate) struct CFHeaderChain {
     anchor_checkpoint: HeaderCheckpoint,
     header_chain: InternalChain,
     merged_queue: HashMap<u32, InternalChain>,
+    block_to_hash: HashMap<BlockHash, FilterHash>,
     prev_stophash_request: Option<BlockHash>,
     quorum_required: usize,
 }
@@ -33,6 +34,7 @@ impl CFHeaderChain {
             anchor_checkpoint,
             header_chain: vec![],
             merged_queue: HashMap::new(),
+            block_to_hash: HashMap::new(),
             prev_stophash_request: None,
             quorum_required,
         }
@@ -135,5 +137,22 @@ impl CFHeaderChain {
             }
             None => None,
         }
+    }
+
+    pub(crate) fn map_len(&self) -> usize {
+        self.block_to_hash.len()
+    }
+
+    pub(crate) async fn join(&mut self, headers: &Vec<Header>) {
+        headers
+            .iter()
+            .zip(self.header_chain.iter().map(|(_, hash)| hash))
+            .for_each(|(header, hash)| {
+                self.block_to_hash.insert(header.block_hash(), *hash);
+            })
+    }
+
+    pub(crate) fn hash_at(&self, block: &BlockHash) -> Option<&FilterHash> {
+        self.block_to_hash.get(block)
     }
 }

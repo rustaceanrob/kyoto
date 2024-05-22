@@ -39,7 +39,7 @@ impl NodeBuilder {
         self
     }
 
-    pub fn from_checkpoint(mut self, checkpoint: HeaderCheckpoint) -> Self {
+    pub fn anchor_checkpoint(mut self, checkpoint: HeaderCheckpoint) -> Self {
         self.config.header_checkpoint = Some(checkpoint);
         self
     }

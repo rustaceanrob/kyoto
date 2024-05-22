@@ -48,7 +48,7 @@ impl SqliteHeaderDb {
             _ => unreachable!(),
         };
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
-        path.push("kyoto");
+        path.push("data");
         path.push(network.to_string());
         if !path.exists() {
             fs::create_dir_all(&path).unwrap();

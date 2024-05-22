@@ -1,9 +1,12 @@
+#[allow(unused)]
+use bitcoin::BlockHash;
+#[allow(unused)]
+use light_client::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+#[allow(unused)]
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
 };
-
-use light_client::node::builder::NodeBuilder;
 
 #[tokio::main]
 async fn main() {
@@ -20,12 +23,19 @@ async fn main() {
     for _ in 0..99 {
         addresses.push(address_2.clone())
     }
-    let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
+    // let pref_peer = IpAddr::V4(Ipv4Addr::new(135, 181, 215, 237));
 
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     let (mut node, mut client) = builder
         // .add_peers(vec![(pref_peer, 38333)])
         .add_scripts(addresses)
+        // .anchor_checkpoint(HeaderCheckpoint {
+        //     height: 170_000,
+        //     hash: BlockHash::from_str(
+        //         "00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d",
+        //     )
+        //     .unwrap(),
+        // })
         .build_node()
         .await;
     let _ = tokio::task::spawn(async move { node.run().await });
