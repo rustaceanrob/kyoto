@@ -6,3 +6,13 @@ pub struct IndexedTransaction {
     pub height: Option<usize>,
     pub hash: BlockHash,
 }
+
+impl IndexedTransaction {
+    pub fn new(transaction: Transaction, height: Option<usize>, hash: BlockHash) -> Self {
+        Self {
+            transaction,
+            height,
+            hash,
+        }
+    }
+}

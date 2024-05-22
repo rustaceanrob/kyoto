@@ -7,7 +7,6 @@ use crate::chain::checkpoints::HeaderCheckpoint;
 use super::{cfheader_batch::CFHeaderBatch, error::CFHeaderSyncError};
 
 type InternalChain = Vec<(FilterHeader, FilterHash)>;
-type FilterChain = Vec<Vec<u8>>;
 
 pub(crate) enum AppendAttempt {
     // Nothing to do yet

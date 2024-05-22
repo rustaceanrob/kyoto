@@ -28,7 +28,7 @@ use crate::{
     },
     node::node_messages::NodeMessage,
     prelude::MEDIAN_TIME_PAST,
-    tx::{memory::MemoryTransactionCache, store::TransactionStore},
+    tx::{memory::MemoryTransactionCache, store::TransactionStore, types::IndexedTransaction},
 };
 
 #[derive(Debug)]
@@ -435,10 +435,9 @@ impl Chain {
             self.tip()
         };
         self.send_dialog(format!(
-            "Request for CF headers staring at height {}, ending at height {},\nwith stop hash: {}",
+            "Request for CF headers staring at height {}, ending at height {}",
             self.cf_header_chain.height(),
             stop_hash_index,
-            stop_hash.to_string()
         ))
         .await;
         self.cf_header_chain.set_last_stop_hash(stop_hash);
@@ -548,6 +547,28 @@ impl Chain {
                     .add_transaction(&tx, height_of_block, &block.block_hash())
                     .await
                     .unwrap();
+                if let Err(e) = self.dialog.send(NodeMessage::Block(block.clone())).await {
+                    self.send_warning(format!(
+                        "A block was found to have relevant transactions: {}, but could not be sent to the client thread",
+                        e
+                    ))
+                    .await;
+                }
+                if let Err(e) = self
+                    .dialog
+                    .send(NodeMessage::Transaction(IndexedTransaction::new(
+                        tx.clone(),
+                        height_of_block,
+                        block.block_hash(),
+                    )))
+                    .await
+                {
+                    self.send_warning(format!(
+                        "A transaction was found: {}, but could not be sent to the client thread",
+                        e
+                    ))
+                    .await;
+                }
                 self.send_dialog(format!(
                     "Found transaction: {}",
                     tx.compute_txid().to_string()
