@@ -29,13 +29,13 @@ async fn main() {
     let (mut node, mut client) = builder
         // .add_peers(vec![(pref_peer, 38333)])
         .add_scripts(addresses)
-        // .anchor_checkpoint(HeaderCheckpoint {
-        //     height: 170_000,
-        //     hash: BlockHash::from_str(
-        //         "00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d",
-        //     )
-        //     .unwrap(),
-        // })
+        .anchor_checkpoint(HeaderCheckpoint {
+            height: 170_000,
+            hash: BlockHash::from_str(
+                "00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d",
+            )
+            .unwrap(),
+        })
         .build_node()
         .await;
     let _ = tokio::task::spawn(async move { node.run().await });

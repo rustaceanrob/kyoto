@@ -6,6 +6,8 @@ use super::filter::Filter;
 
 type Filters = Vec<Filter>;
 
+const INITIAL_BUFFER_SIZE: usize = 2_000;
+
 #[derive(Debug)]
 pub(crate) struct FilterChain {
     anchor_checkpoint: HeaderCheckpoint,
@@ -17,7 +19,7 @@ impl FilterChain {
     pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint) -> Self {
         Self {
             anchor_checkpoint,
-            chain: vec![],
+            chain: Vec::with_capacity(INITIAL_BUFFER_SIZE),
             prev_stophash_request: None,
         }
     }

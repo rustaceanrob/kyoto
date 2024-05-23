@@ -68,7 +68,7 @@ impl Node {
         let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
         let client = Client::new(nrx);
         let state = Arc::new(Mutex::new(NodeState::Behind));
-        let peer_db = SqlitePeerDb::new(network, None)
+        let peer_db = SqlitePeerDb::new(network, data_path.clone())
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         let peer_db = Arc::new(Mutex::new(peer_db));
         let mut scripts = HashSet::new();
@@ -88,7 +88,7 @@ impl Node {
         let chain = Arc::new(Mutex::new(loaded_chain));
         let _ = ntx
             .send(NodeMessage::Dialog(format!(
-                "Starting sync from {}",
+                "Starting sync from block {}",
                 best_known_height
             )))
             .await;
@@ -160,12 +160,16 @@ impl Node {
                             .await;
                     }
                     PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
-                    PeerMessage::Headers(headers) => match self.handle_headers(headers).await {
-                        Some(response) => {
-                            node_map.send_message(peer_thread.nonce, response).await;
+                    PeerMessage::Headers(headers) => {
+                        self.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
+                            .await;
+                        match self.handle_headers(headers).await {
+                            Some(response) => {
+                                node_map.send_message(peer_thread.nonce, response).await;
+                            }
+                            None => continue,
                         }
-                        None => continue,
-                    },
+                    }
                     PeerMessage::FilterHeaders(cf_headers) => {
                         match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
                             Some(response) => {
@@ -189,12 +193,16 @@ impl Node {
                         }
                         None => continue,
                     },
-                    PeerMessage::NewBlocks(_blocks) => match self.handle_inventory_blocks().await {
-                        Some(response) => {
-                            node_map.broadcast(response).await;
+                    PeerMessage::NewBlocks(_blocks) => {
+                        self.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
+                            .await;
+                        match self.handle_inventory_blocks().await {
+                            Some(response) => {
+                                node_map.broadcast(response).await;
+                            }
+                            None => continue,
                         }
-                        None => continue,
-                    },
+                    }
                     PeerMessage::Disconnect => {
                         node_map.clean().await;
                     }
@@ -293,7 +301,7 @@ impl Node {
         let mut guard = self.peer_db.lock().await;
         if let Err(e) = guard.add_cpf_peers(new_peers).await {
             self.send_warning(format!(
-                "Encountered error adding peer to persistence: {}",
+                "Encountered error adding peer to the database: {}",
                 e.to_string()
             ))
             .await;
@@ -490,13 +498,13 @@ impl Node {
             }
         }
         let mut guard = self.peer_db.lock().await;
-        // try to get any new peer
+        // Try to get any new peer
         let next_peer = guard
             .get_random_new()
             .await
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         match next_peer {
-            // we found some peer to use but may not be reachable
+            // We found some peer to use but may not be reachable
             Some(peer) => {
                 self.send_dialog(format!(
                     "Loaded peer from the database {}",
@@ -505,7 +513,7 @@ impl Node {
                 .await;
                 Ok((peer.0, Some(peer.1)))
             }
-            // we have no peers in our DB, try DNS
+            // We have no peers in our DB, try DNS
             None => {
                 let mut new_peers = Dns::bootstrap(self.network)
                     .await

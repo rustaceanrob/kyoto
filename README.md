@@ -49,8 +49,7 @@ With these few simple goals in mind, the tools are set out for developers to cre
     - [x] Determine if the block hash or height should be the primary key
     - [x] Speed up writes with pointers
     - [ ] Add "write volatile" to write over heights
-- [ ] Exponential backoff for locators
-- [ ] Test fork scenarios with Regtest
+- [x] Exponential backoff for locators
 
 #### Filters
 - [ ] API
@@ -63,7 +62,7 @@ With these few simple goals in mind, the tools are set out for developers to cre
     - [ ] Resolve disputes by downloading blocks
     - [x] Add new filters to the chain, verifying with the `FilterHash`
 - [ ] Optimizations
-    - [ ] Hashmap the `BlockHash` to `FilterHash` relationship in memory
+    - [x] Hashmap the `BlockHash` to `FilterHash` relationship in memory
     - [ ] Persist SPKs that have already been proven to be in a filter
 
 #### Main thread
@@ -103,6 +102,29 @@ With these few simple goals in mind, the tools are set out for developers to cre
 - [ ] Add local unconfirmed transaction DB
 - [ ] Add archival transaction DB
 - [ ] Too many `clone`
+
+#### Testing
+- [ ] Header chain
+    - [ ] Usual extend
+    - [ ] Fork with less work
+    - [ ] Orphaned fork
+    - [ ] Fork with equal work
+    - [ ] Fork with more work
+- [ ] CF header chain 
+    - [ ] Unexpected stop hash 
+    - [ ] Unexpected filter hash
+    - [ ] Multiple peers expected filter hash
+    - [ ] Properly identify bad peers
+- [ ] Filter chain 
+    - [ ] Repeated filter
+    - [ ] Bad filter
+- [ ] Chain
+    - [ ] Expected height
+    - [ ] Expected height after fork
+    - [ ] Expected hash at height
+    - [ ] Properly handles fork
+    - [ ] Incorrect filter hash at block
+- [ ] CI
 
 #### Bindings
 - [ ] Add UniFFI to repository

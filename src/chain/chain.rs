@@ -306,10 +306,10 @@ impl Chain {
                 .block_hash()
                 .eq(&checkpoint.hash)
             {
-                self.send_dialog(format!("Hit checkpoint, height: {}", checkpoint.height))
+                self.send_dialog(format!("Found checkpoint, height: {}", checkpoint.height))
                     .await;
                 self.send_dialog(format!(
-                    "Accumulated log base 2 chainwork: {}",
+                    "Accumulated log base 2 chainwork: {:.2}",
                     self.log2_work()
                 ))
                 .await;

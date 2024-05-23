@@ -8,6 +8,8 @@ use super::{cfheader_batch::CFHeaderBatch, error::CFHeaderSyncError};
 
 type InternalChain = Vec<(FilterHeader, FilterHash)>;
 
+const INITIAL_BUFFER_SIZE: usize = 2_000;
+
 pub(crate) enum AppendAttempt {
     // Nothing to do yet
     AddedToQueue,
@@ -33,7 +35,7 @@ impl CFHeaderChain {
             anchor_checkpoint,
             header_chain: vec![],
             merged_queue: HashMap::new(),
-            block_to_hash: HashMap::new(),
+            block_to_hash: HashMap::with_capacity(INITIAL_BUFFER_SIZE),
             prev_stophash_request: None,
             quorum_required,
         }
