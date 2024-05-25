@@ -1,14 +1,15 @@
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 
-use super::node_messages::NodeMessage;
+use super::node_messages::{ClientMessage, NodeMessage};
 
 pub struct Client {
     nrx: Receiver<NodeMessage>,
+    ntx: Sender<ClientMessage>,
 }
 
 impl Client {
-    pub(crate) fn new(nrx: Receiver<NodeMessage>) -> Self {
-        Self { nrx }
+    pub(crate) fn new(nrx: Receiver<NodeMessage>, ntx: Sender<ClientMessage>) -> Self {
+        Self { nrx, ntx }
     }
 
     pub async fn wait_until_synced(&mut self) {
@@ -40,5 +41,9 @@ impl Client {
 
     pub fn receiver(&mut self) -> &mut Receiver<NodeMessage> {
         &mut self.nrx
+    }
+
+    pub async fn shutdown(&mut self) {
+        let _ = self.ntx.send(ClientMessage::Shutdown).await;
     }
 }

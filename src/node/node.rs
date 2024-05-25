@@ -9,8 +9,11 @@ use bitcoin::{
     Block, Network,
 };
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
-use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
+use tokio::{
+    select,
+    sync::mpsc::{self, Sender},
+};
 
 use crate::{
     chain::{chain::Chain, checkpoints::HeaderCheckpoint, error::HeaderSyncError},
@@ -27,7 +30,7 @@ use super::{
     client::Client,
     config::NodeConfig,
     error::NodeError,
-    node_messages::NodeMessage,
+    node_messages::{ClientMessage, NodeMessage},
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
@@ -46,7 +49,7 @@ pub enum NodeState {
 }
 
 pub struct Node {
-    state: Arc<Mutex<NodeState>>,
+    state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
     peer_db: Arc<Mutex<SqlitePeerDb>>,
     best_known_height: u32,
@@ -54,6 +57,7 @@ pub struct Node {
     white_list: Option<Vec<(IpAddr, u16)>>,
     network: Network,
     client_sender: Sender<NodeMessage>,
+    client_recv: Receiver<ClientMessage>,
 }
 
 impl Node {
@@ -63,17 +67,22 @@ impl Node {
         addresses: Vec<bitcoin::Address>,
         data_path: Option<PathBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
-        _required_peers: usize,
+        required_peers: usize,
     ) -> Result<(Self, Client), NodeError> {
+        // Set up a communication channel between the node and client
         let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
-        let client = Client::new(nrx);
-        let state = Arc::new(Mutex::new(NodeState::Behind));
+        let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
+        let client = Client::new(nrx, ctx);
+        // We always assume we are behind
+        let state = Arc::new(RwLock::new(NodeState::Behind));
         let peer_db = SqlitePeerDb::new(network, data_path.clone())
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         let peer_db = Arc::new(Mutex::new(peer_db));
+        // Take the canonical Bitcoin addresses and map them to a script we can scan for
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         let in_memory_cache = MemoryTransactionCache::new();
+        // Build the chain
         let loaded_chain = Chain::new(
             &network,
             scripts,
@@ -81,9 +90,11 @@ impl Node {
             in_memory_cache,
             header_checkpoint,
             ntx.clone(),
+            required_peers,
         )
         .await
         .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
+        // Initialize the height of the chain
         let best_known_height = loaded_chain.height() as u32;
         let chain = Arc::new(Mutex::new(loaded_chain));
         let _ = ntx
@@ -98,10 +109,11 @@ impl Node {
                 chain,
                 peer_db,
                 best_known_height,
-                required_peers: 1,
+                required_peers,
                 white_list,
                 network,
                 client_sender: ntx,
+                client_recv: crx,
             },
             client,
         ))
@@ -142,79 +154,94 @@ impl Node {
                 let ip = self.next_peer().await?;
                 node_map.dispatch(ip.0, ip.1).await
             }
+            // If there are blocks in the queue, we should request them of a random peer
             if let Some(block_request) = self.pop_block_queue().await {
                 self.send_dialog("Sending block request to a random peer".into())
                     .await;
                 node_map.send_random(block_request).await;
             }
-            while let Ok(Some(peer_thread)) =
-                tokio::time::timeout(Duration::from_secs(1), mrx.recv()).await
-            {
-                match peer_thread.message {
-                    PeerMessage::Version(version) => {
-                        node_map.set_offset(peer_thread.nonce, version.timestamp);
-                        node_map.set_services(peer_thread.nonce, version.service_flags);
-                        let response = self.handle_version(version).await;
-                        node_map.send_message(peer_thread.nonce, response).await;
-                        self.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
-                            .await;
-                    }
-                    PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
-                    PeerMessage::Headers(headers) => {
-                        self.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
-                            .await;
-                        match self.handle_headers(headers).await {
-                            Some(response) => {
-                                node_map.send_message(peer_thread.nonce, response).await;
+            // Either handle a message from a remote peer or from our client
+            select! {
+                peer = tokio::time::timeout(Duration::from_secs(1), mrx.recv()) => {
+                    match peer {
+                        Ok(Some(peer_thread)) => {
+                            match peer_thread.message {
+                                PeerMessage::Version(version) => {
+                                    node_map.set_offset(peer_thread.nonce, version.timestamp);
+                                    node_map.set_services(peer_thread.nonce, version.service_flags);
+                                    let response = self.handle_version(version).await;
+                                    node_map.send_message(peer_thread.nonce, response).await;
+                                    self.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
+                                        .await;
+                                }
+                                PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
+                                PeerMessage::Headers(headers) => {
+                                    self.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
+                                        .await;
+                                    match self.handle_headers(headers).await {
+                                        Some(response) => {
+                                            node_map.send_message(peer_thread.nonce, response).await;
+                                        }
+                                        None => continue,
+                                    }
+                                }
+                                PeerMessage::FilterHeaders(cf_headers) => {
+                                    self.send_dialog(format!("[Peer {}]: filter headers", peer_thread.nonce)).await;
+                                    match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
+                                        Some(response) => {
+                                            // match depending on disconnect
+                                            node_map.broadcast(response).await;
+                                        }
+                                        None => continue,
+                                    }
+                                }
+                                PeerMessage::Filter(filter) => {
+                                    match self.handle_filter(peer_thread.nonce, filter).await {
+                                        Some(response) => {
+                                            node_map.broadcast(response).await;
+                                        }
+                                        None => continue,
+                                    }
+                                }
+                                PeerMessage::Block(block) => match self.handle_block(block).await {
+                                    Some(response) => {
+                                        node_map.broadcast(response).await;
+                                    }
+                                    None => continue,
+                                },
+                                PeerMessage::NewBlocks(_blocks) => {
+                                    self.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
+                                        .await;
+                                    match self.handle_inventory_blocks().await {
+                                        Some(response) => {
+                                            node_map.broadcast(response).await;
+                                        }
+                                        None => continue,
+                                    }
+                                }
+                                PeerMessage::Disconnect => {
+                                    node_map.clean().await;
+                                }
+                                _ => continue,
                             }
-                            None => continue,
+                            // self.advance_state().await;
+                        },
+                        _ => continue,
+                    }
+                },
+                message = self.client_recv.recv() => {
+                    if let Some(message) = message {
+                        match message {
+                            ClientMessage::Shutdown => return Ok(()),
                         }
                     }
-                    PeerMessage::FilterHeaders(cf_headers) => {
-                        match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
-                            Some(response) => {
-                                // match depending on disconnect
-                                node_map.broadcast(response).await;
-                            }
-                            None => continue,
-                        }
-                    }
-                    PeerMessage::Filter(filter) => {
-                        match self.handle_filter(peer_thread.nonce, filter).await {
-                            Some(response) => {
-                                node_map.broadcast(response).await;
-                            }
-                            None => continue,
-                        }
-                    }
-                    PeerMessage::Block(block) => match self.handle_block(block).await {
-                        Some(response) => {
-                            node_map.broadcast(response).await;
-                        }
-                        None => continue,
-                    },
-                    PeerMessage::NewBlocks(_blocks) => {
-                        self.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
-                            .await;
-                        match self.handle_inventory_blocks().await {
-                            Some(response) => {
-                                node_map.broadcast(response).await;
-                            }
-                            None => continue,
-                        }
-                    }
-                    PeerMessage::Disconnect => {
-                        node_map.clean().await;
-                    }
-                    _ => continue,
                 }
-                self.advance_state().await;
             }
         }
     }
 
     async fn advance_state(&mut self) {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
                 let mut header_guard = self.chain.lock().await;
@@ -257,7 +284,7 @@ impl Node {
     }
 
     async fn next_required_peers(&self) -> usize {
-        let state = self.state.lock().await;
+        let state = self.state.read().await;
         match *state {
             NodeState::Behind => 1,
             _ => self.required_peers,
@@ -265,7 +292,7 @@ impl Node {
     }
 
     async fn handle_version(&mut self, version_message: RemoteVersion) -> MainThreadMessage {
-        let state = self.state.lock().await;
+        let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
             _ => {
@@ -399,7 +426,7 @@ impl Node {
     }
 
     async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
-        let state = *self.state.lock().await;
+        let state = *self.state.read().await;
         let mut guard = self.chain.lock().await;
         match state {
             NodeState::Behind => Some(MainThreadMessage::Disconnect),
@@ -423,22 +450,32 @@ impl Node {
     }
 
     async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
+        let state = self.state.read().await;
         let mut guard = self.chain.lock().await;
-        let next_block_hash = guard.next_block();
-        match next_block_hash {
-            Some(block_hash) => {
-                self.send_dialog(format!("Next block in queue: {}", block_hash.to_string()))
-                    .await;
-                Some(MainThreadMessage::GetBlock(GetBlockConfig {
-                    locator: block_hash,
-                }))
+        // Do we actually need to wait for the headers to sync?
+        match *state {
+            NodeState::FiltersSynced => {
+                let next_block_hash = guard.next_block();
+                match next_block_hash {
+                    Some(block_hash) => {
+                        self.send_dialog(format!(
+                            "Next block in queue: {}",
+                            block_hash.to_string()
+                        ))
+                        .await;
+                        Some(MainThreadMessage::GetBlock(GetBlockConfig {
+                            locator: block_hash,
+                        }))
+                    }
+                    None => None,
+                }
             }
-            None => None,
+            _ => None,
         }
     }
 
     async fn handle_inventory_blocks(&mut self) -> Option<MainThreadMessage> {
-        let mut state = self.state.lock().await;
+        let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => return None,
             _ => {
@@ -455,9 +492,9 @@ impl Node {
 
     // First we seach the whitelist for peers that we trust. Then, depending on the state
     // we either need to catch up on block headers or we may start requesting filters and blocks.
-    // When requesting filters, we try to select peers that have signaled for CPF support.
+    // When requesting filters, we try to select peers that have signaled for CF support.
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
-        let state = *self.state.lock().await;
+        let state = *self.state.read().await;
         match state {
             NodeState::Behind => self.any_peer().await,
             _ => match self.cpf_peer().await {
@@ -484,7 +521,7 @@ impl Node {
     }
 
     async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
-        // empty the whitelist if there is one
+        // Rmpty the whitelist, if there is one
         if let Some(whitelist) = &mut self.white_list {
             match whitelist.pop() {
                 Some((ip, port)) => {

@@ -82,7 +82,7 @@ impl HeaderChain {
     }
 
     // This header chain contains a block hash
-    pub(crate) async fn header_at_height(&self, height: usize) -> Option<&Header> {
+    pub(crate) fn header_at_height(&self, height: usize) -> Option<&Header> {
         let offset = self.adjusted_height(height);
         match offset {
             Some(index) => self.headers.get(index),
@@ -196,4 +196,9 @@ impl HeaderChain {
     pub(crate) fn clear_all(&mut self) {
         self.headers.clear()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }

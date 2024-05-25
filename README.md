@@ -1,5 +1,7 @@
 # Kyoto Light Client
 
+⚠️⚠️ **Warning**: This project is under development and is not suitable for actual use
+
 ## Description
 
 Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the standard slim client for [LND](https://github.com/lightningnetwork/lnd), integrations with existing Rust clients for [LDK](https://github.com/lightningdevkit) and [BDK](https://github.com/bitcoindevkit) haven't come to furition. The [Nakamoto](https://github.com/cloudhead/nakamoto) project is complete with some very modular, elegant programming, but the lead maintainer has other projects to focus on. [Murmel](https://github.com/rust-bitcoin/murmel) is yet another light client in Rust, but the last commit was 4 years ago at the time of writing. The Rust community of crates has evolved quickly in terms of asynchronus frameworks and runtime executors. Like the [LDK node](https://github.com/lightningdevkit/ldk-node?tab=readme-ov-file) project, this project leverages the use of the `tokio` runtime with plans to integrate UniFFI in the future. By leveraging how these frameworks have developed over the years, the hope is a light client in Rust should be significantly easier to maintain. The greatest advantage when in comes to getting light clients on mobile is the ability to use UniFFI bindings to build native code in Swift and Kotlin. Once the client is functional, there will be a great focus on lower resource devices like smart phones.

@@ -8,7 +8,7 @@ use bitcoin::{
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     Block, BlockHash, Network, ScriptBuf, TxIn, TxOut, Work,
 };
-use tokio::sync::{mpsc::Sender, RwLock};
+use tokio::sync::{mpsc::Sender, Mutex};
 
 use super::{
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
@@ -34,11 +34,11 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct Chain {
     header_chain: HeaderChain,
-    checkpoints: HeaderCheckpoints,
-    params: Params,
-    db: RwLock<SqliteHeaderDb>,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
+    checkpoints: HeaderCheckpoints,
+    params: Params,
+    db: Mutex<SqliteHeaderDb>,
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
     block_queue: Vec<BlockHash>,
@@ -54,6 +54,7 @@ impl Chain {
         tx_store: MemoryTransactionCache,
         from_checkpoint: Option<HeaderCheckpoint>,
         dialog: Sender<NodeMessage>,
+        quorum_required: usize,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
         let params = match network {
@@ -92,27 +93,22 @@ impl Chain {
                     .await;
                 return Err(HeaderPersistenceError::HeadersDoNotLink);
             }
-            // for (height, header) in loaded_headers.iter().enumerate() {
-            //     if let Some(checkpoint) = checkpoints.next() {
-            //         if height.eq(&checkpoint.height) {
-            //             if checkpoint.hash.eq(&header.block_hash()) {
-            //                 checkpoints.advance()
-            //             } else {
-            //                 println!("Checkpoint mismatch");
-            //                 return Err(HeaderPersistenceError::MismatchedCheckpoints);
-            //             }
-            //         }
-            //     }
-            // }
+            loaded_headers.iter().for_each(|header| {
+                if let Some(checkpoint) = checkpoints.next() {
+                    if header.block_hash().eq(&checkpoint.hash) {
+                        checkpoints.advance()
+                    }
+                }
+            })
         };
         let header_chain = HeaderChain::new(checkpoint, loaded_headers);
-        let cf_header_chain = CFHeaderChain::new(checkpoint, 1);
+        let cf_header_chain = CFHeaderChain::new(checkpoint, quorum_required);
         let filter_chain = FilterChain::new(checkpoint);
         Ok(Chain {
             header_chain,
             checkpoints,
             params,
-            db: RwLock::new(db),
+            db: Mutex::new(db),
             cf_header_chain,
             filter_chain,
             best_known_height: None,
@@ -150,7 +146,7 @@ impl Chain {
 
     // This header chain contains a block hash
     pub(crate) async fn header_at_height(&self, height: usize) -> Option<&Header> {
-        self.header_chain.header_at_height(height).await
+        self.header_chain.header_at_height(height)
     }
 
     // This header chain contains a block hash
@@ -211,9 +207,9 @@ impl Chain {
     pub(crate) async fn flush_to_disk(&mut self) {
         if let Err(e) = self
             .db
-            .write()
+            .lock()
             .await
-            .write(&self.header_chain.headers())
+            .write(self.header_chain.headers())
             .await
         {
             self.send_warning(format!("Error persisting to storage: {}", e))
@@ -301,7 +297,6 @@ impl Chain {
             if self
                 .header_chain
                 .header_at_height(checkpoint.height)
-                .await
                 .expect("height is greater than the base checkpoint")
                 .block_hash()
                 .eq(&checkpoint.hash)
@@ -374,6 +369,7 @@ impl Chain {
         }
     }
 
+    // Sync the compact filter headers, possibly encountering conflicts
     pub(crate) async fn sync_cf_headers(
         &mut self,
         peer_id: u32,
@@ -435,9 +431,8 @@ impl Chain {
             self.tip()
         };
         self.send_dialog(format!(
-            "Request for CF headers staring at height {}, ending at height {}",
-            self.cf_header_chain.height(),
-            stop_hash_index,
+            "Request for CF headers up to hash {}",
+            stop_hash.to_string(),
         ))
         .await;
         self.cf_header_chain.set_last_stop_hash(stop_hash);
@@ -467,10 +462,17 @@ impl Chain {
             return Ok(None);
         }
         let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
-        if filter
-            .contains_any(&self.scripts)
-            .await
-            .map_err(|e| CFilterSyncError::Filter(e))?
+        let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
+        if let Some(ref_hash) = expected_filter_hash {
+            if filter.filter_hash().await.ne(&ref_hash) {
+                return Err(CFilterSyncError::MisalignedFilterHash);
+            }
+        }
+        if !self.block_queue.contains(&filter_message.block_hash)
+            && filter
+                .contains_any(&self.scripts)
+                .await
+                .map_err(|e| CFilterSyncError::Filter(e))?
         {
             // Add to the block queue
             self.block_queue.push(filter_message.block_hash);
@@ -479,12 +481,6 @@ impl Chain {
                 filter_message.block_hash.to_string()
             ))
             .await;
-        }
-        let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
-        if let Some(ref_hash) = expected_filter_hash {
-            if filter.filter_hash().await.ne(&ref_hash) {
-                return Err(CFilterSyncError::MisalignedFilterHash);
-            }
         }
         self.filter_chain.append(filter).await;
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {

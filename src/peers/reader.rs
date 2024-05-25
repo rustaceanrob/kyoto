@@ -25,7 +25,7 @@ const ONE_MINUTE: u64 = 60;
 // The peer must have sent at least 10 messages to trigger DOS
 const MINIMUM_DOS_THRESHOLD: u64 = 10;
 // We allow up to 500 messages per second
-const RATE_LIMIT: u64 = 500;
+const RATE_LIMIT: u64 = 5000;
 
 pub(crate) struct Reader {
     num_messages: u64,
