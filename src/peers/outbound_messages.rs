@@ -35,10 +35,10 @@ impl V1OutboundMessage {
             .expect("time went backwards")
             .as_secs();
         let default_port = match self.network {
-            Network::Bitcoin => 8332,
-            Network::Testnet => 18332,
-            Network::Signet => 38332,
-            Network::Regtest => panic!("unimplemented"),
+            Network::Bitcoin => 8333,
+            Network::Testnet => 18333,
+            Network::Signet => 38333,
+            Network::Regtest => 18444,
             _ => unreachable!(),
         };
         let ip = SocketAddr::new(

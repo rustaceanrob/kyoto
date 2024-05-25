@@ -4,8 +4,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::block::{Header, Version};
-use bitcoin::constants::genesis_block;
-use bitcoin::params::Params;
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
 use tokio::sync::Mutex;
@@ -25,7 +23,6 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
 
 #[derive(Debug)]
 pub(crate) struct SqliteHeaderDb {
-    genesis_header: Header,
     network: Network,
     conn: Arc<Mutex<Connection>>,
     anchor_height: u64,
@@ -40,13 +37,6 @@ impl SqliteHeaderDb {
         anchor_checkpoint: HeaderCheckpoint,
         path: Option<PathBuf>,
     ) -> Result<Self> {
-        let genesis = match network {
-            Network::Bitcoin => panic!("unimplemented"),
-            Network::Testnet => genesis_block(Params::new(network)).header,
-            Network::Signet => genesis_block(Params::new(network)).header,
-            Network::Regtest => panic!("unimplemented"),
-            _ => unreachable!(),
-        };
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
         path.push(network.to_string());
@@ -56,7 +46,6 @@ impl SqliteHeaderDb {
         let conn = Connection::open(path.join("headers.db"))?;
         conn.execute(SCHEMA, [])?;
         Ok(Self {
-            genesis_header: genesis,
             network,
             conn: Arc::new(Mutex::new(conn)),
             anchor_height: anchor_checkpoint.height as u64,

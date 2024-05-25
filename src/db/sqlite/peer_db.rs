@@ -47,7 +47,7 @@ impl SqlitePeerDb {
             Network::Bitcoin => 8333,
             Network::Testnet => 18333,
             Network::Signet => 38333,
-            Network::Regtest => panic!("unimplemented"),
+            Network::Regtest => 18444,
             _ => unreachable!(),
         };
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));

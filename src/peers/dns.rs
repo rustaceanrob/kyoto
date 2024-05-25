@@ -36,8 +36,8 @@ impl Dns {
             Network::Bitcoin => MAINNET_SEEDS.to_vec(),
             Network::Testnet => TESTNET_SEEDS.to_vec(),
             Network::Signet => SIGNET_SEEDS.to_vec(),
-            Network::Regtest => panic!("unimplemented network"),
-            _ => panic!("unreachable"),
+            Network::Regtest => Vec::with_capacity(0),
+            _ => unreachable!(),
         };
 
         let resolver = AsyncResolver::tokio_from_system_conf()

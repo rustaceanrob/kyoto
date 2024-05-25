@@ -60,7 +60,7 @@ impl Chain {
             Network::Bitcoin => panic!("unimplemented network"),
             Network::Testnet => Params::new(*network),
             Network::Signet => Params::new(*network),
-            Network::Regtest => panic!("unimplemented network"),
+            Network::Regtest => Params::new(*network),
             _ => unreachable!(),
         };
         let checkpoint = from_checkpoint.unwrap_or_else(|| checkpoints.last());

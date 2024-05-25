@@ -7,6 +7,11 @@ pub const TESTNET_HEADER_CP: &[(usize, &str)] = &[(
     "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70",
 )];
 
+pub const REGTEST_HEADER_CP: &[(usize, &str)] = &[(
+    0,
+    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+)];
+
 pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
     (
         0,
@@ -116,8 +121,8 @@ impl HeaderCheckpoints {
             Network::Bitcoin => panic!("unimplemented network"),
             Network::Testnet => TESTNET_HEADER_CP.to_vec(),
             Network::Signet => SIGNET_HEADER_CP.to_vec(),
-            Network::Regtest => panic!("unimplemented network"),
-            _ => panic!("unreachable"),
+            Network::Regtest => REGTEST_HEADER_CP.to_vec(),
+            _ => unreachable!(),
         };
         cp_list.iter().for_each(|(height, hash)| {
             checkpoints.push_back(HeaderCheckpoint {
