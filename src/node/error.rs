@@ -15,3 +15,9 @@ pub enum PersistenceError {
     #[error("there was an error loading peers from the database")]
     PeerLoadFailure,
 }
+
+#[derive(Error, Debug)]
+pub enum ClientError {
+    #[error("the receiver of this message was dropped from memory")]
+    SendError,
+}

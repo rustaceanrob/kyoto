@@ -34,6 +34,7 @@ use super::{
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 
+/// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
 pub enum NodeState {
     // We need to sync headers to the known tip
@@ -48,6 +49,8 @@ pub enum NodeState {
     TransactionsSynced,
 }
 
+/// A compact block filter client
+#[derive(Debug)]
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
@@ -134,6 +137,7 @@ impl Node {
         .await
     }
 
+    /// Run the node continuously. Typically run on a separate thread than the underlying application.
     pub async fn run(&mut self) -> Result<(), NodeError> {
         self.send_dialog("Starting node".into()).await;
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
@@ -233,6 +237,7 @@ impl Node {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
+                            _ => (),
                         }
                     }
                 }
@@ -309,13 +314,13 @@ impl Node {
                 }
             }
         }
-        // Even if we start the node as caught up in terms of height, we need to check for reorgs
         let mut guard = self.chain.lock().await;
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
             self.best_known_height = peer_height;
             guard.set_best_known_height(peer_height).await;
         }
+        // Even if we start the node as caught up in terms of height, we need to check for reorgs
         let next_headers = GetHeaderConfig {
             locators: guard.locators(),
             stop_hash: None,

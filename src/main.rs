@@ -42,7 +42,7 @@ async fn main() {
         .build_node()
         .await;
     let _ = tokio::task::spawn(async move { node.run().await });
-    let receiver = client.receiver();
+    let (mut sender, receiver) = client.split();
     loop {
         if let Some(message) = receiver.recv().await {
             match message {
@@ -54,6 +54,6 @@ async fn main() {
             }
         }
     }
+    let _ = sender.shutdown().await;
     println!("Shutting down");
-    client.shutdown().await;
 }

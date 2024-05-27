@@ -1,4 +1,4 @@
-pub mod error;
-pub mod memory;
-pub mod store;
+mod error;
+pub(crate) mod memory;
+pub(crate) mod store;
 pub mod types;

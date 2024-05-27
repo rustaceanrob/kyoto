@@ -32,6 +32,7 @@ const BAN_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS banned (
     banned_until INTEGER
 )";
 
+#[derive(Debug)]
 pub(crate) struct SqlitePeerDb {
     default_port: u16,
     conn_new: Arc<Mutex<Connection>>,

@@ -1,4 +1,4 @@
-use bitcoin::Block;
+pub use bitcoin::{Block, Transaction};
 
 use crate::tx::types::IndexedTransaction;
 
@@ -11,7 +11,7 @@ pub enum NodeMessage {
     Warning(String),
     /// A relevant transaction based on the user provided scripts
     Transaction(IndexedTransaction),
-    /// A relevant block based on the user provided scripts
+    /// A relevant [`Block`] based on the user provided scripts
     Block(Block),
     /// The node is fully synced, having scanned the requested range
     Synced,
@@ -22,4 +22,6 @@ pub enum NodeMessage {
 pub enum ClientMessage {
     /// Stop the node
     Shutdown,
+    /// Broadcast a [`Transaction`]
+    Broadcast(Transaction),
 }
