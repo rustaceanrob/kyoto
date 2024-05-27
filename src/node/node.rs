@@ -3,7 +3,7 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf, sync::Arc, time::Dur
 use bitcoin::{
     block::Header,
     p2p::{
-        message_filter::{CFHeaders, CFilter},
+        message_filter::{CFHeaders, CFilter, GetCFHeaders},
         Address, ServiceFlags,
     },
     Block, Network,
@@ -17,6 +17,7 @@ use tokio::{
 
 use crate::{
     chain::{chain::Chain, checkpoints::HeaderCheckpoint, error::HeaderSyncError},
+    filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
     peers::dns::Dns,
     tx::memory::MemoryTransactionCache,
@@ -253,19 +254,19 @@ impl Node {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
-                let mut header_guard = self.chain.lock().await;
-                if header_guard.is_synced() {
+                let mut header_chain = self.chain.lock().await;
+                if header_chain.is_synced() {
                     self.dialog
                         .send_dialog("Headers synced. Auditing our chain with peers".into())
                         .await;
-                    header_guard.flush_to_disk().await;
+                    header_chain.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
                 }
                 return;
             }
             NodeState::HeadersSynced => {
-                let header_guard = self.chain.lock().await;
-                if header_guard.is_cf_headers_synced() {
+                let header_chain = self.chain.lock().await;
+                if header_chain.is_cf_headers_synced() {
                     self.dialog
                         .send_dialog("CF Headers synced. Downloading block filters.".into())
                         .await;
@@ -274,8 +275,8 @@ impl Node {
                 return;
             }
             NodeState::FilterHeadersSynced => {
-                let header_guard = self.chain.lock().await;
-                if header_guard.is_filters_synced() {
+                let header_chain = self.chain.lock().await;
+                if header_chain.is_filters_synced() {
                     self.dialog
                         .send_dialog("Filters synced. Checking blocks for new inclusions.".into())
                         .await;
@@ -284,8 +285,8 @@ impl Node {
                 return;
             }
             NodeState::FiltersSynced => {
-                let header_guard = self.chain.lock().await;
-                if header_guard.block_queue_empty() {
+                let header_chain = self.chain.lock().await;
+                if header_chain.block_queue_empty() {
                     *state = NodeState::TransactionsSynced;
                     let _ = self.dialog.send_data(NodeMessage::Synced).await;
                 }
@@ -322,15 +323,15 @@ impl Node {
                 }
             }
         }
-        let mut guard = self.chain.lock().await;
+        let mut chain = self.chain.lock().await;
         let peer_height = version_message.height as u32;
         if peer_height.ge(&self.best_known_height) {
             self.best_known_height = peer_height;
-            guard.set_best_known_height(peer_height).await;
+            chain.set_best_known_height(peer_height).await;
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs
         let next_headers = GetHeaderConfig {
-            locators: guard.locators(),
+            locators: chain.locators(),
             stop_hash: None,
         };
         let response = MainThreadMessage::GetHeaders(next_headers);
@@ -338,8 +339,8 @@ impl Node {
     }
 
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
-        let mut guard = self.peer_db.lock().await;
-        if let Err(e) = guard.add_cpf_peers(new_peers).await {
+        let mut chain = self.peer_db.lock().await;
+        if let Err(e) = chain.add_cpf_peers(new_peers).await {
             self.dialog
                 .send_warning(format!(
                     "Encountered error adding peer to the database: {}",
@@ -350,15 +351,15 @@ impl Node {
     }
 
     async fn handle_headers(&mut self, headers: Vec<Header>) -> Option<MainThreadMessage> {
-        let mut guard = self.chain.lock().await;
-        if let Err(e) = guard.sync_chain(headers).await {
+        let mut chain = self.chain.lock().await;
+        if let Err(e) = chain.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
-                    if !guard.is_synced() {
+                    if !chain.is_synced() {
                         return Some(MainThreadMessage::Disconnect);
-                    } else if !guard.is_cf_headers_synced() {
+                    } else if !chain.is_cf_headers_synced() {
                         return Some(MainThreadMessage::GetFilterHeaders(
-                            guard.next_cf_header_message().await.unwrap(),
+                            chain.next_cf_header_message().await.unwrap(),
                         ));
                     }
                     return None;
@@ -374,19 +375,19 @@ impl Node {
                 }
             }
         }
-        if !guard.is_synced() {
+        if !chain.is_synced() {
             let next_headers = GetHeaderConfig {
-                locators: guard.locators(),
+                locators: chain.locators(),
                 stop_hash: None,
             };
             return Some(MainThreadMessage::GetHeaders(next_headers));
-        } else if !guard.is_cf_headers_synced() {
+        } else if !chain.is_cf_headers_synced() {
             return Some(MainThreadMessage::GetFilterHeaders(
-                guard.next_cf_header_message().await.unwrap(),
+                chain.next_cf_header_message().await.unwrap(),
             ));
-        } else if !guard.is_filters_synced() {
+        } else if !chain.is_filters_synced() {
             return Some(MainThreadMessage::GetFilters(
-                guard.next_filter_message().await.unwrap(),
+                chain.next_filter_message().await.unwrap(),
             ));
         }
         None
@@ -397,18 +398,34 @@ impl Node {
         peer_id: u32,
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
-        let mut guard = self.chain.lock().await;
-        match guard.sync_cf_headers(peer_id, cf_headers).await {
+        let mut chain = self.chain.lock().await;
+        match chain.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
-                Some(message) => Some(MainThreadMessage::GetFilterHeaders(message)),
-                None => {
-                    if !guard.is_filters_synced() {
+                CFHeaderSyncResult::AddedToQueue => None,
+                CFHeaderSyncResult::ReadyForNext => {
+                    // We added a batch to the queue and still are not at the required height
+                    if !chain.is_cf_headers_synced() {
+                        return Some(MainThreadMessage::GetFilterHeaders(
+                            chain.next_cf_header_message().await.unwrap(),
+                        ));
+                    } else if !chain.is_filters_synced() {
+                        // The header chain and filter header chain are in sync, but we need filters still
                         return Some(MainThreadMessage::GetFilters(
-                            guard.next_filter_message().await.unwrap(),
+                            chain.next_filter_message().await.unwrap(),
                         ));
                     } else {
+                        // Should be unreachable if we just added filter headers
                         return None;
                     }
+                }
+                CFHeaderSyncResult::Dispute(_) => {
+                    // Request the block from the peer
+                    self.dialog
+                        .send_warning(
+                            "Found a conflict while peers are sending filter headers".into(),
+                        )
+                        .await;
+                    None
                 }
             },
             Err(e) => {
@@ -424,8 +441,8 @@ impl Node {
     }
 
     async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
-        let mut guard = self.chain.lock().await;
-        match guard.sync_filter(filter).await {
+        let mut chain = self.chain.lock().await;
+        match chain.sync_filter(filter).await {
             Ok(potential_message) => match potential_message {
                 Some(message) => Some(MainThreadMessage::GetFilters(message)),
                 None => None,
@@ -444,7 +461,7 @@ impl Node {
 
     async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
         let state = *self.state.read().await;
-        let mut guard = self.chain.lock().await;
+        let mut chain = self.chain.lock().await;
         match state {
             NodeState::Behind => Some(MainThreadMessage::Disconnect),
             NodeState::HeadersSynced => {
@@ -453,7 +470,7 @@ impl Node {
             }
             NodeState::FilterHeadersSynced => None,
             NodeState::FiltersSynced => {
-                if let Err(e) = guard.scan_block(&block).await {
+                if let Err(e) = chain.scan_block(&block).await {
                     self.dialog
                         .send_warning(format!(
                             "Unexpected block scanning error: {}",
@@ -469,11 +486,11 @@ impl Node {
 
     async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
         let state = self.state.read().await;
-        let mut guard = self.chain.lock().await;
+        let mut chain = self.chain.lock().await;
         // Do we actually need to wait for the headers to sync?
         match *state {
             NodeState::FiltersSynced => {
-                let next_block_hash = guard.next_block();
+                let next_block_hash = chain.next_block();
                 match next_block_hash {
                     Some(block_hash) => {
                         self.dialog
@@ -495,10 +512,10 @@ impl Node {
         match *state {
             NodeState::Behind => return None,
             _ => {
-                let guard = self.chain.lock().await;
+                let chain = self.chain.lock().await;
                 *state = NodeState::Behind;
                 let next_headers = GetHeaderConfig {
-                    locators: guard.locators(),
+                    locators: chain.locators(),
                     stop_hash: None,
                 };
                 return Some(MainThreadMessage::GetHeaders(next_headers));
@@ -525,8 +542,8 @@ impl Node {
     }
 
     async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, NodeError> {
-        let mut guard = self.peer_db.lock().await;
-        if let Some(peer) = guard
+        let mut chain = self.peer_db.lock().await;
+        if let Some(peer) = chain
             .get_random_cpf_peer()
             .await
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?
@@ -551,9 +568,9 @@ impl Node {
                 None => (),
             }
         }
-        let mut guard = self.peer_db.lock().await;
+        let mut chain = self.peer_db.lock().await;
         // Try to get any new peer
-        let next_peer = guard
+        let next_peer = chain
             .get_random_new()
             .await
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
@@ -578,7 +595,7 @@ impl Node {
                 // DNS fails if there is an insufficient number of peers
                 let ret_ip = new_peers[0];
                 for peer in new_peers {
-                    if let Err(e) = guard.add_new(peer, None, None).await {
+                    if let Err(e) = chain.add_new(peer, None, None).await {
                         self.dialog
                             .send_warning(format!(
                                 "Encountered error adding a peer to the database: {}",

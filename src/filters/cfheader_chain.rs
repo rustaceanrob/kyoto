@@ -8,7 +8,7 @@ use super::{cfheader_batch::CFHeaderBatch, error::CFHeaderSyncError};
 
 type InternalChain = Vec<(FilterHeader, FilterHash)>;
 
-const INITIAL_BUFFER_SIZE: usize = 2_000;
+const INITIAL_BUFFER_SIZE: usize = 20_000;
 
 pub(crate) enum AppendAttempt {
     // Nothing to do yet
@@ -19,6 +19,12 @@ pub(crate) enum AppendAttempt {
     Conflict(usize),
 }
 
+// Mapping from an append attempt to a message the node can handle
+pub(crate) enum CFHeaderSyncResult {
+    AddedToQueue,
+    ReadyForNext,
+    Dispute(BlockHash),
+}
 #[derive(Debug)]
 pub(crate) struct CFHeaderChain {
     anchor_checkpoint: HeaderCheckpoint,

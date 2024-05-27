@@ -6,7 +6,7 @@ use super::filter::Filter;
 
 type Filters = Vec<Filter>;
 
-const INITIAL_BUFFER_SIZE: usize = 2_000;
+const INITIAL_BUFFER_SIZE: usize = 20_000;
 
 #[derive(Debug)]
 pub(crate) struct FilterChain {

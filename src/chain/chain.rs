@@ -20,7 +20,7 @@ use crate::{
     db::sqlite::header_db::SqliteHeaderDb,
     filters::{
         cfheader_batch::CFHeaderBatch,
-        cfheader_chain::{AppendAttempt, CFHeaderChain},
+        cfheader_chain::{AppendAttempt, CFHeaderChain, CFHeaderSyncResult},
         error::{CFHeaderSyncError, CFilterSyncError},
         filter::Filter,
         filter_chain::FilterChain,
@@ -385,18 +385,16 @@ impl Chain {
         &mut self,
         peer_id: u32,
         cf_headers: CFHeaders,
-    ) -> Result<Option<GetCFHeaders>, CFHeaderSyncError> {
+    ) -> Result<CFHeaderSyncResult, CFHeaderSyncError> {
         let batch: CFHeaderBatch = cf_headers.into();
         self.audit_cf_headers(&batch).await?;
         match self.cf_header_chain.append(peer_id, batch).await? {
-            AppendAttempt::AddedToQueue => Ok(None),
-            AppendAttempt::Extended => Ok(self.next_cf_header_message().await),
-            AppendAttempt::Conflict(_) => {
-                self.dialog
-                    .send_warning("Found a conflict while peers are sending filter headers".into())
-                    .await;
-                Ok(None)
-            }
+            AppendAttempt::AddedToQueue => Ok(CFHeaderSyncResult::AddedToQueue),
+            AppendAttempt::Extended => Ok(CFHeaderSyncResult::ReadyForNext),
+            AppendAttempt::Conflict(height) => match self.header_at_height(height).await {
+                Some(header) => Ok(CFHeaderSyncResult::Dispute(header.block_hash())),
+                None => Err(CFHeaderSyncError::HeaderChainIndexOverflow),
+            },
         }
     }
 
