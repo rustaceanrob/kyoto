@@ -3,7 +3,7 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf, sync::Arc, time::Dur
 use bitcoin::{
     block::Header,
     p2p::{
-        message_filter::{CFHeaders, CFilter, GetCFHeaders},
+        message_filter::{CFHeaders, CFilter},
         Address, ServiceFlags,
     },
     Block, Network,

@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use bitcoin::{bip158::BlockFilter, Block, BlockHash, FilterHash, ScriptBuf};
+use bitcoin::{bip158::BlockFilter, BlockHash, FilterHash, ScriptBuf};
 use bitcoin_hashes::{sha256d, Hash};
 
 use super::error::FilterError;

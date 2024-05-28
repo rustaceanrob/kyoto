@@ -11,6 +11,7 @@ use bitcoin::{
 use tokio::sync::Mutex;
 
 use super::{
+    block_queue::BlockQueue,
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, HeaderPersistenceError, HeaderSyncError},
     header_chain::HeaderChain,
@@ -41,7 +42,7 @@ pub(crate) struct Chain {
     db: Mutex<SqliteHeaderDb>,
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
-    block_queue: Vec<BlockHash>,
+    block_queue: BlockQueue,
     tx_store: MemoryTransactionCache,
     dialog: Dialog,
 }
@@ -113,7 +114,7 @@ impl Chain {
             filter_chain,
             best_known_height: None,
             scripts,
-            block_queue: Vec::new(),
+            block_queue: BlockQueue::new(),
             tx_store,
             dialog,
         })
@@ -286,6 +287,7 @@ impl Chain {
         Ok(())
     }
 
+    /// Sync with extra requirements on checkpoints and forks
     async fn catch_up_sync(&mut self, header_batch: HeadersBatch) -> Result<(), HeaderSyncError> {
         assert!(!self.checkpoints.is_exhausted());
         // Eagerly append the batch to the chain
@@ -387,6 +389,17 @@ impl Chain {
         cf_headers: CFHeaders,
     ) -> Result<CFHeaderSyncResult, CFHeaderSyncError> {
         let batch: CFHeaderBatch = cf_headers.into();
+        self.dialog
+            .chain_update(
+                self.height(),
+                self.cf_header_chain.height(),
+                self.filter_chain.height(),
+                self.best_known_height
+                    .unwrap_or(self.height() as u32)
+                    .try_into()
+                    .unwrap(),
+            )
+            .await;
         self.audit_cf_headers(&batch).await?;
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(CFHeaderSyncResult::AddedToQueue),
@@ -398,6 +411,7 @@ impl Chain {
         }
     }
 
+    /// Audit the validity of a batch of compact filter headers
     async fn audit_cf_headers(&mut self, batch: &CFHeaderBatch) -> Result<(), CFHeaderSyncError> {
         // Does this stop hash even exist in our chain
         if !self.contains_hash(*batch.stop_hash()) {
@@ -440,12 +454,6 @@ impl Chain {
         } else {
             self.tip()
         };
-        self.dialog
-            .send_dialog(format!(
-                "Request for CF headers up to hash {}",
-                stop_hash.to_string(),
-            ))
-            .await;
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         if !self.is_cf_headers_synced() {
             Some(GetCFHeaders {
@@ -486,7 +494,7 @@ impl Chain {
                 .map_err(|e| CFilterSyncError::Filter(e))?
         {
             // Add to the block queue
-            self.block_queue.push(filter_message.block_hash);
+            self.block_queue.add(filter_message.block_hash);
             self.dialog
                 .send_dialog(format!(
                     "Found script at block: {}",
@@ -515,10 +523,15 @@ impl Chain {
             self.tip()
         };
         self.dialog
-            .send_dialog(format!(
-                "Filters synced to height: {}",
-                self.filter_chain.height()
-            ))
+            .chain_update(
+                self.height(),
+                self.cf_header_chain.height(),
+                self.filter_chain.height(),
+                self.best_known_height
+                    .unwrap_or(self.height() as u32)
+                    .try_into()
+                    .unwrap(),
+            )
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
         if !self.is_filters_synced() {
@@ -544,11 +557,12 @@ impl Chain {
 
     // Are there any blocks left in the queue
     pub(crate) fn block_queue_empty(&self) -> bool {
-        self.block_queue.is_empty()
+        self.block_queue.complete()
     }
 
     // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
+        self.block_queue.receive_one();
         let height_of_block = self.height_of_hash(block.block_hash()).await;
         for tx in &block.txdata {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {

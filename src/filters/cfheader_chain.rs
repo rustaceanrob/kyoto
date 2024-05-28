@@ -84,9 +84,7 @@ impl CFHeaderChain {
                 // Compare it to the other peer
                 if let Some(comparitor) = peer.get(index) {
                     if header.ne(&comparitor.0) {
-                        return Ok(AppendAttempt::Conflict(
-                            self.anchor_checkpoint.height + index,
-                        ));
+                        return Ok(AppendAttempt::Conflict(self.height() + index + 1));
                     }
                 }
             }

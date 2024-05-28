@@ -16,6 +16,20 @@ impl Dialog {
         let _ = self.ntx.send(NodeMessage::Dialog(dialog)).await;
     }
 
+    pub(crate) async fn chain_update(
+        &mut self,
+        num_headers: usize,
+        num_cf_headers: usize,
+        num_filters: usize,
+        best_height: usize,
+    ) {
+        let message = format!(
+            "Headers: ({}/{}) | Compact Filter Headers: ({}/{}) | Filters: ({}/{})",
+            num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
+        );
+        let _ = self.ntx.send(NodeMessage::Dialog(message)).await;
+    }
+
     pub(crate) async fn send_warning(&mut self, warning: String) {
         let _ = self.ntx.send(NodeMessage::Warning(warning)).await;
     }

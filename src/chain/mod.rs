@@ -1,3 +1,4 @@
+pub(crate) mod block_queue;
 pub(crate) mod chain;
 pub mod checkpoints;
 pub(crate) mod error;
