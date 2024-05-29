@@ -62,7 +62,10 @@ impl SqliteHeaderDb {
         let mut query = write_lock.prepare(&stmt)?;
         let mut rows = query.query([])?;
         while let Some(row) = rows.next()? {
-            let _height: u32 = row.get(0)?;
+            let height: u32 = row.get(0)?;
+            if height.le(&(self.anchor_height as u32)) {
+                continue;
+            }
             let hash: String = row.get(1)?;
             let version: i32 = row.get(2)?;
             let prev_hash: String = row.get(3)?;

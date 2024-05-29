@@ -1,4 +1,10 @@
-use std::{collections::HashSet, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    net::IpAddr,
+    path::PathBuf,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 
 use bitcoin::{
     block::Header,
@@ -65,6 +71,7 @@ pub struct Node {
     network: Network,
     dialog: Dialog,
     client_recv: Receiver<ClientMessage>,
+    is_running: AtomicBool,
 }
 
 impl Node {
@@ -119,6 +126,7 @@ impl Node {
                 network,
                 dialog,
                 client_recv: crx,
+                is_running: AtomicBool::new(false),
             },
             client,
         ))
@@ -139,9 +147,16 @@ impl Node {
         .await
     }
 
+    /// Has [`Node::run`] been called.
+    pub fn is_running(&self) -> bool {
+        self.is_running.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Run the node continuously. Typically run on a separate thread than the underlying application.
     pub async fn run(&mut self) -> Result<(), NodeError> {
         self.dialog.send_dialog("Starting node".into()).await;
+        self.is_running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network.clone());
         loop {
@@ -288,7 +303,13 @@ impl Node {
                 let header_chain = self.chain.lock().await;
                 if header_chain.block_queue_empty() {
                     *state = NodeState::TransactionsSynced;
-                    let _ = self.dialog.send_data(NodeMessage::Synced).await;
+                    let _ = self
+                        .dialog
+                        .send_data(NodeMessage::Synced(HeaderCheckpoint::new(
+                            header_chain.height(),
+                            header_chain.tip(),
+                        )))
+                        .await;
                 }
                 return;
             }

@@ -181,15 +181,39 @@ impl HeaderChain {
 
     // Extend the current chain, potentially rewriting history
     pub(crate) fn extend(&mut self, batch: &Vec<Header>) -> Vec<Header> {
-        let reorged = Vec::new();
-        let next_connection = batch
+        let mut reorged = Vec::new();
+        // We cannot extend from nothing
+        if batch.is_empty() {
+            return reorged;
+        }
+        // This is the usual case where the headers link
+        if self.tip().eq(&batch
             .first()
-            .expect("cannot extend from empty chain")
-            .prev_blockhash;
-        // replace with reorg code
-        assert_eq!(self.tip(), next_connection);
-        self.headers.extend(batch);
-        reorged
+            .expect("cannot extend from empty batch")
+            .prev_blockhash)
+        {
+            self.headers.extend(batch);
+        } else {
+            // Panic if we don't contain the hash. Something went wrong further up the call stack.
+            assert!(self.contains_hash(
+                batch
+                    .first()
+                    .expect("cannot extend from empty batch")
+                    .prev_blockhash
+            ));
+            // Remove items from the top of the chain until they link.
+            while self.tip().ne(&batch
+                .first()
+                .expect("cannot extend from empty batch")
+                .prev_blockhash)
+            {
+                if let Some(header) = self.headers.pop() {
+                    reorged.push(header)
+                }
+            }
+            self.headers.extend(batch);
+        }
+        reorged.iter().rev().map(|header| *header).collect()
     }
 
     // Clear all the headers from our chain. Only to be used when a peer has feed us faulty checkpoints

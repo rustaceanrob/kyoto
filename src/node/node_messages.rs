@@ -1,6 +1,6 @@
 pub use bitcoin::{Block, Transaction};
 
-use crate::tx::types::IndexedTransaction;
+use crate::{chain::checkpoints::HeaderCheckpoint, tx::types::IndexedTransaction};
 
 /// Messages receivable by a running node
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub enum NodeMessage {
     /// A relevant [`Block`] based on the user provided scripts
     Block(Block),
     /// The node is fully synced, having scanned the requested range
-    Synced,
+    Synced(HeaderCheckpoint),
 }
 
 /// Commands to issue a node

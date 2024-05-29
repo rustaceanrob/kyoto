@@ -30,9 +30,9 @@ async fn main() {
     let (mut node, mut client) = builder
         // .add_peers(vec![(pref_peer, 18444)])
         .anchor_checkpoint(HeaderCheckpoint {
-            height: 180_000,
+            height: 197_652,
             hash: BlockHash::from_str(
-                "0000000870f15246ba23c16e370a7ffb1fc8a3dcf8cb4492882ed4b0e3d4cd26",
+                "0000006067eb002b26cf8411eae04082435bfce44144831938b4b24abcd1fca3",
             )
             .unwrap(),
         })
@@ -50,7 +50,14 @@ async fn main() {
                 NodeMessage::Warning(e) => println!("\x1b[93mWarn\x1b[0m {}", e),
                 NodeMessage::Transaction(t) => drop(t),
                 NodeMessage::Block(b) => drop(b),
-                NodeMessage::Synced => break,
+                NodeMessage::Synced(tip) => {
+                    println!(
+                        "\x1b[32mInfo\x1b[0m Synced chain up to height {} with hash {}",
+                        tip.height,
+                        tip.hash.to_string()
+                    );
+                    break;
+                }
             }
         }
     }

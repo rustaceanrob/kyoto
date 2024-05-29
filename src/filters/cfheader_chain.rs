@@ -39,7 +39,7 @@ impl CFHeaderChain {
     pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint, quorum_required: usize) -> Self {
         Self {
             anchor_checkpoint,
-            header_chain: vec![],
+            header_chain: Vec::new(),
             merged_queue: HashMap::new(),
             block_to_hash: HashMap::with_capacity(INITIAL_BUFFER_SIZE),
             prev_stophash_request: None,

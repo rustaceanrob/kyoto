@@ -52,7 +52,7 @@ impl Client {
         loop {
             while let Some(message) = self.nrx.recv().await {
                 match message {
-                    NodeMessage::Synced => return,
+                    NodeMessage::Synced(_) => return,
                     _ => (),
                 }
             }
