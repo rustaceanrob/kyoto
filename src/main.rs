@@ -56,11 +56,11 @@ async fn main() {
                         tip.height,
                         tip.hash.to_string()
                     );
-                    break;
+                    // break;
                 }
             }
         }
     }
-    let _ = sender.shutdown().await;
-    println!("Shutting down");
+    // let _ = sender.shutdown().await;
+    // println!("Shutting down");
 }

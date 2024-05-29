@@ -65,7 +65,6 @@ pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
     peer_db: Arc<Mutex<SqlitePeerDb>>,
-    best_known_height: u32,
     required_peers: usize,
     white_list: Whitelist,
     network: Network,
@@ -120,7 +119,6 @@ impl Node {
                 state,
                 chain,
                 peer_db,
-                best_known_height,
                 required_peers,
                 white_list,
                 network,
@@ -193,7 +191,9 @@ impl Node {
                                 PeerMessage::Version(version) => {
                                     node_map.set_offset(peer_thread.nonce, version.timestamp);
                                     node_map.set_services(peer_thread.nonce, version.service_flags);
-                                    let response = self.handle_version(version).await;
+                                    node_map.set_height(peer_thread.nonce, version.height as u32);
+                                    let best = *node_map.best_height().unwrap_or(&0);
+                                    let response = self.handle_version(version, best).await;
                                     node_map.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
                                         .await;
@@ -233,10 +233,16 @@ impl Node {
                                     }
                                     None => continue,
                                 },
-                                PeerMessage::NewBlocks(_blocks) => {
+                                PeerMessage::NewBlocks(blocks) => {
                                     self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
                                         .await;
-                                    match self.handle_inventory_blocks().await {
+                                    for block in blocks {
+                                        self.dialog.send_dialog(format!("New block: {}", block.to_string()))
+                                            .await;
+                                    }
+                                    node_map.add_one_height(peer_thread.nonce);
+                                    let best = *node_map.best_height().unwrap_or(&0);
+                                    match self.handle_inventory_blocks(best).await {
                                         Some(response) => {
                                             node_map.broadcast(response).await;
                                         }
@@ -325,7 +331,11 @@ impl Node {
         }
     }
 
-    async fn handle_version(&mut self, version_message: RemoteVersion) -> MainThreadMessage {
+    async fn handle_version(
+        &mut self,
+        version_message: RemoteVersion,
+        best_height: u32,
+    ) -> MainThreadMessage {
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
@@ -345,10 +355,8 @@ impl Node {
             }
         }
         let mut chain = self.chain.lock().await;
-        let peer_height = version_message.height as u32;
-        if peer_height.ge(&self.best_known_height) {
-            self.best_known_height = peer_height;
-            chain.set_best_known_height(peer_height).await;
+        if chain.height().lt(&(best_height as usize)) {
+            chain.set_best_known_height(best_height).await;
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs
         let next_headers = GetHeaderConfig {
@@ -528,17 +536,20 @@ impl Node {
         }
     }
 
-    async fn handle_inventory_blocks(&mut self) -> Option<MainThreadMessage> {
+    async fn handle_inventory_blocks(&mut self, new_height: u32) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => return None,
             _ => {
-                let chain = self.chain.lock().await;
                 *state = NodeState::Behind;
+                let mut chain = self.chain.lock().await;
                 let next_headers = GetHeaderConfig {
                     locators: chain.locators(),
                     stop_hash: None,
                 };
+                if chain.height().le(&(new_height as usize)) {
+                    chain.set_best_known_height(new_height).await;
+                }
                 return Some(MainThreadMessage::GetHeaders(next_headers));
             }
         }

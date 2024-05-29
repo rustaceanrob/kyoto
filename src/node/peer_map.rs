@@ -1,4 +1,8 @@
-use std::{collections::HashMap, net::IpAddr};
+use std::{
+    collections::HashMap,
+    net::IpAddr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use bitcoin::{p2p::ServiceFlags, Network};
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
@@ -23,6 +27,7 @@ pub(crate) struct ManagedPeer {
 
 pub(crate) struct PeerMap {
     num_peers: u32,
+    heights: HashMap<u32, u32>,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<u32, ManagedPeer>,
@@ -32,6 +37,7 @@ impl PeerMap {
     pub fn new(mtx: Sender<PeerThreadMessage>, network: Network) -> Self {
         Self {
             num_peers: 0,
+            heights: HashMap::new(),
             network,
             mtx,
             map: HashMap::new(),
@@ -39,7 +45,8 @@ impl PeerMap {
     }
 
     pub async fn clean(&mut self) {
-        self.map.retain(|_, peer| !peer.handle.is_finished())
+        self.map.retain(|_, peer| !peer.handle.is_finished());
+        self.heights.retain(|peer, _| self.map.contains_key(peer));
     }
 
     pub fn live(&mut self) -> usize {
@@ -71,9 +78,13 @@ impl PeerMap {
         0
     }
 
-    pub fn set_offset(&mut self, peer: u32, offset: i64) {
+    pub fn set_offset(&mut self, peer: u32, time: i64) {
         if let Some(peer) = self.map.get_mut(&peer) {
-            peer.net_time = offset;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_secs();
+            peer.net_time = time - now as i64;
         }
     }
 
@@ -98,6 +109,20 @@ impl PeerMap {
         if let Some(peer) = self.map.get_mut(&nonce) {
             peer.service_flags = Some(flags)
         }
+    }
+
+    pub fn set_height(&mut self, nonce: u32, height: u32) {
+        self.heights.insert(nonce, height);
+    }
+
+    pub fn add_one_height(&mut self, nonce: u32) {
+        if let Some(height) = self.heights.get(&nonce) {
+            self.heights.insert(nonce, height + 1);
+        }
+    }
+
+    pub fn best_height(&self) -> Option<&u32> {
+        self.heights.values().max()
     }
 
     pub async fn send_message(&mut self, nonce: u32, message: MainThreadMessage) {

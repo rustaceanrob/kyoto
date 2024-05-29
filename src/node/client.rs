@@ -33,8 +33,8 @@ impl Client {
 
     /// Return a [`Receiver`] to listen for incoming node events.
     /// This method returns a mutable borrow to the [`Receiver`]. If you require the
-    /// ability to send events to the node, i.e. to broadcast a transaction, either call [`Client::split`] or [`Client::sender`]
-    /// before calling [`Client::receiver`].
+    /// ability to send events to the node, i.e. to broadcast a transaction, either call [`Client::split`]
+    /// or [`Client::sender`] before calling [`Client::receiver`].
     pub fn receiver(&mut self) -> &mut Receiver<NodeMessage> {
         &mut self.nrx
     }
@@ -78,6 +78,7 @@ impl Client {
     }
 }
 
+/// Send messages to a node that is running so the node may complete a task.
 #[derive(Debug, Clone)]
 pub struct ClientSender {
     ntx: Sender<ClientMessage>,
