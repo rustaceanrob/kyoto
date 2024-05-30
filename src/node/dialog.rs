@@ -24,7 +24,7 @@ impl Dialog {
         best_height: usize,
     ) {
         let message = format!(
-            "Headers: ({}/{}) | Compact Filter Headers: ({}/{}) | Filters: ({}/{})",
+            "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
             num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
         );
         let _ = self.ntx.send(NodeMessage::Dialog(message)).await;

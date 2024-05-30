@@ -2,6 +2,12 @@
 name = "light-client"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "A Bitcoin light-client according to the BIP-157/BIP-158 specifications"
+repository = "https://github.com/rustaceanrob/bip324"
+readme = "README.md"
+resolver = "2"
+# members = ["example", "src"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,15 +18,31 @@ bitcoin = { version = "0.32.0", features = [
     "std",
     "serde",
 ], default-features = false }
-# console-subscriber = "0.2.0"
-hex = "0.4.0"
+# Enable the tokio-console task and poll observations
+# console-subscriber = "0.2.0" 
 rand = "0.8.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 thiserror = { version = "1" }
 tokio = { version = "1", default-features = false, features = [
-    "full",
-] } # add feature "tracing" to use the console
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "macros",
+] }
 trust-dns-resolver = "0.23"
 
 [dev-dependencies]
 hex = { version = "0.4.0" }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tokio = { version = "1", default-features = false, features = [
+    "full",
+] } # add feature "tracing" to use the console
+
+[[example]]
+name = "signet"
+path = "example/signet.rs"
+
+[lib]
+name = "kyoto_light_client"
+path = "src/lib.rs"

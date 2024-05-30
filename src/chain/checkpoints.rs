@@ -103,7 +103,7 @@ pub struct HeaderCheckpoint {
 }
 
 impl HeaderCheckpoint {
-    pub(crate) fn new(height: usize, hash: BlockHash) -> Self {
+    pub fn new(height: usize, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }
 }
