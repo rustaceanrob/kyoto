@@ -3,12 +3,15 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use bitcoin::block::{Header, Version};
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
 use tokio::sync::Mutex;
 
 use crate::chain::checkpoints::HeaderCheckpoint;
+use crate::db::error::HeaderDatabaseError;
+use crate::db::traits::HeaderStore;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,
@@ -36,15 +39,17 @@ impl SqliteHeaderDb {
         last_checkpoint: HeaderCheckpoint,
         anchor_checkpoint: HeaderCheckpoint,
         path: Option<PathBuf>,
-    ) -> Result<Self> {
+    ) -> Result<Self, HeaderDatabaseError> {
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
         path.push(network.to_string());
         if !path.exists() {
             fs::create_dir_all(&path).unwrap();
         }
-        let conn = Connection::open(path.join("headers.db"))?;
-        conn.execute(SCHEMA, [])?;
+        let conn = Connection::open(path.join("headers.db"))
+            .map_err(|_| HeaderDatabaseError::LoadError)?;
+        conn.execute(SCHEMA, [])
+            .map_err(|_| HeaderDatabaseError::LoadError)?;
         Ok(Self {
             network,
             conn: Arc::new(Mutex::new(conn)),
@@ -53,26 +58,33 @@ impl SqliteHeaderDb {
             last_checkpoint,
         })
     }
+}
 
+#[async_trait]
+impl HeaderStore for SqliteHeaderDb {
     // load all the known headers from storage
-    pub async fn load(&mut self) -> Result<Vec<Header>> {
+    async fn load(&mut self) -> Result<Vec<Header>, HeaderDatabaseError> {
         let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height);
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
-        let mut query = write_lock.prepare(&stmt)?;
-        let mut rows = query.query([])?;
-        while let Some(row) = rows.next()? {
-            let height: u32 = row.get(0)?;
+        let mut query = write_lock
+            .prepare(&stmt)
+            .map_err(|_| HeaderDatabaseError::LoadError)?;
+        let mut rows = query
+            .query([])
+            .map_err(|_| HeaderDatabaseError::LoadError)?;
+        while let Some(row) = rows.next().map_err(|_| HeaderDatabaseError::LoadError)? {
+            let height: u32 = row.get(0).map_err(|_| HeaderDatabaseError::LoadError)?;
             if height.le(&(self.anchor_height as u32)) {
                 continue;
             }
-            let hash: String = row.get(1)?;
-            let version: i32 = row.get(2)?;
-            let prev_hash: String = row.get(3)?;
-            let merkle_root: String = row.get(4)?;
-            let time: u32 = row.get(5)?;
-            let bits: u32 = row.get(6)?;
-            let nonce: u32 = row.get(7)?;
+            let hash: String = row.get(1).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let version: i32 = row.get(2).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let prev_hash: String = row.get(3).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let merkle_root: String = row.get(4).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let time: u32 = row.get(5).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let bits: u32 = row.get(6).map_err(|_| HeaderDatabaseError::LoadError)?;
+            let nonce: u32 = row.get(7).map_err(|_| HeaderDatabaseError::LoadError)?;
 
             let next_header = Header {
                 version: Version::from_consensus(version),
@@ -107,10 +119,14 @@ impl SqliteHeaderDb {
         Ok(headers)
     }
 
-    pub async fn write(&mut self, header_chain: &Vec<Header>) -> Result<()> {
+    async fn write(&mut self, header_chain: &Vec<Header>) -> Result<(), HeaderDatabaseError> {
         let mut write_lock = self.conn.lock().await;
-        let tx = write_lock.transaction()?;
-        let count: u64 = tx.query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))?;
+        let tx = write_lock
+            .transaction()
+            .map_err(|_| HeaderDatabaseError::WriteError)?;
+        let count: u64 = tx
+            .query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))
+            .map_err(|_| HeaderDatabaseError::WriteError)?;
         let adjusted_count = count.checked_sub(1).unwrap_or(0) + self.anchor_height;
         for (height, header) in header_chain.iter().enumerate() {
             let adjusted_height = self.anchor_height + 1 + height as u64;
@@ -124,9 +140,9 @@ impl SqliteHeaderDb {
                 let nonce: u32 = header.nonce;
                 // Do not allow rewrites before a checkpoint. if they were written to the db they were correct
                 let stmt = if height.le(&self.last_checkpoint.height) {
-                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (.map_err(|_| HeaderDatabaseError::LoadError)?1, .map_err(|_| HeaderDatabaseError::LoadError)?2, .map_err(|_| HeaderDatabaseError::LoadError)?3, .map_err(|_| HeaderDatabaseError::LoadError)?4, .map_err(|_| HeaderDatabaseError::LoadError)?5, .map_err(|_| HeaderDatabaseError::LoadError)?6, .map_err(|_| HeaderDatabaseError::LoadError)?7, .map_err(|_| HeaderDatabaseError::LoadError)?8)"
                 } else {
-                    "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                    "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (.map_err(|_| HeaderDatabaseError::LoadError)?1, .map_err(|_| HeaderDatabaseError::LoadError)?2, .map_err(|_| HeaderDatabaseError::LoadError)?3, .map_err(|_| HeaderDatabaseError::LoadError)?4, .map_err(|_| HeaderDatabaseError::LoadError)?5, .map_err(|_| HeaderDatabaseError::LoadError)?6, .map_err(|_| HeaderDatabaseError::LoadError)?7, .map_err(|_| HeaderDatabaseError::LoadError)?8)"
                 };
                 tx.execute(
                     &stmt,
@@ -140,10 +156,11 @@ impl SqliteHeaderDb {
                         bits,
                         nonce
                     ],
-                )?;
+                )
+                .map_err(|_| HeaderDatabaseError::WriteError)?;
             }
         }
-        tx.commit()?;
+        tx.commit().map_err(|_| HeaderDatabaseError::WriteError)?;
         Ok(())
     }
 }

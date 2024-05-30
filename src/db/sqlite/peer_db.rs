@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::prelude::default_port_from_network;
+
 const MAXIMUM_TABLE_SIZE: i64 = 256;
 
 const NEW_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
@@ -44,13 +46,7 @@ pub(crate) struct SqlitePeerDb {
 
 impl SqlitePeerDb {
     pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self> {
-        let default_port = match network {
-            Network::Bitcoin => 8333,
-            Network::Testnet => 18333,
-            Network::Signet => 38333,
-            Network::Regtest => 18444,
-            _ => unreachable!(),
-        };
+        let default_port = default_port_from_network(&network);
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
         path.push(network.to_string());

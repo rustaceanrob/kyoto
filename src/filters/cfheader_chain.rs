@@ -138,6 +138,10 @@ impl CFHeaderChain {
         self.block_to_hash.len()
     }
 
+    pub(crate) fn clear_queue(&mut self) {
+        self.merged_queue.clear()
+    }
+
     pub(crate) async fn join(&mut self, headers: &Vec<Header>) {
         headers
             .iter()

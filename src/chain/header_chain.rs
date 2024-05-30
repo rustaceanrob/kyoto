@@ -224,5 +224,89 @@ impl HeaderChain {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::consensus::deserialize;
+
     use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_empty_chain() {
+        let chain = HeaderChain::new(
+            HeaderCheckpoint::new(
+                190_000,
+                BlockHash::from_str(
+                    "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
+                )
+                .unwrap(),
+            ),
+            Vec::new(),
+        );
+        assert_eq!(chain.chainwork(), Work::from_be_bytes([0; 32]));
+        assert_eq!(
+            chain.chainwork_after_height(189_999),
+            Work::from_be_bytes([0; 32])
+        );
+        assert_eq!(chain.height(), 190_000);
+        assert_eq!(chain.tip(), BlockHash::from_str(
+            "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
+        )
+        .unwrap());
+        assert_eq!(chain.root(), BlockHash::from_str(
+            "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
+        )
+        .unwrap());
+        assert!(
+            chain.contains_hash(
+                BlockHash::from_str(
+                    "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
+                )
+                .unwrap()
+            )
+        );
+        assert_eq!(chain.inner_len(), 0);
+    }
+
+    #[test]
+    fn test_nonempty_chain() {
+        let block_190_001: Header = deserialize(&hex::decode("00000020f2aeab421cc0995fd40b44de2d07e95e26b3164383a37b0b36b743613a0100001f521e92a0bdc70b68554351f2a72c7476204f312bce7f084768b7054ad915f4f41110669d41011ec816bf00").unwrap()).unwrap();
+        let block_190_002: Header = deserialize(&hex::decode("0000002060553eca679219d7c61307fd1e01922416ee1d2dfa09e2a5062aa08ef800000063b913b2d4fde38d46f01bac8b9b177ae5c23c938736dcafc31c3d10c282cc20ff1510669d41011e55671a00").unwrap()).unwrap();
+        let block_190_003: Header = deserialize(&hex::decode("0000002042c5fa907f5d28affaa72b430f2732052d7a19f203be794fea39153e7e0000009c8705706dce105bbaf42a9a692d3bdcca1d7e34399e8cc7684700da439bf144291810669d41011ed0241501").unwrap()).unwrap();
+        let batch_1 = vec![block_190_001];
+        let batch_2 = vec![block_190_002, block_190_003];
+        let mut chain = HeaderChain::new(
+            HeaderCheckpoint::new(
+                190_000,
+                BlockHash::from_str(
+                    "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
+                )
+                .unwrap(),
+            ),
+            Vec::new(),
+        );
+        let reorg = chain.extend(&batch_1);
+        assert!(reorg.is_empty());
+        assert_eq!(chain.height(), 190_001);
+        assert_eq!(chain.inner_len(), 1);
+        assert_eq!(chain.chainwork(), block_190_001.work());
+        assert_eq!(chain.header_at_height(190_001).unwrap(), &block_190_001);
+        assert_eq!(chain.chainwork_after_height(190_000), block_190_001.work());
+        assert_eq!(chain.chainwork_after_height(189_999), block_190_001.work());
+        assert_eq!(
+            chain.chainwork_after_height(190_001),
+            Work::from_be_bytes([0; 32])
+        );
+        let reorg = chain.extend(&batch_2);
+        assert!(reorg.is_empty());
+        assert_eq!(chain.height(), 190_003);
+        assert_eq!(chain.inner_len(), 3);
+        assert_eq!(chain.header_at_height(190_003).unwrap(), &block_190_003);
+        assert_eq!(
+            chain.chainwork_after_height(190_001),
+            block_190_002.work() + block_190_003.work()
+        );
+        assert_eq!(chain.tip(), block_190_003.block_hash());
+    }
+
+    #[test]
+    fn test_reorganized_chain() {}
 }

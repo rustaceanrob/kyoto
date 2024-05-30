@@ -12,6 +12,7 @@ use tokio::{
 use crate::{
     node::channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
     peers::outbound_messages::V1OutboundMessage,
+    prelude::default_port_from_network,
 };
 
 use super::reader::Reader;
@@ -40,14 +41,7 @@ impl Peer {
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
     ) -> Self {
-        let default_port = match network {
-            Network::Bitcoin => 8333,
-            Network::Testnet => 18333,
-            Network::Signet => 38333,
-            Network::Regtest => 18444,
-            _ => unreachable!(),
-        };
-
+        let default_port = default_port_from_network(&network);
         Self {
             nonce,
             ip_addr,

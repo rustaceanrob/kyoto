@@ -1,6 +1,5 @@
 extern crate alloc;
-use core::panic;
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use bitcoin::{
     block::Header,
@@ -18,7 +17,7 @@ use super::{
 };
 use crate::{
     chain::header_batch::HeadersBatch,
-    db::sqlite::header_db::SqliteHeaderDb,
+    db::{sqlite::header_db::SqliteHeaderDb, traits::HeaderStore},
     filters::{
         cfheader_batch::CFHeaderBatch,
         cfheader_chain::{AppendAttempt, CFHeaderChain, CFHeaderSyncResult},
@@ -28,18 +27,17 @@ use crate::{
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     node::{dialog::Dialog, node_messages::NodeMessage},
-    prelude::MEDIAN_TIME_PAST,
+    prelude::{params_from_network, MEDIAN_TIME_PAST},
     tx::{memory::MemoryTransactionCache, store::TransactionStore, types::IndexedTransaction},
 };
 
-#[derive(Debug)]
 pub(crate) struct Chain {
     header_chain: HeaderChain,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     checkpoints: HeaderCheckpoints,
     params: Params,
-    db: Mutex<SqliteHeaderDb>,
+    db: Arc<Mutex<dyn HeaderStore + Send + Sync>>,
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
     block_queue: BlockQueue,
@@ -58,13 +56,7 @@ impl Chain {
         quorum_required: usize,
     ) -> Result<Self, HeaderPersistenceError> {
         let mut checkpoints = HeaderCheckpoints::new(network);
-        let params = match network {
-            Network::Bitcoin => panic!("unimplemented network"),
-            Network::Testnet => Params::new(*network),
-            Network::Signet => Params::new(*network),
-            Network::Regtest => Params::new(*network),
-            _ => unreachable!(),
-        };
+        let params = params_from_network(network);
         let checkpoint = from_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
         let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), checkpoint, db_path)
@@ -109,7 +101,7 @@ impl Chain {
             header_chain,
             checkpoints,
             params,
-            db: Mutex::new(db),
+            db: Arc::new(Mutex::new(db)),
             cf_header_chain,
             filter_chain,
             best_known_height: None,
@@ -444,6 +436,11 @@ impl Chain {
             return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
         }
         Ok(())
+    }
+
+    // If we receive an inventory, our merge queue was interrupted
+    pub(crate) fn clear_filter_header_queue(&mut self) {
+        self.cf_header_chain.clear_queue()
     }
 
     // We need to make this public for new peers that connect to us throughout syncing the filter headers

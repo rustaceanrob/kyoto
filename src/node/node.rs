@@ -60,7 +60,7 @@ pub enum NodeState {
 }
 
 /// A compact block filter client
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
@@ -88,13 +88,16 @@ impl Node {
         let client = Client::new(nrx, ctx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
+        // Load the databases
         let peer_db = SqlitePeerDb::new(network, data_path.clone())
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         let peer_db = Arc::new(Mutex::new(peer_db));
         // Take the canonical Bitcoin addresses and map them to a script we can scan for
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
+        // An in-memory quick access to found transactions
         let in_memory_cache = MemoryTransactionCache::new();
+        // A structured way to talk to the client
         let mut dialog = Dialog::new(ntx.clone());
         // Build the chain
         let loaded_chain = Chain::new(
@@ -550,6 +553,7 @@ impl Node {
                 if chain.height().le(&(new_height as usize)) {
                     chain.set_best_known_height(new_height).await;
                 }
+                chain.clear_filter_header_queue();
                 return Some(MainThreadMessage::GetHeaders(next_headers));
             }
         }

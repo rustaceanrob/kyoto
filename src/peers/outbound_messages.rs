@@ -16,7 +16,7 @@ use bitcoin::{
     BlockHash, Network,
 };
 
-use crate::node::channel_messages::GetBlockConfig;
+use crate::{node::channel_messages::GetBlockConfig, prelude::default_port_from_network};
 
 pub const PROTOCOL_VERSION: u32 = 70015;
 
@@ -34,13 +34,7 @@ impl V1OutboundMessage {
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_secs();
-        let default_port = match self.network {
-            Network::Bitcoin => 8333,
-            Network::Testnet => 18333,
-            Network::Signet => 38333,
-            Network::Regtest => 18444,
-            _ => unreachable!(),
-        };
+        let default_port = default_port_from_network(&self.network);
         let ip = SocketAddr::new(
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             port.unwrap_or(default_port),
