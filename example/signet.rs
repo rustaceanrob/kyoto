@@ -47,7 +47,7 @@ async fn main() {
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
     let (mut sender, receiver) = client.split();
-    // Continually listen for events
+    // Continually listen for events until the node is synced to its peers.
     loop {
         if let Some(message) = receiver.recv().await {
             match message {
