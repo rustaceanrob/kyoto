@@ -1,5 +1,5 @@
 extern crate alloc;
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use bitcoin::{
     block::Header,
@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     chain::header_batch::HeadersBatch,
-    db::{sqlite::header_db::SqliteHeaderDb, traits::HeaderStore},
+    db::traits::HeaderStore,
     filters::{
         cfheader_batch::CFHeaderBatch,
         cfheader_chain::{AppendAttempt, CFHeaderChain, CFHeaderSyncResult},
@@ -49,18 +49,14 @@ impl Chain {
     pub(crate) async fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
-        db_path: Option<PathBuf>,
         tx_store: MemoryTransactionCache,
-        from_checkpoint: Option<HeaderCheckpoint>,
+        anchor: HeaderCheckpoint,
+        mut checkpoints: HeaderCheckpoints,
         mut dialog: Dialog,
+        mut db: impl HeaderStore + Send + Sync + 'static,
         quorum_required: usize,
     ) -> Result<Self, HeaderPersistenceError> {
-        let mut checkpoints = HeaderCheckpoints::new(network);
         let params = params_from_network(network);
-        let checkpoint = from_checkpoint.unwrap_or_else(|| checkpoints.last());
-        checkpoints.prune_up_to(checkpoint);
-        let mut db = SqliteHeaderDb::new(*network, checkpoints.last(), checkpoint, db_path)
-            .map_err(|_| HeaderPersistenceError::SQLite)?;
         let loaded_headers = db
             .load()
             .await
@@ -70,7 +66,7 @@ impl Chain {
                 .first()
                 .unwrap()
                 .prev_blockhash
-                .ne(&checkpoint.hash)
+                .ne(&anchor.hash)
             {
                 dialog
                     .send_warning("Checkpoint anchor mismatch".into())
@@ -94,9 +90,9 @@ impl Chain {
                 }
             })
         };
-        let header_chain = HeaderChain::new(checkpoint, loaded_headers);
-        let cf_header_chain = CFHeaderChain::new(checkpoint, quorum_required);
-        let filter_chain = FilterChain::new(checkpoint);
+        let header_chain = HeaderChain::new(anchor, loaded_headers);
+        let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
+        let filter_chain = FilterChain::new(anchor);
         Ok(Chain {
             header_chain,
             checkpoints,
@@ -220,7 +216,7 @@ impl Chain {
             return Ok(());
         }
         let initially_syncing = !self.checkpoints.is_exhausted();
-        //we check first if the peer is sending us nonsense
+        // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch).await?;
         // How we handle forks depends on if we are caught up through all checkpoints or not
         if initially_syncing {

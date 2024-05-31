@@ -140,9 +140,9 @@ impl HeaderStore for SqliteHeaderDb {
                 let nonce: u32 = header.nonce;
                 // Do not allow rewrites before a checkpoint. if they were written to the db they were correct
                 let stmt = if height.le(&self.last_checkpoint.height) {
-                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (.map_err(|_| HeaderDatabaseError::LoadError)?1, .map_err(|_| HeaderDatabaseError::LoadError)?2, .map_err(|_| HeaderDatabaseError::LoadError)?3, .map_err(|_| HeaderDatabaseError::LoadError)?4, .map_err(|_| HeaderDatabaseError::LoadError)?5, .map_err(|_| HeaderDatabaseError::LoadError)?6, .map_err(|_| HeaderDatabaseError::LoadError)?7, .map_err(|_| HeaderDatabaseError::LoadError)?8)"
+                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 } else {
-                    "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (.map_err(|_| HeaderDatabaseError::LoadError)?1, .map_err(|_| HeaderDatabaseError::LoadError)?2, .map_err(|_| HeaderDatabaseError::LoadError)?3, .map_err(|_| HeaderDatabaseError::LoadError)?4, .map_err(|_| HeaderDatabaseError::LoadError)?5, .map_err(|_| HeaderDatabaseError::LoadError)?6, .map_err(|_| HeaderDatabaseError::LoadError)?7, .map_err(|_| HeaderDatabaseError::LoadError)?8)"
+                    "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 };
                 tx.execute(
                     &stmt,

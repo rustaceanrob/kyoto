@@ -22,7 +22,12 @@ use tokio::{
 };
 
 use crate::{
-    chain::{chain::Chain, checkpoints::HeaderCheckpoint, error::HeaderSyncError},
+    chain::{
+        chain::Chain,
+        checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
+        error::HeaderSyncError,
+    },
+    db::sqlite::header_db::SqliteHeaderDb,
     filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
     peers::dns::Dns,
@@ -92,6 +97,13 @@ impl Node {
         let peer_db = SqlitePeerDb::new(network, data_path.clone())
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
         let peer_db = Arc::new(Mutex::new(peer_db));
+        // Prepare the header checkpoints for the chain source
+        let mut checkpoints = HeaderCheckpoints::new(&network);
+        let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
+        checkpoints.prune_up_to(checkpoint);
+        // Load the headers from storage
+        let db = SqliteHeaderDb::new(network, checkpoints.last(), checkpoint, data_path)
+            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         // Take the canonical Bitcoin addresses and map them to a script we can scan for
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
@@ -103,10 +115,11 @@ impl Node {
         let loaded_chain = Chain::new(
             &network,
             scripts,
-            data_path,
             in_memory_cache,
-            header_checkpoint,
+            checkpoint,
+            checkpoints,
             dialog.clone(),
+            db,
             required_peers,
         )
         .await
@@ -358,10 +371,10 @@ impl Node {
             }
         }
         let mut chain = self.chain.lock().await;
-        if chain.height().lt(&(best_height as usize)) {
+        if chain.height().le(&(best_height as usize)) {
             chain.set_best_known_height(best_height).await;
         }
-        // Even if we start the node as caught up in terms of height, we need to check for reorgs
+        // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
             locators: chain.locators(),
             stop_hash: None,
