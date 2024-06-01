@@ -1,6 +1,8 @@
-use bitcoin::Transaction;
+pub use bitcoin::{Block, Transaction};
 pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
+
+use crate::tx::types::IndexedTransaction;
 
 use super::{
     error::ClientError,
@@ -45,6 +47,42 @@ impl Client {
             .send(ClientMessage::Shutdown)
             .await
             .map_err(|_| ClientError::SendError)
+    }
+
+    /// Collect the transctions received from the node into an in-memory cache,
+    /// returning once the node is synced to its peers.
+    /// To instead respond to transactions or blocks as the node receives them,
+    /// see [`Client::receiver`]. Responding to events is more appropriate for implementations
+    /// such as Lightning Network nodes, which are expected to be online for long durations.
+    pub async fn collect_relevant_tx(&mut self) -> Vec<IndexedTransaction> {
+        let mut txs = Vec::new();
+        loop {
+            while let Some(message) = self.nrx.recv().await {
+                match message {
+                    NodeMessage::Transaction(tx) => txs.push(tx),
+                    NodeMessage::Synced(_) => return txs,
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    /// Collect the blocks received from the node into an in-memory cache,
+    /// returning once the node is synced to its peers.
+    /// Only recommended for machines that can tolerate such a memory allocation,
+    /// such as a server or desktop computer.
+    /// For devices like smart phones, see [`Client::collect_relevant_tx`].
+    pub async fn collect_relevant_blocks(&mut self) -> Vec<Block> {
+        let mut blocks = Vec::new();
+        loop {
+            while let Some(message) = self.nrx.recv().await {
+                match message {
+                    NodeMessage::Block(block) => blocks.push(block),
+                    NodeMessage::Synced(_) => return blocks,
+                    _ => (),
+                }
+            }
+        }
     }
 
     /// Wait until the client's headers and filters are fully synced to connected peers, dropping any block and transaction messages.

@@ -495,7 +495,7 @@ impl Chain {
                 ))
                 .await;
         }
-        self.filter_chain.append(filter).await;
+        self.filter_chain.put(&filter).await;
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
                 Ok(self.next_filter_message().await)

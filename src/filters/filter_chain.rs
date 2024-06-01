@@ -1,17 +1,17 @@
-use bitcoin::BlockHash;
+use std::collections::HashSet;
+
+use bitcoin::{BlockHash, FilterHash};
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
 use super::filter::Filter;
-
-type Filters = Vec<Filter>;
 
 const INITIAL_BUFFER_SIZE: usize = 20_000;
 
 #[derive(Debug)]
 pub(crate) struct FilterChain {
     anchor_checkpoint: HeaderCheckpoint,
-    chain: Filters,
+    chain: HashSet<FilterHash>,
     prev_stophash_request: Option<BlockHash>,
 }
 
@@ -19,16 +19,19 @@ impl FilterChain {
     pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint) -> Self {
         Self {
             anchor_checkpoint,
-            chain: Vec::with_capacity(INITIAL_BUFFER_SIZE),
+            chain: HashSet::with_capacity(INITIAL_BUFFER_SIZE),
             prev_stophash_request: None,
         }
     }
 
-    pub(crate) async fn append(&mut self, filter: Filter) {
-        if !self.chain.contains(&filter) {
-            self.chain.push(filter)
-        }
+    pub(crate) async fn put(&mut self, filter: &Filter) {
+        self.chain.insert(filter.filter_hash().await);
     }
+
+    pub(crate) async fn clear_cache(&mut self) {
+        self.chain.clear()
+    }
+
     pub(crate) fn height(&self) -> usize {
         self.anchor_checkpoint.height + self.chain.len()
     }
