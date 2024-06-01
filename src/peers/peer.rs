@@ -1,3 +1,4 @@
+extern crate tokio;
 use std::{net::IpAddr, time::Duration};
 
 use bitcoin::Network;

@@ -2,8 +2,6 @@ extern crate alloc;
 use bitcoin::Network;
 use std::net::IpAddr;
 use thiserror::Error;
-// need to get rid of this at some point
-use trust_dns_resolver::AsyncResolver;
 
 const MIN_PEERS: usize = 10;
 
@@ -39,19 +37,14 @@ impl Dns {
             Network::Regtest => Vec::with_capacity(0),
             _ => unreachable!(),
         };
-
-        let resolver = AsyncResolver::tokio_from_system_conf()
-            .map_err(|_| DnsBootstrapError::ResolverError)?;
-
         let mut ip_addrs: Vec<IpAddr> = vec![];
 
         for host in seeds {
-            let ips = match resolver.lookup_ip(host).await {
-                Ok(ips) => ips,
-                // Ignore individual errors for DNS queries
-                Err(_) => continue,
-            };
-            ips.iter().for_each(|ip| ip_addrs.push(ip));
+            if let Ok(addrs) = dns_lookup::getaddrinfo(Some(host), None, None) {
+                for addr in addrs.filter_map(Result::ok) {
+                    ip_addrs.push(addr.sockaddr.ip().into());
+                }
+            }
         }
 
         // Arbitrary number for now

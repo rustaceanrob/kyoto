@@ -1,5 +1,5 @@
 [package]
-name = "light-client"
+name = "kyoto"
 version = "0.1.0"
 edition = "2021"
 license-file = "LICENSE"
@@ -27,9 +27,11 @@ tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
     "sync",
     "time",
+    "io-util",
+    "net",
     "macros",
 ] }
-trust-dns-resolver = "0.23"
+dns-lookup = "2.0.4"
 
 [dev-dependencies]
 hex = { version = "0.4.0" }
@@ -44,5 +46,5 @@ name = "signet"
 path = "example/signet.rs"
 
 [lib]
-name = "kyoto_light_client"
+name = "kyoto"
 path = "src/lib.rs"

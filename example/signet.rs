@@ -1,6 +1,6 @@
 use bitcoin::BlockHash;
-use kyoto_light_client::node::node_messages::NodeMessage;
-use kyoto_light_client::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::node::node_messages::NodeMessage;
+use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
@@ -8,7 +8,7 @@ use std::{
 
 #[tokio::main]
 async fn main() {
-    // Enable logging
+    // Add third-party logging
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
     // Add Bitcoin scripts to scan the blockchain for
@@ -41,7 +41,7 @@ async fn main() {
         .await;
     // Check if the node is running. Another part of the program may be giving us the node.
     if !node.is_running() {
-        let _ = tokio::task::spawn(async move { node.run().await }).await;
+        tokio::task::spawn(async move { node.run().await });
     }
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
