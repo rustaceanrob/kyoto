@@ -23,13 +23,13 @@ jobs:
           rustup update ${{ matrix.toolchain }}
       - name: Lint
         run: |
-          cargo clippy --package kyoto_light_client --all-targets
+          cargo clippy --all-targets
       - name: Format
         run: |
-          cargo fmt --package kyoto_light_client -- --check
+          cargo fmt -- --check
       - name: Build
         run: |
-          cargo build --package kyoto_light_client --verbose
+          cargo build --verbose
       - name: Test
         run: |
-          cargo test --package kyoto_light_client --verbose
+          cargo test --verbose
