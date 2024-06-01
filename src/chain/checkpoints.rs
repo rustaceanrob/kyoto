@@ -127,7 +127,7 @@ impl HeaderCheckpoints {
         cp_list.iter().for_each(|(height, hash)| {
             checkpoints.push_back(HeaderCheckpoint {
                 height: *height,
-                hash: BlockHash::from_str(&hash).unwrap(),
+                hash: BlockHash::from_str(hash).unwrap(),
             })
         });
         let last = *checkpoints.back().unwrap();

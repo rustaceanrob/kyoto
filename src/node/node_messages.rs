@@ -3,7 +3,7 @@ pub use bitcoin::{Block, Transaction};
 use crate::{chain::checkpoints::HeaderCheckpoint, tx::types::IndexedTransaction};
 
 /// Messages receivable by a running node
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NodeMessage {
     /// A human readable dialog
     Dialog(String),
@@ -18,7 +18,7 @@ pub enum NodeMessage {
 }
 
 /// Commands to issue a node
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClientMessage {
     /// Stop the node
     Shutdown,

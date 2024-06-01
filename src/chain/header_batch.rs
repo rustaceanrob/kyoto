@@ -11,7 +11,7 @@ pub(crate) struct HeadersBatch {
 // This struct provides basic sanity checks and helper methods.
 impl HeadersBatch {
     pub(crate) fn new(batch: Vec<Header>) -> Result<Self, HeadersBatchError> {
-        if batch.len() < 1 {
+        if batch.is_empty() {
             return Err(HeadersBatchError::EmptyVec);
         }
         Ok(HeadersBatch { batch })

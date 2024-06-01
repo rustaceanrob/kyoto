@@ -89,9 +89,8 @@ impl Client {
     pub async fn wait_until_synced(&mut self) {
         loop {
             while let Some(message) = self.nrx.recv().await {
-                match message {
-                    NodeMessage::Synced(_) => return,
-                    _ => (),
+                if let NodeMessage::Synced(_) = message {
+                    return;
                 }
             }
         }

@@ -83,10 +83,8 @@ impl Peer {
         let mut peer_reader = Reader::new(reader, tx, self.network);
         let read_handle = tokio::spawn(async move {
             match peer_reader.read_from_remote().await {
-                Ok(_) => return Ok(()),
-                Err(_) => {
-                    return Err(PeerError::Reader);
-                }
+                Ok(_) => Ok(()),
+                Err(_) => Err(PeerError::Reader),
             }
         });
         loop {
@@ -158,7 +156,7 @@ impl Peer {
                 //     .await
                 //     .map_err(|_| PeerError::BufferWrite)?;
                 // can ask for addresses here depending on if we need them
-                return Ok(());
+                Ok(())
             }
             PeerMessage::Addr(addrs) => {
                 self.main_thread_sender
@@ -168,7 +166,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::Headers(headers) => {
                 self.main_thread_sender
@@ -178,7 +176,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::FilterHeaders(cf_headers) => {
                 self.main_thread_sender
@@ -188,7 +186,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::Filter(filter) => {
                 self.main_thread_sender
@@ -198,7 +196,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::Block(block) => {
                 self.main_thread_sender
@@ -208,7 +206,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::NewBlocks(block_hashes) => {
                 self.main_thread_sender
@@ -218,7 +216,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Ok(());
+                Ok(())
             }
             PeerMessage::Verack => Ok(()),
             PeerMessage::Ping(nonce) => {
@@ -237,7 +235,7 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                return Err(PeerError::DisconnectCommand);
+                Err(PeerError::DisconnectCommand)
             }
         }
     }
@@ -296,7 +294,7 @@ pub(crate) struct PeerConfig {
 
 pub(crate) enum FindAddresses {
     None,
-    CPF,
+    Cpf,
     Any,
 }
 

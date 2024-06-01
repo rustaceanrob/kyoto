@@ -31,7 +31,6 @@ use crate::{
     filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
     peers::dns::Dns,
-    tx::memory::MemoryTransactionCache,
 };
 
 use super::{
@@ -107,15 +106,12 @@ impl Node {
         // Take the canonical Bitcoin addresses and map them to a script we can scan for
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
-        // An in-memory quick access to found transactions
-        let in_memory_cache = MemoryTransactionCache::new();
         // A structured way to talk to the client
         let mut dialog = Dialog::new(ntx.clone());
         // Build the chain
         let loaded_chain = Chain::new(
             &network,
             scripts,
-            in_memory_cache,
             checkpoint,
             checkpoints,
             dialog.clone(),
@@ -172,7 +168,7 @@ impl Node {
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
-        let mut node_map = PeerMap::new(mtx, self.network.clone());
+        let mut node_map = PeerMap::new(mtx, self.network);
         loop {
             self.advance_state().await;
             node_map.clean().await;
@@ -253,7 +249,7 @@ impl Node {
                                     self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
                                         .await;
                                     for block in blocks {
-                                        self.dialog.send_dialog(format!("New block: {}", block.to_string()))
+                                        self.dialog.send_dialog(format!("New block: {}", block))
                                             .await;
                                     }
                                     node_map.add_one_height(peer_thread.nonce);
@@ -279,7 +275,7 @@ impl Node {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
-                            _ => (),
+                            ClientMessage::Broadcast(tx) => drop(tx),
                         }
                     }
                 }
@@ -299,7 +295,6 @@ impl Node {
                     header_chain.flush_to_disk().await;
                     *state = NodeState::HeadersSynced;
                 }
-                return;
             }
             NodeState::HeadersSynced => {
                 let header_chain = self.chain.lock().await;
@@ -309,7 +304,6 @@ impl Node {
                         .await;
                     *state = NodeState::FilterHeadersSynced;
                 }
-                return;
             }
             NodeState::FilterHeadersSynced => {
                 let header_chain = self.chain.lock().await;
@@ -319,7 +313,6 @@ impl Node {
                         .await;
                     *state = NodeState::FiltersSynced;
                 }
-                return;
             }
             NodeState::FiltersSynced => {
                 let header_chain = self.chain.lock().await;
@@ -333,9 +326,8 @@ impl Node {
                         )))
                         .await;
                 }
-                return;
             }
-            NodeState::TransactionsSynced => return,
+            NodeState::TransactionsSynced => (),
         }
     }
 
@@ -379,8 +371,7 @@ impl Node {
             locators: chain.locators(),
             stop_hash: None,
         };
-        let response = MainThreadMessage::GetHeaders(next_headers);
-        response
+        MainThreadMessage::GetHeaders(next_headers)
     }
 
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
@@ -389,7 +380,7 @@ impl Node {
             self.dialog
                 .send_warning(format!(
                     "Encountered error adding peer to the database: {}",
-                    e.to_string()
+                    e
                 ))
                 .await;
         }
@@ -411,10 +402,7 @@ impl Node {
                 }
                 _ => {
                     self.dialog
-                        .send_warning(format!(
-                            "Unexpected header syncing error: {}",
-                            e.to_string()
-                        ))
+                        .send_warning(format!("Unexpected header syncing error: {}", e))
                         .await;
                     return Some(MainThreadMessage::Disconnect);
                 }
@@ -450,17 +438,17 @@ impl Node {
                 CFHeaderSyncResult::ReadyForNext => {
                     // We added a batch to the queue and still are not at the required height
                     if !chain.is_cf_headers_synced() {
-                        return Some(MainThreadMessage::GetFilterHeaders(
+                        Some(MainThreadMessage::GetFilterHeaders(
                             chain.next_cf_header_message().await.unwrap(),
-                        ));
+                        ))
                     } else if !chain.is_filters_synced() {
                         // The header chain and filter header chain are in sync, but we need filters still
-                        return Some(MainThreadMessage::GetFilters(
+                        Some(MainThreadMessage::GetFilters(
                             chain.next_filter_message().await.unwrap(),
-                        ));
+                        ))
                     } else {
                         // Should be unreachable if we just added filter headers
-                        return None;
+                        None
                     }
                 }
                 CFHeaderSyncResult::Dispute(_) => {
@@ -477,10 +465,10 @@ impl Node {
                 self.dialog
                     .send_warning(format!(
                         "Compact filter header syncing encountered an error: {}",
-                        e.to_string()
+                        e
                     ))
                     .await;
-                return Some(MainThreadMessage::Disconnect);
+                Some(MainThreadMessage::Disconnect)
             }
         }
     }
@@ -488,15 +476,12 @@ impl Node {
     async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter).await {
-            Ok(potential_message) => match potential_message {
-                Some(message) => Some(MainThreadMessage::GetFilters(message)),
-                None => None,
-            },
+            Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
             Err(e) => {
                 self.dialog
                     .send_warning(format!(
                         "Compact filter syncing encountered an error: {}",
-                        e.to_string()
+                        e
                     ))
                     .await;
                 Some(MainThreadMessage::Disconnect)
@@ -517,10 +502,7 @@ impl Node {
             NodeState::FiltersSynced => {
                 if let Err(e) = chain.scan_block(&block).await {
                     self.dialog
-                        .send_warning(format!(
-                            "Unexpected block scanning error: {}",
-                            e.to_string()
-                        ))
+                        .send_warning(format!("Unexpected block scanning error: {}", e))
                         .await;
                 }
                 None
@@ -539,7 +521,7 @@ impl Node {
                 match next_block_hash {
                     Some(block_hash) => {
                         self.dialog
-                            .send_dialog(format!("Next block in queue: {}", block_hash.to_string()))
+                            .send_dialog(format!("Next block in queue: {}", block_hash))
                             .await;
                         Some(MainThreadMessage::GetBlock(GetBlockConfig {
                             locator: block_hash,
@@ -555,7 +537,7 @@ impl Node {
     async fn handle_inventory_blocks(&mut self, new_height: u32) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
         match *state {
-            NodeState::Behind => return None,
+            NodeState::Behind => None,
             _ => {
                 *state = NodeState::Behind;
                 let mut chain = self.chain.lock().await;
@@ -567,7 +549,7 @@ impl Node {
                     chain.set_best_known_height(new_height).await;
                 }
                 chain.clear_filter_header_queue();
-                return Some(MainThreadMessage::GetHeaders(next_headers));
+                Some(MainThreadMessage::GetHeaders(next_headers))
             }
         }
     }
@@ -584,7 +566,7 @@ impl Node {
                     Some(peer) => Ok(peer),
                     None => self.any_peer().await,
                 },
-                Err(e) => return Err(e),
+                Err(e) => Err(e),
             },
         }
         // self.any_peer().await
@@ -605,16 +587,13 @@ impl Node {
     async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
         // Rmpty the whitelist, if there is one
         if let Some(whitelist) = &mut self.white_list {
-            match whitelist.pop() {
-                Some((ip, port)) => {
-                    return {
-                        self.dialog
-                            .send_dialog("Using a peer from the white list".into())
-                            .await;
-                        Ok((ip, Some(port)))
-                    }
-                }
-                None => (),
+            if let Some((ip, port)) = whitelist.pop() {
+                return {
+                    self.dialog
+                        .send_dialog("Using a peer from the white list".into())
+                        .await;
+                    Ok((ip, Some(port)))
+                };
             }
         }
         let mut chain = self.peer_db.lock().await;
@@ -627,10 +606,7 @@ impl Node {
             // We found some peer to use but may not be reachable
             Some(peer) => {
                 self.dialog
-                    .send_dialog(format!(
-                        "Loaded peer from the database {}",
-                        peer.0.to_string()
-                    ))
+                    .send_dialog(format!("Loaded peer from the database {}", peer.0))
                     .await;
                 Ok((peer.0, Some(peer.1)))
             }
@@ -648,7 +624,7 @@ impl Node {
                         self.dialog
                             .send_warning(format!(
                                 "Encountered error adding a peer to the database: {}",
-                                e.to_string()
+                                e
                             ))
                             .await;
                     }

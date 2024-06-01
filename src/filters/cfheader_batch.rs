@@ -42,8 +42,8 @@ impl CFHeaderBatch {
     }
 }
 
-impl Into<CFHeaderBatch> for CFHeaders {
-    fn into(self) -> CFHeaderBatch {
-        CFHeaderBatch::new(self)
+impl From<CFHeaders> for CFHeaderBatch {
+    fn from(val: CFHeaders) -> Self {
+        CFHeaderBatch::new(val)
     }
 }

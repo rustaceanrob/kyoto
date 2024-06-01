@@ -1,0 +1,35 @@
+name: Build & Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Minumum Supported Rust Version (MSRV) is 1.56.1.
+        toolchain: [1.56.1, stable, beta, nightly]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update Toolchain
+        run: |
+          rustup default ${{ matrix.toolchain }}
+          rustup component add --toolchain ${{ matrix.toolchain }} rustfmt
+          rustup component add --toolchain ${{ matrix.toolchain }} clippy
+          rustup update ${{ matrix.toolchain }}
+      - name: Lint
+        run: |
+          cargo clippy --package kyoto_light_client --all-targets
+      - name: Format
+        run: |
+          cargo fmt --package kyoto_light_client -- --check
+      - name: Build
+        run: |
+          cargo build --package kyoto_light_client --verbose
+      - name: Test
+        run: |
+          cargo test --package kyoto_light_client --verbose

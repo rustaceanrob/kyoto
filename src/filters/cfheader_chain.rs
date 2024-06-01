@@ -52,7 +52,7 @@ impl CFHeaderChain {
         peer_id: u32,
         cf_headers: CFHeaderBatch,
     ) -> Result<AppendAttempt, CFHeaderSyncError> {
-        if self.merged_queue.get(&peer_id).is_some() {
+        if self.merged_queue.contains_key(&peer_id) {
             return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
         }
         self.merged_queue.insert(peer_id, cf_headers.inner());
@@ -90,7 +90,7 @@ impl CFHeaderChain {
             }
         }
         // Made it through without finding any conflicts, we can extend the current chain by the reference
-        self.header_chain.extend_from_slice(&reference_peer);
+        self.header_chain.extend_from_slice(reference_peer);
         // Reset the merge queue
         self.merged_queue.clear();
         Ok(AppendAttempt::Extended)
@@ -142,7 +142,7 @@ impl CFHeaderChain {
         self.merged_queue.clear()
     }
 
-    pub(crate) async fn join(&mut self, headers: &Vec<Header>) {
+    pub(crate) async fn join(&mut self, headers: &[Header]) {
         headers
             .iter()
             .zip(self.header_chain.iter().map(|(_, hash)| hash))

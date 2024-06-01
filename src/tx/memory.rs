@@ -27,7 +27,7 @@ impl TransactionStore for MemoryTransactionCache {
         self.transactions.push(IndexedTransaction {
             transaction: transaction.clone(),
             height,
-            hash: hash.clone(),
+            hash: *hash,
         });
         Ok(())
     }

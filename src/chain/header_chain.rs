@@ -75,10 +75,7 @@ impl HeaderChain {
             .headers
             .iter()
             .position(|header| header.block_hash().eq(&blockhash));
-        match offset_pos {
-            Some(index) => Some(self.anchor_checkpoint.height + index + 1),
-            None => None,
-        }
+        offset_pos.map(|index| self.anchor_checkpoint.height + index + 1)
     }
 
     // This header chain contains a block hash
@@ -135,6 +132,17 @@ impl HeaderChain {
         }
     }
 
+    pub(crate) fn chainwork_after_index(&self, index: usize) -> Work {
+        let work = self
+            .headers
+            .iter()
+            .enumerate()
+            .filter(|(h, _)| h.gt(&index))
+            .map(|(_, header)| header.work())
+            .reduce(|acc, next| acc + next);
+        work.unwrap_or(self.chainwork())
+    }
+
     // Human readable chainwork
     pub(crate) fn log2_work(&self) -> f64 {
         let work = self
@@ -142,10 +150,7 @@ impl HeaderChain {
             .iter()
             .map(|header| header.work().log2())
             .reduce(|acc, next| acc + next);
-        match work {
-            Some(w) => w,
-            None => 0.0,
-        }
+        work.unwrap_or(0.0)
     }
 
     // The last 11 headers, if we have that many
@@ -155,7 +160,7 @@ impl HeaderChain {
             .rev()
             .take(MEDIAN_TIME_PAST)
             .rev()
-            .map(|header_ref| (*header_ref).clone())
+            .copied()
             .collect()
     }
 
@@ -213,7 +218,7 @@ impl HeaderChain {
             }
             self.headers.extend(batch);
         }
-        reorged.iter().rev().map(|header| *header).collect()
+        reorged.iter().rev().copied().collect()
     }
 
     // Clear all the headers from our chain. Only to be used when a peer has feed us faulty checkpoints
@@ -304,6 +309,7 @@ mod tests {
             chain.chainwork_after_height(190_001),
             block_190_002.work() + block_190_003.work()
         );
+        assert_eq!(chain.chainwork_after_index(1), block_190_003.work());
         assert_eq!(chain.tip(), block_190_003.block_hash());
     }
 

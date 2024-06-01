@@ -1,4 +1,5 @@
 pub(crate) mod block_queue;
+#[allow(clippy::module_inception)]
 pub(crate) mod chain;
 pub mod checkpoints;
 pub(crate) mod error;

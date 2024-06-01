@@ -68,7 +68,7 @@ impl HeaderStore for SqliteHeaderDb {
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
         let mut query = write_lock
-            .prepare(&stmt)
+            .prepare(stmt)
             .map_err(|_| HeaderDatabaseError::LoadError)?;
         let mut rows = query
             .query([])
@@ -119,7 +119,7 @@ impl HeaderStore for SqliteHeaderDb {
         Ok(headers)
     }
 
-    async fn write(&mut self, header_chain: &Vec<Header>) -> Result<(), HeaderDatabaseError> {
+    async fn write<'a>(&mut self, header_chain: &'a [Header]) -> Result<(), HeaderDatabaseError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock
             .transaction()
@@ -127,7 +127,7 @@ impl HeaderStore for SqliteHeaderDb {
         let count: u64 = tx
             .query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))
             .map_err(|_| HeaderDatabaseError::WriteError)?;
-        let adjusted_count = count.checked_sub(1).unwrap_or(0) + self.anchor_height;
+        let adjusted_count = count.saturating_sub(1) + self.anchor_height;
         for (height, header) in header_chain.iter().enumerate() {
             let adjusted_height = self.anchor_height + 1 + height as u64;
             if adjusted_height.ge(&(adjusted_count)) {
@@ -145,7 +145,7 @@ impl HeaderStore for SqliteHeaderDb {
                     "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 };
                 tx.execute(
-                    &stmt,
+                    stmt,
                     params![
                         adjusted_height,
                         hash,

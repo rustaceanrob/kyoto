@@ -172,7 +172,7 @@ impl SqlitePeerDb {
         if let Some(row) = rows.next()? {
             let ip_addr: String = row.get(0)?;
             let port: u16 = row.get(1)?;
-            lock.execute("DELETE FROM peers WHERE ip_addr = ?1", &[&ip_addr])?;
+            lock.execute("DELETE FROM peers WHERE ip_addr = ?1", [&ip_addr])?;
             let ip = ip_addr
                 .parse::<IpAddr>()
                 .map_err(|_| rusqlite::Error::InvalidQuery)?;

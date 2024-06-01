@@ -28,7 +28,7 @@ use crate::{
     },
     node::{dialog::Dialog, node_messages::NodeMessage},
     prelude::{params_from_network, MEDIAN_TIME_PAST},
-    tx::{memory::MemoryTransactionCache, store::TransactionStore, types::IndexedTransaction},
+    tx::types::IndexedTransaction,
 };
 
 pub(crate) struct Chain {
@@ -41,7 +41,6 @@ pub(crate) struct Chain {
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
     block_queue: BlockQueue,
-    tx_store: MemoryTransactionCache,
     dialog: Dialog,
 }
 
@@ -49,7 +48,6 @@ impl Chain {
     pub(crate) async fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
-        tx_store: MemoryTransactionCache,
         anchor: HeaderCheckpoint,
         mut checkpoints: HeaderCheckpoints,
         mut dialog: Dialog,
@@ -103,7 +101,6 @@ impl Chain {
             best_known_height: None,
             scripts,
             block_queue: BlockQueue::new(),
-            tx_store,
             dialog,
         })
     }
@@ -174,11 +171,7 @@ impl Chain {
     // Do we have best known height and is our height equal to it
     pub(crate) fn is_synced(&self) -> bool {
         if let Some(height) = self.best_known_height {
-            if (self.height() as u32).ge(&height) {
-                true
-            } else {
-                false
-            }
+            (self.height() as u32).ge(&height)
         } else {
             false
         }
@@ -313,6 +306,7 @@ impl Chain {
                         "Peer is sending us malicious headers, restarting header sync.".into(),
                     )
                     .await;
+                // We assume that this would be so rare that we just clear the whole header chain
                 self.header_chain.clear_all();
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
@@ -335,7 +329,7 @@ impl Chain {
             .inner()
             .iter()
             .filter(|header| !self.contains_header(**header))
-            .map(|a| *a)
+            .copied()
             .collect();
         let challenge_chainwork = uncommon
             .iter()
@@ -350,23 +344,23 @@ impl Chain {
                 .eq(&stem.block_hash())
         });
         if let Some(stem) = stem_position {
-            let current_chainwork = self.chainwork_after_height(stem);
+            let current_chainwork = self.header_chain.chainwork_after_index(stem);
             if current_chainwork.lt(&challenge_chainwork) {
                 self.dialog
                     .send_dialog("Valid reorganization found".into())
                     .await;
                 self.header_chain.extend(&uncommon);
-                return Ok(());
+                Ok(())
             } else {
                 self.dialog
                     .send_warning(
                         "Peer sent us a fork with less work than the current chain".into(),
                     )
                     .await;
-                return Err(HeaderSyncError::LessWorkFork);
+                Err(HeaderSyncError::LessWorkFork)
             }
         } else {
-            return Err(HeaderSyncError::FloatingHeaders);
+            Err(HeaderSyncError::FloatingHeaders)
         }
     }
 
@@ -476,7 +470,7 @@ impl Chain {
         let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
         if let Some(ref_hash) = expected_filter_hash {
-            if filter.filter_hash().await.ne(&ref_hash) {
+            if filter.filter_hash().await.ne(ref_hash) {
                 return Err(CFilterSyncError::MisalignedFilterHash);
             }
         }
@@ -484,14 +478,14 @@ impl Chain {
             && filter
                 .contains_any(&self.scripts)
                 .await
-                .map_err(|e| CFilterSyncError::Filter(e))?
+                .map_err(CFilterSyncError::Filter)?
         {
             // Add to the block queue
             self.block_queue.add(filter_message.block_hash);
             self.dialog
                 .send_dialog(format!(
                     "Found script at block: {}",
-                    filter_message.block_hash.to_string()
+                    filter_message.block_hash
                 ))
                 .await;
         }
@@ -503,7 +497,7 @@ impl Chain {
                 Ok(None)
             }
         } else {
-            return Err(CFilterSyncError::UnrequestedStophash);
+            Err(CFilterSyncError::UnrequestedStophash)
         }
     }
 
@@ -559,10 +553,10 @@ impl Chain {
         let height_of_block = self.height_of_hash(block.block_hash()).await;
         for tx in &block.txdata {
             if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
-                self.tx_store
-                    .add_transaction(&tx, height_of_block, &block.block_hash())
-                    .await
-                    .unwrap();
+                // self.tx_store
+                //     .add_transaction(&tx, height_of_block, &block.block_hash())
+                //     .await
+                //     .unwrap();
                 self.dialog
                     .send_data(NodeMessage::Block(block.clone()))
                     .await;
@@ -574,23 +568,20 @@ impl Chain {
                     )))
                     .await;
                 self.dialog
-                    .send_dialog(format!(
-                        "Found transaction: {}",
-                        tx.compute_txid().to_string()
-                    ))
+                    .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
                     .await;
             }
         }
         Ok(())
     }
 
-    fn scan_inputs(&mut self, inputs: &Vec<TxIn>) -> bool {
+    fn scan_inputs(&mut self, inputs: &[TxIn]) -> bool {
         inputs
             .iter()
             .any(|input| self.scripts.contains(&input.script_sig))
     }
 
-    fn scan_outputs(&mut self, inputs: &Vec<TxOut>) -> bool {
+    fn scan_outputs(&mut self, inputs: &[TxOut]) -> bool {
         inputs
             .iter()
             .any(|out| self.scripts.contains(&out.script_pubkey))

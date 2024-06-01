@@ -54,23 +54,21 @@ impl Median<u32> for Vec<u32> {
 }
 
 pub(crate) fn params_from_network(network: &Network) -> Params {
-    let params = match network {
+    match network {
         Network::Bitcoin => panic!("unimplemented network"),
         Network::Testnet => Params::new(*network),
         Network::Signet => Params::new(*network),
         Network::Regtest => Params::new(*network),
         _ => unreachable!(),
-    };
-    params
+    }
 }
 
 pub(crate) fn default_port_from_network(network: &Network) -> u16 {
-    let default_port = match network {
+    match network {
         Network::Bitcoin => 8333,
         Network::Testnet => 18333,
         Network::Signet => 38333,
         Network::Regtest => 18444,
         _ => unreachable!(),
-    };
-    default_port
+    }
 }
