@@ -18,6 +18,7 @@ bitcoin = { version = "0.32.0", features = [
     "std",
     "serde",
 ], default-features = false }
+dns-lookup = "2.0.0"
 # Enable the tokio-console task and poll observations
 # console-subscriber = "0.2.0" 
 rand = "0.8.0"
@@ -31,7 +32,6 @@ tokio = { version = "1", default-features = false, features = [
     "net",
     "macros",
 ] }
-dns-lookup = "2.0.4"
 
 [dev-dependencies]
 hex = { version = "0.4.0" }

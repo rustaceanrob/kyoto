@@ -7,12 +7,16 @@ on:
   pull_request:
 
 jobs:
-  node:
-    runs-on: ubuntu-latest
+  build:
     strategy:
       matrix:
+        platform: [ubuntu-latest, macos-latest, windows-latest]
         # Minumum Supported Rust Version (MSRV) is 1.63.0.
         toolchain: [1.63.0, stable, beta, nightly]
+        include:
+          - toolchain: 1.63.0
+            msrv: true
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v3
       - name: Update Toolchain
@@ -21,15 +25,16 @@ jobs:
           rustup component add --toolchain ${{ matrix.toolchain }} rustfmt
           rustup component add --toolchain ${{ matrix.toolchain }} clippy
           rustup update ${{ matrix.toolchain }}
+      - name: Pin dependencies
+        if: matrix.msrv
+        run: cargo update -p allocator-api2 --precise "0.2.9" --verbose
       - name: Lint
-        run: |
-          cargo clippy --all-targets
+        run: cargo clippy --all-targets
       - name: Format
-        run: |
-          cargo fmt -- --check
+        run: cargo fmt -- --check
       - name: Build
-        run: |
-          cargo build --verbose
+        run: cargo build --verbose
+      - name: Check release build on Rust ${{ matrix.toolchain }}
+        run: cargo check --release --verbose --color always
       - name: Test
-        run: |
-          cargo test --verbose
+        run: cargo test --verbose
