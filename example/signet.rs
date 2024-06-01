@@ -41,7 +41,7 @@ async fn main() {
         .await;
     // Check if the node is running. Another part of the program may be giving us the node.
     if !node.is_running() {
-        let _ = tokio::task::spawn(async move { node.run().await });
+        let _ = tokio::task::spawn(async move { node.run().await }).await;
     }
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
