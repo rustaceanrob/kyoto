@@ -8,7 +8,7 @@ pub trait TransactionStore {
     async fn add_transaction(
         &mut self,
         transaction: &Transaction,
-        height: Option<usize>,
+        height: Option<u32>,
         hash: &BlockHash,
     ) -> Result<(), TransactionStoreError>;
 

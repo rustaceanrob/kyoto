@@ -363,7 +363,7 @@ impl Node {
             }
         }
         let mut chain = self.chain.lock().await;
-        if chain.height().le(&(best_height as usize)) {
+        if chain.height().le(&best_height) {
             chain.set_best_known_height(best_height).await;
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
@@ -545,7 +545,7 @@ impl Node {
                     locators: chain.locators(),
                     stop_hash: None,
                 };
-                if chain.height().le(&(new_height as usize)) {
+                if chain.height().le(&new_height) {
                     chain.set_best_known_height(new_height).await;
                 }
                 chain.clear_filter_header_queue();
