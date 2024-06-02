@@ -39,15 +39,15 @@ impl HeaderChain {
     }
 
     // The canoncial height of the chain, one less than the length
-    pub(crate) fn height(&self) -> usize {
-        self.headers.len() + self.anchor_checkpoint.height
+    pub(crate) fn height(&self) -> u32 {
+        self.headers.len() as u32 + self.anchor_checkpoint.height
     }
 
     // The adjusted height with respect to the indexes of the underlying vector.
     // We do not actually have the header at the anchor height, so we need to offset
     // the height by 1 to reflect that requesting height 0, for instance, will not
     // yield a valid height.
-    fn adjusted_height(&self, height: usize) -> Option<usize> {
+    fn adjusted_height(&self, height: u32) -> Option<u32> {
         height.checked_sub(self.anchor_checkpoint.height + 1)
     }
 
@@ -70,19 +70,19 @@ impl HeaderChain {
     }
 
     // The height of the blockhash in the chain, accounting for the chain offset
-    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<usize> {
+    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
         let offset_pos = self
             .headers
             .iter()
             .position(|header| header.block_hash().eq(&blockhash));
-        offset_pos.map(|index| self.anchor_checkpoint.height + index + 1)
+        offset_pos.map(|index| self.anchor_checkpoint.height + index as u32 + 1)
     }
 
     // This header chain contains a block hash
-    pub(crate) fn header_at_height(&self, height: usize) -> Option<&Header> {
+    pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
         let offset = self.adjusted_height(height);
         match offset {
-            Some(index) => self.headers.get(index),
+            Some(index) => self.headers.get(index as usize),
             None => None,
         }
     }
@@ -110,7 +110,7 @@ impl HeaderChain {
     }
 
     // Calculate the chainwork after a fork height to evalutate the fork
-    pub(crate) fn chainwork_after_height(&self, height: usize) -> Work {
+    pub(crate) fn chainwork_after_height(&self, height: u32) -> Work {
         let offset_height = height.checked_sub(self.anchor_checkpoint.height);
         match offset_height {
             Some(index) => {
@@ -118,7 +118,7 @@ impl HeaderChain {
                     .headers
                     .iter()
                     .enumerate()
-                    .filter(|(h, _)| h.ge(&index))
+                    .filter(|(h, _)| (*h as u32).ge(&index))
                     .map(|(_, header)| header.work())
                     .reduce(|acc, next| acc + next);
                 match work {

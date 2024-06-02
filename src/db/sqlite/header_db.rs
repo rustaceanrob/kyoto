@@ -64,7 +64,7 @@ impl SqliteHeaderDb {
 impl HeaderStore for SqliteHeaderDb {
     // load all the known headers from storage
     async fn load(&mut self) -> Result<Vec<Header>, HeaderDatabaseError> {
-        let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height);
+        let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height as usize);
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
         let mut query = write_lock
@@ -139,7 +139,7 @@ impl HeaderStore for SqliteHeaderDb {
                 let bits: u32 = header.bits.to_consensus();
                 let nonce: u32 = header.nonce;
                 // Do not allow rewrites before a checkpoint. if they were written to the db they were correct
-                let stmt = if height.le(&self.last_checkpoint.height) {
+                let stmt = if height.le(&(self.last_checkpoint.height as usize)) {
                     "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 } else {
                     "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"

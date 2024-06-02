@@ -18,9 +18,9 @@ impl Dialog {
 
     pub(crate) async fn chain_update(
         &mut self,
-        num_headers: usize,
-        num_cf_headers: usize,
-        num_filters: usize,
+        num_headers: u32,
+        num_cf_headers: u32,
+        num_filters: u32,
         best_height: usize,
     ) {
         let message = format!(

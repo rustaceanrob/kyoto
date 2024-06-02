@@ -16,7 +16,7 @@ pub(crate) enum AppendAttempt {
     // We sucessfully extended the current chain and should broadcast the next round of CF header messages
     Extended,
     // We found a conflict in the peers CF header messages at this index
-    Conflict(usize),
+    Conflict(u32),
 }
 
 // Mapping from an append attempt to a message the node can handle
@@ -84,7 +84,7 @@ impl CFHeaderChain {
                 // Compare it to the other peer
                 if let Some(comparitor) = peer.get(index) {
                     if header.ne(&comparitor.0) {
-                        return Ok(AppendAttempt::Conflict(self.height() + index + 1));
+                        return Ok(AppendAttempt::Conflict(self.height() + index as u32 + 1));
                     }
                 }
             }
@@ -96,8 +96,8 @@ impl CFHeaderChain {
         Ok(AppendAttempt::Extended)
     }
 
-    pub(crate) fn height(&self) -> usize {
-        self.anchor_checkpoint.height + self.header_chain.len()
+    pub(crate) fn height(&self) -> u32 {
+        self.anchor_checkpoint.height + self.header_chain.len() as u32
     }
 
     pub(crate) fn prev_header(&self) -> Option<FilterHeader> {
@@ -116,15 +116,15 @@ impl CFHeaderChain {
         &self.prev_stophash_request
     }
 
-    fn adjusted_height(&self, height: usize) -> Option<usize> {
+    fn adjusted_height(&self, height: u32) -> Option<u32> {
         height.checked_sub(self.anchor_checkpoint.height + 1)
     }
 
-    pub(crate) fn filter_hash_at_height(&self, height: usize) -> Option<FilterHash> {
+    pub(crate) fn filter_hash_at_height(&self, height: u32) -> Option<FilterHash> {
         let adjusted_height = self.adjusted_height(height);
         match adjusted_height {
             Some(height) => {
-                if let Some((_, hash)) = self.header_chain.get(height) {
+                if let Some((_, hash)) = self.header_chain.get(height as usize) {
                     Some(*hash)
                 } else {
                     None

@@ -2,17 +2,17 @@ use std::{collections::VecDeque, str::FromStr};
 
 use bitcoin::{BlockHash, Network};
 
-pub const TESTNET_HEADER_CP: &[(usize, &str)] = &[(
+pub const TESTNET_HEADER_CP: &[(u32, &str)] = &[(
     546,
     "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70",
 )];
 
-pub const REGTEST_HEADER_CP: &[(usize, &str)] = &[(
+pub const REGTEST_HEADER_CP: &[(u32, &str)] = &[(
     0,
     "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
 )];
 
-pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
+pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
     (
         0,
         "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
@@ -98,12 +98,12 @@ pub const SIGNET_HEADER_CP: &[(usize, &str)] = &[
 #[derive(Debug, Clone, Copy)]
 
 pub struct HeaderCheckpoint {
-    pub height: usize,
+    pub height: u32,
     pub hash: BlockHash,
 }
 
 impl HeaderCheckpoint {
-    pub fn new(height: usize, hash: BlockHash) -> Self {
+    pub fn new(height: u32, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }
 }

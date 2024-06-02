@@ -116,7 +116,7 @@ impl Chain {
     }
 
     // The canoncial height of the chain, one less than the length
-    pub(crate) fn height(&self) -> usize {
+    pub(crate) fn height(&self) -> u32 {
         self.header_chain.height()
     }
 
@@ -126,12 +126,12 @@ impl Chain {
     }
 
     // This header chain contains a block hash
-    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<usize> {
+    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
         self.header_chain.height_of_hash(blockhash).await
     }
 
     // This header chain contains a block hash
-    pub(crate) async fn header_at_height(&self, height: usize) -> Option<&Header> {
+    pub(crate) async fn header_at_height(&self, height: u32) -> Option<&Header> {
         self.header_chain.header_at_height(height)
     }
 
@@ -146,7 +146,7 @@ impl Chain {
     }
 
     // Calculate the chainwork after a fork height to evalutate the fork
-    pub(crate) fn chainwork_after_height(&self, height: usize) -> Work {
+    pub(crate) fn chainwork_after_height(&self, height: u32) -> Work {
         self.header_chain.chainwork_after_height(height)
     }
 
@@ -171,7 +171,7 @@ impl Chain {
     // Do we have best known height and is our height equal to it
     pub(crate) fn is_synced(&self) -> bool {
         if let Some(height) = self.best_known_height {
-            (self.height() as u32).ge(&height)
+            (self.height()).ge(&height)
         } else {
             false
         }
@@ -377,7 +377,7 @@ impl Chain {
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
                 self.best_known_height
-                    .unwrap_or(self.height() as u32)
+                    .unwrap_or(self.height())
                     .try_into()
                     .unwrap(),
             )
@@ -407,7 +407,7 @@ impl Chain {
         }
         // Did they send us the right amount of headers
         let expected_stop_header = self
-            .header_at_height(self.cf_header_chain.height() + batch.len())
+            .header_at_height(self.cf_header_chain.height() + batch.len() as u32)
             .await;
         if let Some(stop_header) = expected_stop_header {
             if stop_header.block_hash().ne(batch.stop_hash()) {
@@ -445,7 +445,7 @@ impl Chain {
         if !self.is_cf_headers_synced() {
             Some(GetCFHeaders {
                 filter_type: 0x00,
-                start_height: (self.cf_header_chain.height() + 1) as u32,
+                start_height: (self.cf_header_chain.height() + 1),
                 stop_hash,
             })
         } else {
@@ -515,7 +515,7 @@ impl Chain {
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
                 self.best_known_height
-                    .unwrap_or(self.height() as u32)
+                    .unwrap_or(self.height())
                     .try_into()
                     .unwrap(),
             )
@@ -524,7 +524,7 @@ impl Chain {
         if !self.is_filters_synced() {
             Some(GetCFilters {
                 filter_type: 0x00,
-                start_height: (self.filter_chain.height() + 1) as u32,
+                start_height: self.filter_chain.height() + 1,
                 stop_hash,
             })
         } else {

@@ -32,8 +32,8 @@ impl FilterChain {
         self.chain.clear()
     }
 
-    pub(crate) fn height(&self) -> usize {
-        self.anchor_checkpoint.height + self.chain.len()
+    pub(crate) fn height(&self) -> u32 {
+        self.anchor_checkpoint.height + self.chain.len() as u32
     }
 
     pub(crate) fn set_last_stop_hash(&mut self, stop_hash: BlockHash) {
@@ -44,7 +44,7 @@ impl FilterChain {
         &self.prev_stophash_request
     }
 
-    fn adjusted_height(&self, height: usize) -> Option<usize> {
+    fn adjusted_height(&self, height: u32) -> Option<u32> {
         height.checked_sub(self.anchor_checkpoint.height + 1)
     }
 

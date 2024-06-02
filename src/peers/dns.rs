@@ -42,7 +42,7 @@ impl Dns {
         for host in seeds {
             if let Ok(addrs) = dns_lookup::getaddrinfo(Some(host), None, None) {
                 for addr in addrs.filter_map(Result::ok) {
-                    ip_addrs.push(addr.sockaddr.ip().into());
+                    ip_addrs.push(addr.sockaddr.ip());
                 }
             }
         }
