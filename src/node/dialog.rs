@@ -1,6 +1,6 @@
 use tokio::sync::broadcast::Sender;
 
-use super::node_messages::NodeMessage;
+use super::messages::NodeMessage;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Dialog {

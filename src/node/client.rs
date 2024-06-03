@@ -7,7 +7,7 @@ use crate::{IndexedBlock, IndexedTransaction};
 
 use super::{
     error::ClientError,
-    node_messages::{ClientMessage, NodeMessage},
+    messages::{ClientMessage, NodeMessage},
 };
 
 /// A [`Client`] allows for communication with a running node.

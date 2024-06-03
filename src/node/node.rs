@@ -42,7 +42,7 @@ use super::{
     config::NodeConfig,
     dialog::Dialog,
     error::NodeError,
-    node_messages::{ClientMessage, NodeMessage},
+    messages::{ClientMessage, NodeMessage},
 };
 use crate::db::sqlite::peer_db::SqlitePeerDb;
 

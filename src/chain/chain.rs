@@ -26,7 +26,7 @@ use crate::{
         filter_chain::FilterChain,
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
-    node::{dialog::Dialog, node_messages::NodeMessage},
+    node::{dialog::Dialog, messages::NodeMessage},
     prelude::{params_from_network, MEDIAN_TIME_PAST},
     IndexedBlock, IndexedTransaction,
 };

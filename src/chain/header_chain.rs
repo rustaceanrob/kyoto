@@ -156,7 +156,7 @@ impl HeaderChain {
 
     // Extend the current chain, potentially rewriting history
     pub(crate) fn extend(&mut self, batch: &[Header]) -> Vec<DisconnectedHeader> {
-        let reorged = Vec::new();
+        let mut reorged = Vec::new();
         // We cannot extend from nothing
         if batch.is_empty() {
             return reorged;
@@ -180,7 +180,21 @@ impl HeaderChain {
                     .expect("cannot extend from empty batch")
                     .prev_blockhash
             ));
-            panic!()
+            while let Some((height, header)) = self.headers.iter_mut().next_back() {
+                if header.block_hash().ne(&batch
+                    .first()
+                    .expect("cannot extend from empty batch")
+                    .prev_blockhash)
+                {
+                    reorged.push(DisconnectedHeader::new(*height, *header));
+                } else {
+                    let anchor_height = self.height();
+                    for (index, header) in batch.iter().enumerate() {
+                        self.headers
+                            .insert(anchor_height + 1 + index as u32, *header);
+                    }
+                }
+            }
             // // Remove items from the top of the chain until they link.
             // while self.tip().ne(&batch
             //     .first()

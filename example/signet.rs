@@ -1,5 +1,5 @@
 use bitcoin::BlockHash;
-use kyoto::node::node_messages::NodeMessage;
+use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
 use std::{
     net::{IpAddr, Ipv4Addr},
