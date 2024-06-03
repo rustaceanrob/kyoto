@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -28,7 +29,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
 pub(crate) struct SqliteHeaderDb {
     network: Network,
     conn: Arc<Mutex<Connection>>,
-    anchor_height: u64,
+    anchor_height: u32,
     anchor_hash: BlockHash,
     last_checkpoint: HeaderCheckpoint,
 }
@@ -53,7 +54,7 @@ impl SqliteHeaderDb {
         Ok(Self {
             network,
             conn: Arc::new(Mutex::new(conn)),
-            anchor_height: anchor_checkpoint.height as u64,
+            anchor_height: anchor_checkpoint.height,
             anchor_hash: anchor_checkpoint.hash,
             last_checkpoint,
         })
@@ -63,8 +64,8 @@ impl SqliteHeaderDb {
 #[async_trait]
 impl HeaderStore for SqliteHeaderDb {
     // load all the known headers from storage
-    async fn load(&mut self) -> Result<Vec<Header>, HeaderDatabaseError> {
-        let mut headers: Vec<Header> = Vec::with_capacity(self.last_checkpoint.height as usize);
+    async fn load(&mut self) -> Result<BTreeMap<u32, Header>, HeaderDatabaseError> {
+        let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
         let mut query = write_lock
@@ -75,7 +76,8 @@ impl HeaderStore for SqliteHeaderDb {
             .map_err(|_| HeaderDatabaseError::LoadError)?;
         while let Some(row) = rows.next().map_err(|_| HeaderDatabaseError::LoadError)? {
             let height: u32 = row.get(0).map_err(|_| HeaderDatabaseError::LoadError)?;
-            if height.le(&(self.anchor_height as u32)) {
+            // The anchor height should not be included in the chain, as the anchor is non-inclusive
+            if height.le(&self.anchor_height) {
                 continue;
             }
             let hash: String = row.get(1).map_err(|_| HeaderDatabaseError::LoadError)?;
@@ -94,12 +96,14 @@ impl HeaderStore for SqliteHeaderDb {
                 bits: CompactTarget::from_consensus(bits),
                 nonce,
             };
+
             assert_eq!(
                 BlockHash::from_str(&hash).unwrap(),
                 next_header.block_hash(),
                 "db corruption. incorrect header hash."
             );
-            match headers.last() {
+
+            match headers.values().last() {
                 Some(header) => {
                     assert_eq!(
                         header.block_hash(),
@@ -114,23 +118,33 @@ impl HeaderStore for SqliteHeaderDb {
                     );
                 }
             }
-            headers.push(next_header);
+            headers.insert(height, next_header);
+        }
+        for (header_1, header_2) in headers.iter().zip(headers.iter().skip(1)) {
+            if header_2.0 - header_1.0 != 1 {
+                println!("Height mismatch {}, {} ", header_2.0, header_1.0)
+            }
+            if header_2.1.prev_blockhash != header_1.1.block_hash() {
+                println!("Hash mismatch {}, {} ", header_2.0, header_1.0)
+            }
         }
         Ok(headers)
     }
 
-    async fn write<'a>(&mut self, header_chain: &'a [Header]) -> Result<(), HeaderDatabaseError> {
+    async fn write<'a>(
+        &mut self,
+        header_chain: &'a BTreeMap<u32, Header>,
+    ) -> Result<(), HeaderDatabaseError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock
             .transaction()
             .map_err(|_| HeaderDatabaseError::WriteError)?;
-        let count: u64 = tx
+        let count: u32 = tx
             .query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))
             .map_err(|_| HeaderDatabaseError::WriteError)?;
         let adjusted_count = count.saturating_sub(1) + self.anchor_height;
-        for (height, header) in header_chain.iter().enumerate() {
-            let adjusted_height = self.anchor_height + 1 + height as u64;
-            if adjusted_height.ge(&(adjusted_count)) {
+        for (height, header) in header_chain {
+            if height.ge(&(adjusted_count)) {
                 let hash: String = header.block_hash().to_string();
                 let version: i32 = header.version.to_consensus();
                 let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
@@ -139,7 +153,7 @@ impl HeaderStore for SqliteHeaderDb {
                 let bits: u32 = header.bits.to_consensus();
                 let nonce: u32 = header.nonce;
                 // Do not allow rewrites before a checkpoint. if they were written to the db they were correct
-                let stmt = if height.le(&(self.last_checkpoint.height as usize)) {
+                let stmt = if height.le(&self.last_checkpoint.height) {
                     "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 } else {
                     "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
@@ -147,7 +161,7 @@ impl HeaderStore for SqliteHeaderDb {
                 tx.execute(
                     stmt,
                     params![
-                        adjusted_height,
+                        height,
                         hash,
                         version,
                         prev_hash,

@@ -28,7 +28,7 @@ use crate::{
     },
     node::{dialog::Dialog, node_messages::NodeMessage},
     prelude::{params_from_network, MEDIAN_TIME_PAST},
-    tx::types::IndexedTransaction,
+    IndexedTransaction,
 };
 
 pub(crate) struct Chain {
@@ -61,6 +61,10 @@ impl Chain {
             .map_err(|_| HeaderPersistenceError::SQLite)?;
         if loaded_headers.len().gt(&0) {
             if loaded_headers
+                .values()
+                .take(1)
+                .copied()
+                .collect::<Vec<Header>>()
                 .first()
                 .unwrap()
                 .prev_blockhash
@@ -73,7 +77,7 @@ impl Chain {
             } else if loaded_headers
                 .iter()
                 .zip(loaded_headers.iter().skip(1))
-                .any(|(first, second)| first.block_hash().ne(&second.prev_blockhash))
+                .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
             {
                 dialog
                     .send_warning("Blockhash pointer mismatch".into())
@@ -82,7 +86,7 @@ impl Chain {
             }
             loaded_headers.iter().for_each(|header| {
                 if let Some(checkpoint) = checkpoints.next() {
-                    if header.block_hash().eq(&checkpoint.hash) {
+                    if header.1.block_hash().eq(&checkpoint.hash) {
                         checkpoints.advance()
                     }
                 }
@@ -103,11 +107,6 @@ impl Chain {
             block_queue: BlockQueue::new(),
             dialog,
         })
-    }
-
-    // The genesis block
-    pub(crate) fn root(&self) -> BlockHash {
-        self.header_chain.root()
     }
 
     // Top of the chain
@@ -136,7 +135,7 @@ impl Chain {
     }
 
     // This header chain contains a block hash
-    pub(crate) fn contains_header(&self, header: Header) -> bool {
+    pub(crate) fn contains_header(&self, header: &Header) -> bool {
         self.header_chain.contains_header(header)
     }
 
@@ -178,7 +177,7 @@ impl Chain {
     }
 
     // The "locators" are the headers we inform our peers we know about
-    pub(crate) fn locators(&self) -> Vec<BlockHash> {
+    pub(crate) fn locators(&mut self) -> Vec<BlockHash> {
         if !self.checkpoints_complete() {
             vec![self.tip()]
         } else {
@@ -205,7 +204,7 @@ impl Chain {
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // If our chain already has the last header in the message there is no new information
-        if self.contains_header(*header_batch.last()) {
+        if self.contains_header(header_batch.last()) {
             return Ok(());
         }
         let initially_syncing = !self.checkpoints.is_exhausted();
@@ -233,7 +232,7 @@ impl Chain {
     }
 
     // These are invariants in all batches of headers we receive
-    async fn sanity_check(&self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
+    async fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // Some basic sanity checks that should result in peer bans on errors
 
@@ -328,7 +327,7 @@ impl Chain {
         let uncommon: Vec<Header> = header_batch
             .inner()
             .iter()
-            .filter(|header| !self.contains_header(**header))
+            .filter(|header| !self.contains_header(header))
             .copied()
             .collect();
         let challenge_chainwork = uncommon
@@ -336,15 +335,16 @@ impl Chain {
             .map(|header| header.work())
             .reduce(|acc, next| acc + next)
             .expect("all headers of a fork cannot be in our chain");
-        let stem_position = self.header_chain.headers().iter().position(|stem| {
-            uncommon
-                .first()
-                .expect("all headers of a fork cannot be in our chain")
-                .prev_blockhash
-                .eq(&stem.block_hash())
-        });
+        let stem_position = self
+            .height_of_hash(
+                uncommon
+                    .first()
+                    .expect("all headers of a fork cannot be in our chain")
+                    .prev_blockhash,
+            )
+            .await;
         if let Some(stem) = stem_position {
-            let current_chainwork = self.header_chain.chainwork_after_index(stem);
+            let current_chainwork = self.header_chain.chainwork_after_height(stem);
             if current_chainwork.lt(&challenge_chainwork) {
                 self.dialog
                     .send_dialog("Valid reorganization found".into())
@@ -449,7 +449,7 @@ impl Chain {
                 stop_hash,
             })
         } else {
-            self.cf_header_chain.join(self.header_chain.headers()).await;
+            self.cf_header_chain.join(&self.header_chain.values()).await;
             None
         }
     }
@@ -489,7 +489,7 @@ impl Chain {
                 ))
                 .await;
         }
-        self.filter_chain.put(&filter).await;
+        self.filter_chain.put(filter_message.block_hash).await;
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
                 Ok(self.next_filter_message().await)

@@ -2,7 +2,7 @@ pub use bitcoin::{Block, Transaction};
 pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 
-use crate::tx::types::IndexedTransaction;
+use crate::IndexedTransaction;
 
 use super::{
     error::ClientError,

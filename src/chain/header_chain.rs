@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+
 use bitcoin::{block::Header, BlockHash, Work};
 
-use crate::prelude::MEDIAN_TIME_PAST;
+use crate::{prelude::MEDIAN_TIME_PAST, DisconnectedHeader};
 
 use super::checkpoints::HeaderCheckpoint;
 
-pub(crate) type Headers = Vec<Header>;
+pub(crate) type Headers = BTreeMap<u32, Header>;
 
 const LOCATOR_LOOKBACKS: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const MAX_LOOKBACK: usize = 1025;
@@ -23,16 +25,9 @@ impl HeaderChain {
         }
     }
 
-    pub(crate) fn root(&self) -> BlockHash {
-        match self.headers.first() {
-            Some(header) => header.block_hash(),
-            None => self.anchor_checkpoint.hash,
-        }
-    }
-
     // Top of the chain
     pub(crate) fn tip(&self) -> BlockHash {
-        match self.headers.last() {
+        match self.headers.values().last() {
             Some(header) => header.block_hash(),
             None => self.anchor_checkpoint.hash,
         }
@@ -41,14 +36,6 @@ impl HeaderChain {
     // The canoncial height of the chain, one less than the length
     pub(crate) fn height(&self) -> u32 {
         self.headers.len() as u32 + self.anchor_checkpoint.height
-    }
-
-    // The adjusted height with respect to the indexes of the underlying vector.
-    // We do not actually have the header at the anchor height, so we need to offset
-    // the height by 1 to reflect that requesting height 0, for instance, will not
-    // yield a valid height.
-    fn adjusted_height(&self, height: u32) -> Option<u32> {
-        height.checked_sub(self.anchor_checkpoint.height + 1)
     }
 
     // The length of the chain we have interally
@@ -61,41 +48,43 @@ impl HeaderChain {
         &self.headers
     }
 
+    // All the headers of the chain
+    pub(crate) fn values(&self) -> Vec<Header> {
+        self.headers.values().copied().collect()
+    }
+
     // This header chain contains a block hash
     pub(crate) fn contains_hash(&self, blockhash: BlockHash) -> bool {
         self.headers
-            .iter()
+            .values()
             .any(|header| header.block_hash().eq(&blockhash))
             || blockhash.eq(&self.anchor_checkpoint.hash)
     }
 
-    // The height of the blockhash in the chain, accounting for the chain offset
+    // The height of the blockhash in the chain
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        let offset_pos = self
-            .headers
-            .iter()
-            .position(|header| header.block_hash().eq(&blockhash));
-        offset_pos.map(|index| self.anchor_checkpoint.height + index as u32 + 1)
+        for (height, header) in self.headers.iter() {
+            if header.block_hash().eq(&blockhash) {
+                return Some(*height);
+            }
+        }
+        None
     }
 
     // This header chain contains a block hash
     pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
-        let offset = self.adjusted_height(height);
-        match offset {
-            Some(index) => self.headers.get(index as usize),
-            None => None,
-        }
+        self.headers.get(&height)
     }
 
     // This header chain contains a block hash
-    pub(crate) fn contains_header(&self, header: Header) -> bool {
-        self.headers.contains(&header)
+    pub(crate) fn contains_header(&self, other: &Header) -> bool {
+        self.headers.values().any(|header| header.eq(other))
     }
 
     // Compute the total work for the chain
     fn get_chainwork(&self, headers: &Headers) -> Work {
         let work = headers
-            .iter()
+            .values()
             .map(|header| header.work())
             .reduce(|acc, next| acc + next);
         match work {
@@ -111,52 +100,33 @@ impl HeaderChain {
 
     // Calculate the chainwork after a fork height to evalutate the fork
     pub(crate) fn chainwork_after_height(&self, height: u32) -> Work {
-        let offset_height = height.checked_sub(self.anchor_checkpoint.height);
-        match offset_height {
-            Some(index) => {
-                let work = self
-                    .headers
-                    .iter()
-                    .enumerate()
-                    .filter(|(h, _)| (*h as u32).ge(&index))
-                    .map(|(_, header)| header.work())
-                    .reduce(|acc, next| acc + next);
-                match work {
-                    Some(work) => work,
-                    // If the height is higher than the known chain, we don't have any work
-                    None => Work::from_be_bytes([0; 32]),
-                }
-            }
-            // If the height requested is below the checkpoint, just return the entire work of our chain
-            None => self.chainwork(),
-        }
-    }
-
-    pub(crate) fn chainwork_after_index(&self, index: usize) -> Work {
         let work = self
             .headers
             .iter()
-            .enumerate()
-            .filter(|(h, _)| h.gt(&index))
+            .filter(|(h, _)| h.gt(&&height))
             .map(|(_, header)| header.work())
             .reduce(|acc, next| acc + next);
-        work.unwrap_or(self.chainwork())
+        match work {
+            Some(work) => work,
+            // If the height is higher than the known chain, we don't have any work
+            None => Work::from_be_bytes([0; 32]),
+        }
     }
 
     // Human readable chainwork
     pub(crate) fn log2_work(&self) -> f64 {
         let work = self
             .headers
-            .iter()
+            .values()
             .map(|header| header.work().log2())
             .reduce(|acc, next| acc + next);
         work.unwrap_or(0.0)
     }
 
     // The last 11 headers, if we have that many
-    pub(crate) fn last_median_time_past_window(&self) -> Headers {
+    pub(crate) fn last_median_time_past_window(&self) -> Vec<Header> {
         self.headers
-            .iter()
+            .values()
             .rev()
             .take(MEDIAN_TIME_PAST)
             .rev()
@@ -165,11 +135,11 @@ impl HeaderChain {
     }
 
     // The block locators are a way to inform our peer of blocks we know about
-    pub(crate) fn locators(&self) -> Vec<BlockHash> {
+    pub(crate) fn locators(&mut self) -> Vec<BlockHash> {
         let mut locators = Vec::new();
         let rev: Vec<BlockHash> = self
             .headers
-            .iter()
+            .values()
             .rev()
             .take(MAX_LOOKBACK)
             .map(|header| header.block_hash())
@@ -185,8 +155,8 @@ impl HeaderChain {
     }
 
     // Extend the current chain, potentially rewriting history
-    pub(crate) fn extend(&mut self, batch: &Vec<Header>) -> Vec<Header> {
-        let mut reorged = Vec::new();
+    pub(crate) fn extend(&mut self, batch: &[Header]) -> Vec<DisconnectedHeader> {
+        let reorged = Vec::new();
         // We cannot extend from nothing
         if batch.is_empty() {
             return reorged;
@@ -197,7 +167,11 @@ impl HeaderChain {
             .expect("cannot extend from empty batch")
             .prev_blockhash)
         {
-            self.headers.extend(batch);
+            let current_anchor = self.height();
+            for (index, header) in batch.iter().enumerate() {
+                self.headers
+                    .insert(current_anchor + 1 + index as u32, *header);
+            }
         } else {
             // Panic if we don't contain the hash. Something went wrong further up the call stack.
             assert!(self.contains_hash(
@@ -206,19 +180,28 @@ impl HeaderChain {
                     .expect("cannot extend from empty batch")
                     .prev_blockhash
             ));
-            // Remove items from the top of the chain until they link.
-            while self.tip().ne(&batch
-                .first()
-                .expect("cannot extend from empty batch")
-                .prev_blockhash)
-            {
-                if let Some(header) = self.headers.pop() {
-                    reorged.push(header)
-                }
-            }
-            self.headers.extend(batch);
+            panic!()
+            // // Remove items from the top of the chain until they link.
+            // while self.tip().ne(&batch
+            //     .first()
+            //     .expect("cannot extend from empty batch")
+            //     .prev_blockhash)
+            // {
+            //     if let Some((height, header)) = self.headers.pop_last() {
+            //         reorged.push(DisconnectedHeader::new(height, header));
+            //     }
+            // }
+            // let current_anchor = self.height();
+            // for (index, header) in batch.iter().enumerate() {
+            //     self.headers
+            //         .insert(current_anchor + 1 + index as u32, *header);
+            // }
         }
         reorged.iter().rev().copied().collect()
+    }
+
+    fn remove(&mut self, height: &u32) {
+        self.headers.remove(height);
     }
 
     // Clear all the headers from our chain. Only to be used when a peer has feed us faulty checkpoints
@@ -244,7 +227,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            Vec::new(),
+            BTreeMap::new(),
         );
         assert_eq!(chain.chainwork(), Work::from_be_bytes([0; 32]));
         assert_eq!(
@@ -253,10 +236,6 @@ mod tests {
         );
         assert_eq!(chain.height(), 190_000);
         assert_eq!(chain.tip(), BlockHash::from_str(
-            "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
-        )
-        .unwrap());
-        assert_eq!(chain.root(), BlockHash::from_str(
             "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
         )
         .unwrap());
@@ -286,7 +265,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            Vec::new(),
+            BTreeMap::new(),
         );
         let reorg = chain.extend(&batch_1);
         assert!(reorg.is_empty());
@@ -309,7 +288,6 @@ mod tests {
             chain.chainwork_after_height(190_001),
             block_190_002.work() + block_190_003.work()
         );
-        assert_eq!(chain.chainwork_after_index(1), block_190_003.work());
         assert_eq!(chain.tip(), block_190_003.block_hash());
     }
 

@@ -26,12 +26,13 @@ async fn main() {
     let (mut node, mut client) = builder
         // Add the peers
         .add_peers(vec![(peer, 38333), (peer_2, 38333)])
+        // .add_peers(vec![(peer, 38333)])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(HeaderCheckpoint::new(
-            190_000,
-            BlockHash::from_str("0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2")
+            160_000,
+            BlockHash::from_str("0000003ca3c99aff040f2563c2ad8f8ec88bd0fd6b8f0895cfaf1ef90353a62c")
                 .unwrap(),
         ))
         // The number of connections we would like to maintain
@@ -55,6 +56,9 @@ async fn main() {
                 NodeMessage::Warning(e) => tracing::warn!("{}", e),
                 NodeMessage::Transaction(t) => drop(t),
                 NodeMessage::Block(b) => drop(b),
+                NodeMessage::BlocksDisconnected(r) => {
+                    let _ = r;
+                }
                 NodeMessage::Synced(tip) => {
                     tracing::info!("Synced chain up to block {}", tip.height,);
                     tracing::info!("Chain tip: {}", tip.hash.to_string(),);
