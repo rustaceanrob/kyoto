@@ -1,6 +1,7 @@
 pub use bitcoin::{Block, Transaction};
-pub use tokio::sync::mpsc::Receiver;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::broadcast;
+pub use tokio::sync::broadcast::Receiver;
+pub use tokio::sync::mpsc::Sender;
 
 use crate::{IndexedBlock, IndexedTransaction};
 
@@ -10,21 +11,21 @@ use super::{
 };
 
 /// A [`Client`] allows for communication with a running node.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
-    nrx: Receiver<NodeMessage>,
+    nrx: broadcast::Sender<NodeMessage>,
     ntx: Sender<ClientMessage>,
 }
 
 impl Client {
-    pub(crate) fn new(nrx: Receiver<NodeMessage>, ntx: Sender<ClientMessage>) -> Self {
+    pub(crate) fn new(nrx: broadcast::Sender<NodeMessage>, ntx: Sender<ClientMessage>) -> Self {
         Self { nrx, ntx }
     }
 
     /// For a majority of cases, some parts of your program will respond to node events, and other parts of the program
     /// will send events to the node. This method returns a [`ClientSender`] to issue commands to the node, and a
     /// [`Receiver`] to continually respond to events issued from the node.
-    pub fn split(&mut self) -> (ClientSender, &mut Receiver<NodeMessage>) {
+    pub fn split(&mut self) -> (ClientSender, Receiver<NodeMessage>) {
         (self.sender(), self.receiver())
     }
 
@@ -34,11 +35,14 @@ impl Client {
     }
 
     /// Return a [`Receiver`] to listen for incoming node events.
-    /// This method returns a mutable borrow to the [`Receiver`]. If you require the
-    /// ability to send events to the node, i.e. to broadcast a transaction, either call [`Client::split`]
-    /// or [`Client::sender`] before calling [`Client::receiver`].
-    pub fn receiver(&mut self) -> &mut Receiver<NodeMessage> {
-        &mut self.nrx
+    /// You may call this function as many times as required, however please note
+    /// there are memory and performance implications when calling this method. Namely, a clone of the object,
+    /// potentially a large data structure like a [`Block`], is held in memory for _every_ receiver until _all_
+    /// receivers have gotten the message.
+    /// You should only call this twice if two separate portions of your application need to process
+    /// data differently. For example, a Lightning Network node implementation.
+    pub fn receiver(&mut self) -> Receiver<NodeMessage> {
+        self.nrx.subscribe()
     }
 
     /// Tell the node to stop running.
@@ -56,11 +60,15 @@ impl Client {
     /// such as Lightning Network nodes, which are expected to be online for long durations.
     pub async fn collect_relevant_tx(&mut self) -> Vec<IndexedTransaction> {
         let mut txs = Vec::new();
+        let mut rec = self.nrx.subscribe();
         loop {
-            while let Some(message) = self.nrx.recv().await {
+            while let Ok(message) = rec.recv().await {
                 match message {
                     NodeMessage::Transaction(tx) => txs.push(tx),
-                    NodeMessage::Synced(_) => return txs,
+                    NodeMessage::Synced(_) => {
+                        drop(rec);
+                        return txs;
+                    }
                     _ => (),
                 }
             }
@@ -73,12 +81,16 @@ impl Client {
     /// such as a server or desktop computer.
     /// For devices like smart phones, see [`Client::collect_relevant_tx`].
     pub async fn collect_relevant_blocks(&mut self) -> Vec<IndexedBlock> {
+        let mut rec = self.nrx.subscribe();
         let mut blocks = Vec::new();
         loop {
-            while let Some(message) = self.nrx.recv().await {
+            while let Ok(message) = rec.recv().await {
                 match message {
                     NodeMessage::Block(block) => blocks.push(block),
-                    NodeMessage::Synced(_) => return blocks,
+                    NodeMessage::Synced(_) => {
+                        drop(rec);
+                        return blocks;
+                    }
                     _ => (),
                 }
             }
@@ -87,9 +99,11 @@ impl Client {
 
     /// Wait until the client's headers and filters are fully synced to connected peers, dropping any block and transaction messages.
     pub async fn wait_until_synced(&mut self) {
+        let mut rec = self.nrx.subscribe();
         loop {
-            while let Some(message) = self.nrx.recv().await {
+            while let Ok(message) = rec.recv().await {
                 if let NodeMessage::Synced(_) = message {
+                    drop(rec);
                     return;
                 }
             }
@@ -99,8 +113,9 @@ impl Client {
     /// Print a stream of logs to the console. This function continually loops for the duration of the program, and is not particularly helpful in production applications.
     /// See [`Client::receiver`] to listen for events from the node.
     pub async fn print_log_stream(&mut self) {
+        let mut rec = self.nrx.subscribe();
         loop {
-            while let Some(message) = self.nrx.recv().await {
+            while let Ok(message) = rec.recv().await {
                 match message {
                     NodeMessage::Dialog(message) => {
                         println!("\x1b[32mInfo\x1b[0m {}", message);

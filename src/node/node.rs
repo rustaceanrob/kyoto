@@ -15,7 +15,7 @@ use bitcoin::{
     Block, Network,
 };
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
-use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
     sync::mpsc::{self},
@@ -87,9 +87,9 @@ impl Node {
         required_peers: usize,
     ) -> Result<(Self, Client), NodeError> {
         // Set up a communication channel between the node and client
-        let (ntx, nrx) = mpsc::channel::<NodeMessage>(32);
+        let (ntx, _) = broadcast::channel::<NodeMessage>(32);
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
-        let client = Client::new(nrx, ctx);
+        let client = Client::new(ntx.clone(), ctx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Load the databases
@@ -107,7 +107,7 @@ impl Node {
         let mut scripts = HashSet::new();
         scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         // A structured way to talk to the client
-        let mut dialog = Dialog::new(ntx.clone());
+        let mut dialog = Dialog::new(ntx);
         // Build the chain
         let loaded_chain = Chain::new(
             &network,

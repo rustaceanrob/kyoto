@@ -1,4 +1,4 @@
-pub mod dns;
-pub mod outbound_messages;
-pub mod peer;
-pub mod reader;
+pub(crate) mod dns;
+pub(crate) mod outbound_messages;
+pub(crate) mod peer;
+pub(crate) mod reader;

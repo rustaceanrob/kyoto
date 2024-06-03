@@ -7,7 +7,7 @@ use crate::{
 /// Messages receivable by a running node.
 #[derive(Debug, Clone)]
 pub enum NodeMessage {
-    /// A human readable dialog
+    /// A human readable dialog of what the node is currently doing
     Dialog(String),
     /// A human readable warning that may effect the function of the node
     Warning(String),

@@ -1,4 +1,4 @@
-use tokio::sync::mpsc::Sender;
+use tokio::sync::broadcast::Sender;
 
 use super::node_messages::NodeMessage;
 
@@ -13,7 +13,7 @@ impl Dialog {
     }
 
     pub(crate) async fn send_dialog(&mut self, dialog: String) {
-        let _ = self.ntx.send(NodeMessage::Dialog(dialog)).await;
+        let _ = self.ntx.send(NodeMessage::Dialog(dialog));
     }
 
     pub(crate) async fn chain_update(
@@ -27,14 +27,14 @@ impl Dialog {
             "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
             num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
         );
-        let _ = self.ntx.send(NodeMessage::Dialog(message)).await;
+        let _ = self.ntx.send(NodeMessage::Dialog(message));
     }
 
     pub(crate) async fn send_warning(&mut self, warning: String) {
-        let _ = self.ntx.send(NodeMessage::Warning(warning)).await;
+        let _ = self.ntx.send(NodeMessage::Warning(warning));
     }
 
     pub(crate) async fn send_data(&mut self, message: NodeMessage) {
-        let _ = self.ntx.send(message).await;
+        let _ = self.ntx.send(message);
     }
 }

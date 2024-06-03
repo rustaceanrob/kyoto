@@ -47,10 +47,10 @@ async fn main() {
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
-    let (mut sender, receiver) = client.split();
+    let (mut sender, mut receiver) = client.split();
     // Continually listen for events until the node is synced to its peers.
     loop {
-        if let Some(message) = receiver.recv().await {
+        if let Ok(message) = receiver.recv().await {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{}", d),
                 NodeMessage::Warning(e) => tracing::warn!("{}", e),
