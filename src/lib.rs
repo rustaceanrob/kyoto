@@ -43,9 +43,9 @@ impl IndexedTransaction {
 #[derive(Debug, Clone, Copy)]
 pub struct DisconnectedHeader {
     /// The height where this header used to be in the chain.
-    height: u32,
+    pub height: u32,
     /// The reorganized header.
-    header: Header,
+    pub header: Header,
 }
 
 impl DisconnectedHeader {
@@ -58,9 +58,9 @@ impl DisconnectedHeader {
 #[derive(Debug, Clone)]
 pub struct IndexedBlock {
     /// The height or index in the chain.
-    height: u32,
+    pub height: u32,
     /// The Bitcoin block with some matching script.
-    block: Block,
+    pub block: Block,
 }
 
 impl IndexedBlock {
