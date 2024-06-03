@@ -11,7 +11,7 @@ mod prelude;
 pub mod tx;
 
 pub use bitcoin::block::Header;
-pub use bitcoin::{BlockHash, Transaction};
+pub use bitcoin::{Block, BlockHash, Transaction};
 
 /// A Bitcoin [`Transaction`] with additional context
 #[derive(Debug, Clone)]
@@ -19,13 +19,13 @@ pub struct IndexedTransaction {
     /// The Bitcoin transaction
     pub transaction: Transaction,
     /// The height of the block in the chain that includes this transaction
-    pub height: Option<u32>,
+    pub height: u32,
     /// The hash of the block in the chain that includes this transaction
     pub hash: BlockHash,
 }
 
 impl IndexedTransaction {
-    pub fn new(transaction: Transaction, height: Option<u32>, hash: BlockHash) -> Self {
+    pub(crate) fn new(transaction: Transaction, height: u32, hash: BlockHash) -> Self {
         Self {
             transaction,
             height,
@@ -44,7 +44,22 @@ pub struct DisconnectedHeader {
 }
 
 impl DisconnectedHeader {
-    pub fn new(height: u32, header: Header) -> Self {
+    pub(crate) fn new(height: u32, header: Header) -> Self {
         Self { height, header }
+    }
+}
+
+/// A Bitcoin [`Block`] with associated height
+#[derive(Debug, Clone)]
+pub struct IndexedBlock {
+    /// The height or index in the chain
+    height: u32,
+    /// The Bitcoin block with some matching script
+    block: Block,
+}
+
+impl IndexedBlock {
+    pub(crate) fn new(height: u32, block: Block) -> Self {
+        Self { height, block }
     }
 }

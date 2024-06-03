@@ -2,7 +2,7 @@ pub use bitcoin::{Block, Transaction};
 pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 
-use crate::IndexedTransaction;
+use crate::{IndexedBlock, IndexedTransaction};
 
 use super::{
     error::ClientError,
@@ -72,7 +72,7 @@ impl Client {
     /// Only recommended for machines that can tolerate such a memory allocation,
     /// such as a server or desktop computer.
     /// For devices like smart phones, see [`Client::collect_relevant_tx`].
-    pub async fn collect_relevant_blocks(&mut self) -> Vec<Block> {
+    pub async fn collect_relevant_blocks(&mut self) -> Vec<IndexedBlock> {
         let mut blocks = Vec::new();
         loop {
             while let Some(message) = self.nrx.recv().await {

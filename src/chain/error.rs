@@ -36,6 +36,6 @@ pub enum HeaderPersistenceError {
 
 #[derive(Error, Debug)]
 pub enum BlockScanError {
-    #[error("the headers loaded from the persistence layer do not match the network")]
-    GenesisMismatch,
+    #[error("unknown block hash")]
+    NoBlockHash,
 }

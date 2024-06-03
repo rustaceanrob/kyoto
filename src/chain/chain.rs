@@ -28,9 +28,10 @@ use crate::{
     },
     node::{dialog::Dialog, node_messages::NodeMessage},
     prelude::{params_from_network, MEDIAN_TIME_PAST},
-    IndexedTransaction,
+    IndexedBlock, IndexedTransaction,
 };
 
+#[derive(Debug)]
 pub(crate) struct Chain {
     header_chain: HeaderChain,
     cf_header_chain: CFHeaderChain,
@@ -349,7 +350,10 @@ impl Chain {
                 self.dialog
                     .send_dialog("Valid reorganization found".into())
                     .await;
-                self.header_chain.extend(&uncommon);
+                let reorged = self.header_chain.extend(&uncommon);
+                self.dialog
+                    .send_data(NodeMessage::BlocksDisconnected(reorged))
+                    .await;
                 Ok(())
             } else {
                 self.dialog
@@ -434,7 +438,7 @@ impl Chain {
     }
 
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
-    pub(crate) async fn next_cf_header_message(&mut self) -> Option<GetCFHeaders> {
+    pub(crate) async fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE + 1;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
             hash.block_hash()
@@ -442,15 +446,13 @@ impl Chain {
             self.tip()
         };
         self.cf_header_chain.set_last_stop_hash(stop_hash);
-        if !self.is_cf_headers_synced() {
-            Some(GetCFHeaders {
-                filter_type: 0x00,
-                start_height: (self.cf_header_chain.height() + 1),
-                stop_hash,
-            })
-        } else {
+        if self.is_cf_headers_synced() {
             self.cf_header_chain.join(&self.header_chain.values()).await;
-            None
+        }
+        GetCFHeaders {
+            filter_type: 0x00,
+            start_height: (self.cf_header_chain.height() + 1),
+            stop_hash,
         }
     }
 
@@ -492,7 +494,11 @@ impl Chain {
         self.filter_chain.put(filter_message.block_hash).await;
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
-                Ok(self.next_filter_message().await)
+                if !self.is_filters_synced() {
+                    return Ok(Some(self.next_filter_message().await));
+                } else {
+                    return Ok(None);
+                }
             } else {
                 Ok(None)
             }
@@ -502,7 +508,7 @@ impl Chain {
     }
 
     // Next filter message, if there is one
-    pub(crate) async fn next_filter_message(&mut self) -> Option<GetCFilters> {
+    pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE + 1;
         let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
             hash.block_hash()
@@ -521,14 +527,10 @@ impl Chain {
             )
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
-        if !self.is_filters_synced() {
-            Some(GetCFilters {
-                filter_type: 0x00,
-                start_height: self.filter_chain.height() + 1,
-                stop_hash,
-            })
-        } else {
-            None
+        GetCFilters {
+            filter_type: 0x00,
+            start_height: self.filter_chain.height() + 1,
+            stop_hash,
         }
     }
 
@@ -550,29 +552,33 @@ impl Chain {
     // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
         self.block_queue.receive_one();
-        let height_of_block = self.height_of_hash(block.block_hash()).await;
-        for tx in &block.txdata {
-            if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
-                // self.tx_store
-                //     .add_transaction(&tx, height_of_block, &block.block_hash())
-                //     .await
-                //     .unwrap();
-                self.dialog
-                    .send_data(NodeMessage::Block(block.clone()))
-                    .await;
-                self.dialog
-                    .send_data(NodeMessage::Transaction(IndexedTransaction::new(
-                        tx.clone(),
-                        height_of_block,
-                        block.block_hash(),
-                    )))
-                    .await;
-                self.dialog
-                    .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
-                    .await;
+        let mut contains_relevant = false;
+        match self.height_of_hash(block.block_hash()).await {
+            Some(height) => {
+                for tx in &block.txdata {
+                    if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
+                        contains_relevant = true;
+                        self.dialog
+                            .send_data(NodeMessage::Transaction(IndexedTransaction::new(
+                                tx.clone(),
+                                height,
+                                block.block_hash(),
+                            )))
+                            .await;
+                        self.dialog
+                            .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
+                            .await;
+                    }
+                }
+                if contains_relevant {
+                    self.dialog
+                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
+                        .await;
+                }
+                Ok(())
             }
+            None => Err(BlockScanError::NoBlockHash),
         }
-        Ok(())
     }
 
     fn scan_inputs(&mut self, inputs: &[TxIn]) -> bool {

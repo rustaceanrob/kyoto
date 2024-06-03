@@ -120,14 +120,6 @@ impl HeaderStore for SqliteHeaderDb {
             }
             headers.insert(height, next_header);
         }
-        for (header_1, header_2) in headers.iter().zip(headers.iter().skip(1)) {
-            if header_2.0 - header_1.0 != 1 {
-                println!("Height mismatch {}, {} ", header_2.0, header_1.0)
-            }
-            if header_2.1.prev_blockhash != header_1.1.block_hash() {
-                println!("Hash mismatch {}, {} ", header_2.0, header_1.0)
-            }
-        }
         Ok(headers)
     }
 

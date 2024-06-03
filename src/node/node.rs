@@ -64,7 +64,7 @@ pub enum NodeState {
 }
 
 /// A compact block filter client
-// #[derive(Debug)]
+#[derive(Debug)]
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
@@ -249,10 +249,10 @@ impl Node {
                                     self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
                                         .await;
                                     for block in blocks {
+                                        node_map.add_one_height(peer_thread.nonce);
                                         self.dialog.send_dialog(format!("New block: {}", block))
                                             .await;
                                     }
-                                    node_map.add_one_height(peer_thread.nonce);
                                     let best = *node_map.best_height().unwrap_or(&0);
                                     match self.handle_inventory_blocks(best).await {
                                         Some(response) => {
@@ -395,7 +395,7 @@ impl Node {
                         return Some(MainThreadMessage::Disconnect);
                     } else if !chain.is_cf_headers_synced() {
                         return Some(MainThreadMessage::GetFilterHeaders(
-                            chain.next_cf_header_message().await.unwrap(),
+                            chain.next_cf_header_message().await,
                         ));
                     }
                     return None;
@@ -416,11 +416,11 @@ impl Node {
             return Some(MainThreadMessage::GetHeaders(next_headers));
         } else if !chain.is_cf_headers_synced() {
             return Some(MainThreadMessage::GetFilterHeaders(
-                chain.next_cf_header_message().await.unwrap(),
+                chain.next_cf_header_message().await,
             ));
         } else if !chain.is_filters_synced() {
             return Some(MainThreadMessage::GetFilters(
-                chain.next_filter_message().await.unwrap(),
+                chain.next_filter_message().await,
             ));
         }
         None
@@ -439,12 +439,12 @@ impl Node {
                     // We added a batch to the queue and still are not at the required height
                     if !chain.is_cf_headers_synced() {
                         Some(MainThreadMessage::GetFilterHeaders(
-                            chain.next_cf_header_message().await.unwrap(),
+                            chain.next_cf_header_message().await,
                         ))
                     } else if !chain.is_filters_synced() {
                         // The header chain and filter header chain are in sync, but we need filters still
                         Some(MainThreadMessage::GetFilters(
-                            chain.next_filter_message().await.unwrap(),
+                            chain.next_filter_message().await,
                         ))
                     } else {
                         // Should be unreachable if we just added filter headers
@@ -504,6 +504,7 @@ impl Node {
                     self.dialog
                         .send_warning(format!("Unexpected block scanning error: {}", e))
                         .await;
+                    return Some(MainThreadMessage::Disconnect);
                 }
                 None
             }

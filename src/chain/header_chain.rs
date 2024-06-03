@@ -63,7 +63,7 @@ impl HeaderChain {
 
     // The height of the blockhash in the chain
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        for (height, header) in self.headers.iter() {
+        for (height, header) in self.headers.iter().rev() {
             if header.block_hash().eq(&blockhash) {
                 return Some(*height);
             }

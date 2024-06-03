@@ -31,8 +31,8 @@ async fn main() {
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(HeaderCheckpoint::new(
-            160_000,
-            BlockHash::from_str("0000003ca3c99aff040f2563c2ad8f8ec88bd0fd6b8f0895cfaf1ef90353a62c")
+            180_000,
+            BlockHash::from_str("0000000870f15246ba23c16e370a7ffb1fc8a3dcf8cb4492882ed4b0e3d4cd26")
                 .unwrap(),
         ))
         // The number of connections we would like to maintain

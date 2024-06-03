@@ -27,3 +27,9 @@ impl HeaderStore for () {
         Ok(())
     }
 }
+
+impl std::fmt::Debug for dyn HeaderStore + Send + Sync + 'static {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Result::Ok(())
+    }
+}
