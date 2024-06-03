@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use bitcoin::{BlockHash, Transaction};
 
-use super::{error::TransactionStoreError, types::IndexedTransaction};
+use crate::IndexedTransaction;
+
+use super::error::TransactionStoreError;
 
 #[async_trait]
 pub trait TransactionStore {

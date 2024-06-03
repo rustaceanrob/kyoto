@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use bitcoin::{BlockHash, Transaction};
 
-use super::{error::TransactionStoreError, store::TransactionStore, types::IndexedTransaction};
+use crate::IndexedTransaction;
+
+use super::{error::TransactionStoreError, store::TransactionStore};
 
 #[derive(Debug)]
 pub struct MemoryTransactionCache {

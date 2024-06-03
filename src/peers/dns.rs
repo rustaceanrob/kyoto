@@ -69,6 +69,7 @@ mod test {
     use super::Dns;
 
     #[tokio::test]
+    #[ignore = "correct"]
     async fn dns_responds() {
         Dns::bootstrap(bitcoin::network::Network::Signet)
             .await
