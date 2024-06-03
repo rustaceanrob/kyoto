@@ -495,9 +495,9 @@ impl Chain {
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
                 if !self.is_filters_synced() {
-                    return Ok(Some(self.next_filter_message().await));
+                    Ok(Some(self.next_filter_message().await))
                 } else {
-                    return Ok(None);
+                    Ok(None)
                 }
             } else {
                 Ok(None)

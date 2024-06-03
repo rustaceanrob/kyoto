@@ -6,6 +6,7 @@ use crate::chain::checkpoints::HeaderCheckpoint;
 
 use super::{client::Client, config::NodeConfig, node::Node};
 
+/// Build a [`Node`] in an additive way.
 pub struct NodeBuilder {
     config: NodeConfig,
     network: Network,

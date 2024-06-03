@@ -4,7 +4,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
 };
 
-/// Messages receivable by a running node
+/// Messages receivable by a running node.
 #[derive(Debug, Clone)]
 pub enum NodeMessage {
     /// A human readable dialog
@@ -21,7 +21,7 @@ pub enum NodeMessage {
     BlocksDisconnected(Vec<DisconnectedHeader>),
 }
 
-/// Commands to issue a node
+/// Commands to issue a node.
 #[derive(Debug, Clone)]
 pub enum ClientMessage {
     /// Stop the node

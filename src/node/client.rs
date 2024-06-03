@@ -9,7 +9,7 @@ use super::{
     node_messages::{ClientMessage, NodeMessage},
 };
 
-/// A [`Client`] allows for communication with a running [`Node`].
+/// A [`Client`] allows for communication with a running node.
 #[derive(Debug)]
 pub struct Client {
     nrx: Receiver<NodeMessage>,
