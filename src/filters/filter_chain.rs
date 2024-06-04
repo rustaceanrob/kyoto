@@ -22,7 +22,7 @@ impl FilterChain {
         }
     }
 
-    pub(crate) async fn put(&mut self, hash: BlockHash) {
+    pub(crate) async fn put_hash(&mut self, hash: BlockHash) {
         self.chain.insert(hash);
     }
 

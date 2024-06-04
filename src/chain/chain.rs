@@ -491,7 +491,7 @@ impl Chain {
                 ))
                 .await;
         }
-        self.filter_chain.put(filter_message.block_hash).await;
+        self.filter_chain.put_hash(filter_message.block_hash).await;
         if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
             if filter_message.block_hash.eq(stop_hash) {
                 if !self.is_filters_synced() {
@@ -591,5 +591,79 @@ impl Chain {
         inputs
             .iter()
             .any(|out| self.scripts.contains(&out.script_pubkey))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashSet, str::FromStr};
+
+    use bitcoin::{block::Header, consensus::deserialize, BlockHash};
+
+    use crate::{
+        chain::{
+            checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
+            error::HeaderSyncError,
+        },
+        node::{dialog::Dialog, messages::NodeMessage},
+    };
+
+    use super::Chain;
+
+    async fn new_regtest(anchor: HeaderCheckpoint) -> Chain {
+        let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
+        let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
+        checkpoints.prune_up_to(anchor);
+        Chain::new(
+            &bitcoin::Network::Regtest,
+            HashSet::new(),
+            anchor,
+            checkpoints,
+            Dialog::new(sender),
+            (),
+            1,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn depth_one_fork() {
+        let gen = HeaderCheckpoint::new(
+            7,
+            BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
+                .unwrap(),
+        );
+        let mut chain = new_regtest(gen).await;
+        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
+        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
+        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
+        let batch_1 = vec![block_8, block_9, block_10];
+        let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
+        let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
+        let batch_2 = vec![new_block_10];
+        let batch_3 = vec![block_11];
+        let batch_4 = vec![new_block_10, block_11];
+        let chain_sync = chain.sync_chain(batch_1).await;
+        assert!(chain_sync.is_ok());
+        // Forks of equal height to the chain should just get rejected
+        let fork_sync = chain.sync_chain(batch_2).await;
+        assert!(fork_sync.is_err());
+        assert_eq!(fork_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
+        assert_eq!(10, chain.height());
+        // A peer sent us a block we don't know about yet, but is in the best chain
+        // Best we can do is wait to get the fork from another peer
+        let float_sync = chain.sync_chain(batch_3).await;
+        assert!(float_sync.is_err());
+        assert_eq!(float_sync.err().unwrap(), HeaderSyncError::FloatingHeaders);
+        assert_eq!(10, chain.height());
+        // Now we can accept the fork because it has more work
+        let extend_sync = chain.sync_chain(batch_4).await;
+        assert_eq!(11, chain.height());
+        assert!(extend_sync.is_ok());
+        assert_eq!(
+            vec![block_8, block_9, new_block_10, block_11],
+            chain.header_chain.values()
+        );
     }
 }

@@ -121,8 +121,8 @@ With these few simple goals in mind, the tools are set out for developers to cre
 
 #### Testing
 
-- [ ] Header chain
-  - [ ] Usual extend
+- [ ] Chain
+  - [x] Usual extend
   - [ ] Fork with less work
   - [ ] Orphaned fork
   - [ ] Fork with equal work
@@ -135,13 +135,19 @@ With these few simple goals in mind, the tools are set out for developers to cre
 - [ ] Filter chain
   - [ ] Repeated filter
   - [ ] Bad filter
-- [ ] Chain
-  - [ ] Expected height
-  - [ ] Expected height after fork
-  - [ ] Expected hash at height
-  - [ ] Properly handles fork
-  - [ ] Incorrect filter hash at block
+- [ ] Header Chain
+  - [x] Expected height
+  - [x] Expected height after fork
+  - [x] Expected hash at height
+  - [x] Expected work after height
+  - [x] Properly handles fork
+  - [x] `extend` handles forks, including down to the anchor
 - [ ] CI
+  - [x] MacOS, Windows, Linux
+  - [x] 1.63, stable, beta, nightly
+  - [x] Format and clippy
+  - [ ] Regtest sync with Bitcoin Core
+  - [ ] On PR
 
 #### Bindings
 

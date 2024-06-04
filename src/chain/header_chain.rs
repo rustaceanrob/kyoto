@@ -393,6 +393,10 @@ mod tests {
         chain.extend(&batch_1);
         let reorged = chain.extend(&fork);
         assert_eq!(reorged.len(), 2);
+        assert_eq!(
+            reorged.iter().map(|f| f.header).collect::<Vec<Header>>(),
+            vec![block_2, block_1]
+        );
         assert_eq!(vec![new_block_1, new_block_2], chain.values());
         let no_org = chain.extend(&batch_2);
         assert_eq!(no_org.len(), 0);
