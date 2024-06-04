@@ -154,7 +154,7 @@ impl HeaderChain {
         locators
     }
 
-    // Extend the current chain, potentially rewriting history
+    // Extend the current chain, potentially rewriting history. Higher order functions should decide what we extend
     pub(crate) fn extend(&mut self, batch: &[Header]) -> Vec<DisconnectedHeader> {
         let mut reorged = Vec::new();
         // We cannot extend from nothing
@@ -180,38 +180,31 @@ impl HeaderChain {
                     .expect("cannot extend from empty batch")
                     .prev_blockhash
             ));
-            while let Some((height, header)) = self.headers.iter_mut().next_back() {
+            // Supporting MSRV of 1.63 requires this round-about way of removing the headers instead of `pop_last`
+            // Find the header that matches the new batch prev block hash, collecting the disconnected headers
+            for (height, header) in self.headers.iter().rev() {
                 if header.block_hash().ne(&batch
                     .first()
                     .expect("cannot extend from empty batch")
                     .prev_blockhash)
                 {
-                    reorged.push(DisconnectedHeader::new(*height, *header));
+                    reorged.push(DisconnectedHeader::new(*height, header.block_hash()));
                 } else {
-                    let anchor_height = self.height();
-                    for (index, header) in batch.iter().enumerate() {
-                        self.headers
-                            .insert(anchor_height + 1 + index as u32, *header);
-                    }
+                    break;
                 }
             }
-            // // Remove items from the top of the chain until they link.
-            // while self.tip().ne(&batch
-            //     .first()
-            //     .expect("cannot extend from empty batch")
-            //     .prev_blockhash)
-            // {
-            //     if let Some((height, header)) = self.headers.pop_last() {
-            //         reorged.push(DisconnectedHeader::new(height, header));
-            //     }
-            // }
-            // let current_anchor = self.height();
-            // for (index, header) in batch.iter().enumerate() {
-            //     self.headers
-            //         .insert(current_anchor + 1 + index as u32, *header);
-            // }
+            // Actually remove anything that should no longer be connected
+            for removal in reorged.iter() {
+                self.remove(&removal.height);
+            }
+            // Add back the new headers, starting at the proper link
+            let current_anchor = self.height();
+            for (index, header) in batch.iter().enumerate() {
+                self.headers
+                    .insert(current_anchor + 1 + index as u32, *header);
+            }
         }
-        reorged.iter().rev().copied().collect()
+        reorged
     }
 
     fn remove(&mut self, height: &u32) {
