@@ -45,11 +45,11 @@ pub struct DisconnectedHeader {
     /// The height where this header used to be in the chain.
     pub height: u32,
     /// The reorganized header.
-    pub header: BlockHash,
+    pub header: Header,
 }
 
 impl DisconnectedHeader {
-    pub(crate) fn new(height: u32, header: BlockHash) -> Self {
+    pub(crate) fn new(height: u32, header: Header) -> Self {
         Self { height, header }
     }
 }
