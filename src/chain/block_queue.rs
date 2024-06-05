@@ -15,8 +15,10 @@ impl BlockQueue {
     }
 
     pub(crate) fn add(&mut self, block: BlockHash) {
-        self.received += 1;
-        self.queue.push(block)
+        if !self.contains(&block) {
+            self.received += 1;
+            self.queue.push(block)
+        }
     }
 
     pub(crate) fn contains(&mut self, block: &BlockHash) -> bool {

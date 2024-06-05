@@ -131,7 +131,7 @@ impl Chain {
     }
 
     // This header chain contains a block hash
-    pub(crate) async fn header_at_height(&self, height: u32) -> Option<&Header> {
+    pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
         self.header_chain.header_at_height(height)
     }
 
@@ -390,7 +390,7 @@ impl Chain {
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(CFHeaderSyncResult::AddedToQueue),
             AppendAttempt::Extended => Ok(CFHeaderSyncResult::ReadyForNext),
-            AppendAttempt::Conflict(height) => match self.header_at_height(height).await {
+            AppendAttempt::Conflict(height) => match self.header_at_height(height) {
                 Some(header) => Ok(CFHeaderSyncResult::Dispute(header.block_hash())),
                 None => Err(CFHeaderSyncError::HeaderChainIndexOverflow),
             },
@@ -410,9 +410,8 @@ impl Chain {
             }
         }
         // Did they send us the right amount of headers
-        let expected_stop_header = self
-            .header_at_height(self.cf_header_chain.height() + batch.len() as u32)
-            .await;
+        let expected_stop_header =
+            self.header_at_height(self.cf_header_chain.height() + batch.len() as u32);
         if let Some(stop_header) = expected_stop_header {
             if stop_header.block_hash().ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
@@ -440,7 +439,7 @@ impl Chain {
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) async fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
+        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
             hash.block_hash()
         } else {
             self.tip()
@@ -510,7 +509,7 @@ impl Chain {
     // Next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index).await {
+        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
             hash.block_hash()
         } else {
             self.tip()
@@ -628,7 +627,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn depth_one_fork() {
+    async fn test_depth_one_fork() {
         let gen = HeaderCheckpoint::new(
             7,
             BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
@@ -658,12 +657,86 @@ mod tests {
         assert_eq!(float_sync.err().unwrap(), HeaderSyncError::FloatingHeaders);
         assert_eq!(10, chain.height());
         // Now we can accept the fork because it has more work
-        let extend_sync = chain.sync_chain(batch_4).await;
+        let extend_sync = chain.sync_chain(batch_4.clone()).await;
         assert_eq!(11, chain.height());
         assert!(extend_sync.is_ok());
         assert_eq!(
             vec![block_8, block_9, new_block_10, block_11],
             chain.header_chain.values()
+        );
+        // A new peer sending us these headers should not do anything
+        let dup_sync = chain.sync_chain(batch_4).await;
+        assert_eq!(11, chain.height());
+        assert!(dup_sync.is_ok());
+        assert_eq!(
+            vec![block_8, block_9, new_block_10, block_11],
+            chain.header_chain.values()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fork_includes_old_vals() {
+        let gen = HeaderCheckpoint::new(
+            0,
+            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
+                .unwrap(),
+        );
+        let mut chain = new_regtest(gen).await;
+        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
+        let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
+        let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
+        let batch_1 = vec![block_1, block_2, block_3];
+        let new_block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea349c6240c5d0521966771808950f796c9c04088bc9551a828b64f1cf06831705dfbc835e66ffff7f2000000000").unwrap()).unwrap();
+        let block_4: Header = deserialize(&hex::decode("00000020d2a1c6ba2be393f405fe2f4574565f9ee38ac68d264872fcd82b030970d0232ce882eb47c3dd138587120f1ad97dd0e73d1e30b79559ad516cb131f83dcb87e9bc835e66ffff7f2002000000").unwrap()).unwrap();
+        let batch_2 = vec![block_1, block_2, new_block_3, block_4];
+        let chain_sync = chain.sync_chain(batch_1).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 3);
+        assert_eq!(chain.header_chain.values(), vec![block_1, block_2, block_3]);
+        let chain_sync = chain.sync_chain(batch_2).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 4);
+        assert_eq!(
+            chain.header_chain.values(),
+            vec![block_1, block_2, new_block_3, block_4]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depth_two_fork() {
+        let gen = HeaderCheckpoint::new(
+            0,
+            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
+                .unwrap(),
+        );
+        let mut chain = new_regtest(gen).await;
+        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
+        let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
+        let batch_1 = vec![block_1, block_2];
+        let new_block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb5724d5855e66ffff7f2004000000").unwrap()).unwrap();
+        let new_block_2: Header = deserialize(&hex::decode("00000020d1d80f53343a084bd0da6d6ab846f9fe4a133de051ea00e7cae16ed19f601065798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c4d6855e66ffff7f2000000000").unwrap()).unwrap();
+        let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
+        let batch_2 = vec![new_block_1];
+        let batch_3 = vec![new_block_1, new_block_2];
+        let batch_4 = vec![new_block_1, new_block_2, block_3];
+        let chain_sync = chain.sync_chain(batch_1).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 2);
+        assert_eq!(chain.header_chain.values(), vec![block_1, block_2]);
+        let chain_sync = chain.sync_chain(batch_2).await;
+        assert!(chain_sync.is_err());
+        assert_eq!(chain_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
+        assert_eq!(chain.height(), 2);
+        let chain_sync = chain.sync_chain(batch_3).await;
+        assert!(chain_sync.is_err());
+        assert_eq!(chain_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
+        assert_eq!(chain.height(), 2);
+        let chain_sync = chain.sync_chain(batch_4).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 3);
+        assert_eq!(
+            chain.header_chain.values(),
+            vec![new_block_1, new_block_2, block_3]
         );
     }
 }

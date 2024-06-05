@@ -63,6 +63,9 @@ impl HeaderChain {
 
     // The height of the blockhash in the chain
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
+        if blockhash.eq(&self.anchor_checkpoint.hash) {
+            return Some(self.anchor_checkpoint.height);
+        }
         for (height, header) in self.headers.iter().rev() {
             if header.block_hash().eq(&blockhash) {
                 return Some(*height);
@@ -345,7 +348,6 @@ mod tests {
         let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
         let block_4: Header = deserialize(&hex::decode("0000002052ff614fa461ff38b4a5c101d04fdcac2f34722e60bd43d12c8de0a394fe0c60444fb24b7e9885f60fed9927d27f23854ecfab29287163ef2b868d5d626f82ed97815e66ffff7f2002000000").unwrap()).unwrap();
-
         let batch_1 = vec![block_1, block_2, block_3, block_4];
         let new_block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea349c6240c5d0521966771808950f796c9c04088bc9551a828b64f1cf06831705dfbc835e66ffff7f2000000000").unwrap()).unwrap();
         let new_block_4: Header = deserialize(&hex::decode("00000020d2a1c6ba2be393f405fe2f4574565f9ee38ac68d264872fcd82b030970d0232ce882eb47c3dd138587120f1ad97dd0e73d1e30b79559ad516cb131f83dcb87e9bc835e66ffff7f2002000000").unwrap()).unwrap();
