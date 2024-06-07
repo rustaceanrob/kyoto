@@ -105,28 +105,33 @@ With these few simple goals in mind, the tools are set out for developers to cre
   - [x] TCP timeout
   - [ ] Should ask for IP addresses
     - [ ] Filter by CPF
-  - [ ] Should serve CPF
+  - [x] Should serve CPF
 - [ ] Set up "timer"
   - [x] Check for DOS
   - [ ] `Ping` if peer has not been heard from
 - [ ] `Disconnect` peers with high latency
 - [ ] Add BIP-324 with V1 fallback
 
+#### Transaction Broadcaster
+
+- [ ] Rebroadcast for every TX not included in new blocks (`Inv`)
+- [ ] Add `ScriptBuf` to script set
+
 #### Meta
 
 - [x] Add more error cases for loading faulty headers from persistence
+- [ ] Handle `Inv` during CF header download
 - [ ] Add local unconfirmed transaction DB
-- [ ] Add archival transaction DB
 - [ ] Too many `clone`
 
 #### Testing
 
 - [ ] Chain
   - [x] Usual extend
-  - [ ] Fork with less work
+  - [x] Fork with less work
   - [ ] Orphaned fork
-  - [ ] Fork with equal work
-  - [ ] Fork with more work
+  - [x] Fork with equal work
+  - [x] Fork with more work
 - [ ] CF header chain
   - [ ] Unexpected stop hash
   - [ ] Unexpected filter hash
