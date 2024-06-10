@@ -38,20 +38,4 @@ impl Filter {
             )
             .map_err(|_| FilterError::IORead)
     }
-
-    // pub async fn filter_hash_from_block(block: &Block) -> FilterHash {
-    //     let mut txmap = HashMap::new();
-    //     for tx in block.txdata.iter().skip(1) {
-    //         for input in tx.input.iter() {
-    //             txmap.insert(input.previous_output, );
-    //         }
-    //     }
-    //     let block_filter = BlockFilter::new_script_filter(block, |o| {
-    //         if let Some(s) = txmap.get(o) {
-    //             Ok(s.clone())
-    //         }
-    //     });
-    //     let hash = sha256d::Hash::hash(&self.contents);
-    //     FilterHash::from_raw_hash(hash)
-    // }
 }

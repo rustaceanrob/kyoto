@@ -2,16 +2,19 @@ use std::{collections::VecDeque, str::FromStr};
 
 use bitcoin::{BlockHash, Network};
 
+/// Known Testnet3 block hashes.
 pub const TESTNET_HEADER_CP: &[(u32, &str)] = &[(
     546,
     "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70",
 )];
 
+/// Known block hashes for Regtest. Only the genesis hash.
 pub const REGTEST_HEADER_CP: &[(u32, &str)] = &[(
     0,
     "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
 )];
 
+/// Known block hashes for Signet.
 pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
     (
         0,
@@ -95,10 +98,12 @@ pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
     ),
 ];
 
+/// A known block hash in the chain of most work.
 #[derive(Debug, Clone, Copy)]
-
 pub struct HeaderCheckpoint {
+    /// The index of the block hash.
     pub height: u32,
+    /// The Bitcoin block hash expected at this height
     pub hash: BlockHash,
 }
 
