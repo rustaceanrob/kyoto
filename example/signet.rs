@@ -18,7 +18,7 @@ async fn main() {
         .unwrap();
     let addresses = vec![address];
     // Add preferred peers to connect to
-    let peer = IpAddr::V4(Ipv4Addr::new(170, 75, 163, 219));
+    let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
     let peer_2 = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
