@@ -52,9 +52,6 @@ impl CFHeaderChain {
         peer_id: u32,
         cf_headers: CFHeaderBatch,
     ) -> Result<AppendAttempt, CFHeaderSyncError> {
-        if self.merged_queue.contains_key(&peer_id) {
-            return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
-        }
         self.merged_queue.insert(peer_id, cf_headers.inner());
         self.try_merge().await
     }

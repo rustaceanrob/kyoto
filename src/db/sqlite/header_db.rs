@@ -111,12 +111,7 @@ impl HeaderStore for SqliteHeaderDb {
                         "db corruption. headers do not link."
                     );
                 }
-                None => {
-                    assert_eq!(
-                        next_header.prev_blockhash, self.anchor_hash,
-                        "db corruption. headers do not link to anchor."
-                    );
-                }
+                None => (),
             }
             headers.insert(height, next_header);
         }
@@ -131,12 +126,11 @@ impl HeaderStore for SqliteHeaderDb {
         let tx = write_lock
             .transaction()
             .map_err(|_| HeaderDatabaseError::WriteError)?;
-        let count: u32 = tx
-            .query_row("SELECT COUNT(*) FROM headers", [], |row| row.get(0))
+        let best_height: Option<u32> = tx
+            .query_row("SELECT MAX(height) FROM headers", [], |row| row.get(0))
             .map_err(|_| HeaderDatabaseError::WriteError)?;
-        let adjusted_count = count.saturating_sub(1) + self.anchor_height;
         for (height, header) in header_chain {
-            if height.ge(&(adjusted_count)) {
+            if height.ge(&(best_height.unwrap_or(0))) {
                 let hash: String = header.block_hash().to_string();
                 let version: i32 = header.version.to_consensus();
                 let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
@@ -150,6 +144,45 @@ impl HeaderStore for SqliteHeaderDb {
                 } else {
                     "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
                 };
+                tx.execute(
+                    stmt,
+                    params![
+                        height,
+                        hash,
+                        version,
+                        prev_hash,
+                        merkle_root,
+                        time,
+                        bits,
+                        nonce
+                    ],
+                )
+                .map_err(|_| HeaderDatabaseError::WriteError)?;
+            }
+        }
+        tx.commit().map_err(|_| HeaderDatabaseError::WriteError)?;
+        Ok(())
+    }
+
+    async fn write_over<'a>(
+        &mut self,
+        header_chain: &'a BTreeMap<u32, Header>,
+        height: u32,
+    ) -> Result<(), HeaderDatabaseError> {
+        let mut write_lock = self.conn.lock().await;
+        let tx = write_lock
+            .transaction()
+            .map_err(|_| HeaderDatabaseError::WriteError)?;
+        for (h, header) in header_chain {
+            if h.ge(&height) {
+                let hash: String = header.block_hash().to_string();
+                let version: i32 = header.version.to_consensus();
+                let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
+                let merkle_root: String = header.merkle_root.to_string();
+                let time: u32 = header.time;
+                let bits: u32 = header.bits.to_consensus();
+                let nonce: u32 = header.nonce;
+                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
                 tx.execute(
                     stmt,
                     params![

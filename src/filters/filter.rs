@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use bitcoin::{bip158::BlockFilter, BlockHash, FilterHash, ScriptBuf};
+use bitcoin::{bip158::BlockFilter, Block, BlockHash, FilterHash, ScriptBuf};
 use bitcoin_hashes::{sha256d, Hash};
 
 use super::error::FilterError;
@@ -27,6 +27,10 @@ impl Filter {
         FilterHash::from_raw_hash(hash)
     }
 
+    fn block_hash(&self) -> &BlockHash {
+        &self.block_hash
+    }
+
     pub async fn contains_any(
         &mut self,
         scripts: &HashSet<ScriptBuf>,
@@ -37,5 +41,43 @@ impl Filter {
                 &mut scripts.iter().map(|script| script.to_bytes()),
             )
             .map_err(|_| FilterError::IORead)
+    }
+
+    pub async fn is_filter_for_block(&mut self, block: &Block) -> Result<bool, FilterError> {
+        // Skip the coinbase transaction
+        for tx in block.txdata.iter().skip(1) {
+            let scripts = tx
+                .output
+                .iter()
+                .filter(|output| !output.script_pubkey.is_op_return())
+                .map(|output| output.script_pubkey.clone());
+            if !self
+                .block_filter
+                .match_all(
+                    &self.block_hash,
+                    &mut scripts.map(|script| script.to_bytes()),
+                )
+                .map_err(|_| FilterError::IORead)?
+            {
+                return Ok(false);
+            }
+            // The filter should not contain OP_RETURN outputs
+            // let scripts = tx
+            //     .output
+            //     .iter()
+            //     .filter(|output| output.script_pubkey.is_op_return())
+            //     .map(|output| output.script_pubkey.clone());
+            // if self
+            //     .block_filter
+            //     .match_any(
+            //         &self.block_hash,
+            //         &mut scripts.map(|script| script.to_bytes()),
+            //     )
+            //     .map_err(|_| FilterError::IORead)?
+            // {
+            //     return Ok(false);
+            // }
+        }
+        Ok(true)
     }
 }

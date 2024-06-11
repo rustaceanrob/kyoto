@@ -549,7 +549,6 @@ impl Node {
                 if chain.height().le(&new_height) {
                     chain.set_best_known_height(new_height).await;
                 }
-                chain.clear_filter_header_queue();
                 Some(MainThreadMessage::GetHeaders(next_headers))
             }
         }

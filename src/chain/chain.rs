@@ -1,5 +1,8 @@
 extern crate alloc;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use bitcoin::{
     block::Header,
@@ -56,7 +59,7 @@ impl Chain {
         quorum_required: usize,
     ) -> Result<Self, HeaderPersistenceError> {
         let params = params_from_network(network);
-        let loaded_headers = db
+        let mut loaded_headers = db
             .load()
             .await
             .map_err(|_| HeaderPersistenceError::SQLite)?;
@@ -74,7 +77,8 @@ impl Chain {
                 dialog
                     .send_warning("Checkpoint anchor mismatch".into())
                     .await;
-                return Err(HeaderPersistenceError::GenesisMismatch);
+                // The header chain did not align, so just start from the anchor
+                loaded_headers = BTreeMap::new();
             } else if loaded_headers
                 .iter()
                 .zip(loaded_headers.iter().skip(1))
@@ -193,6 +197,21 @@ impl Chain {
             .lock()
             .await
             .write(self.header_chain.headers())
+            .await
+        {
+            self.dialog
+                .send_warning(format!("Error persisting to storage: {}", e))
+                .await;
+        }
+    }
+
+    // Write the chain to disk, overriding previous heights
+    pub(crate) async fn flush_over_height(&mut self, height: u32) {
+        if let Err(e) = self
+            .db
+            .lock()
+            .await
+            .write_over(self.header_chain.headers(), height)
             .await
         {
             self.dialog
@@ -354,6 +373,7 @@ impl Chain {
                 self.dialog
                     .send_data(NodeMessage::BlocksDisconnected(reorged))
                     .await;
+                self.flush_over_height(stem).await;
                 Ok(())
             } else {
                 self.dialog
@@ -450,7 +470,7 @@ impl Chain {
         }
         GetCFHeaders {
             filter_type: 0x00,
-            start_height: (self.cf_header_chain.height() + 1),
+            start_height: self.cf_header_chain.height() + 1,
             stop_hash,
         }
     }
@@ -642,7 +662,7 @@ mod tests {
         let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
         let batch_2 = vec![new_block_10];
         let batch_3 = vec![block_11];
-        let batch_4 = vec![new_block_10, block_11];
+        let batch_4 = vec![block_9, new_block_10, block_11];
         let chain_sync = chain.sync_chain(batch_1).await;
         assert!(chain_sync.is_ok());
         // Forks of equal height to the chain should just get rejected

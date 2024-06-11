@@ -58,7 +58,7 @@ With these few simple goals in mind, the tools are set out for developers to cre
 - [x] Persist to storage
   - [x] Determine if the block hash or height should be the primary key
   - [x] Speed up writes with pointers
-  - [ ] Add "write volatile" to write over heights
+  - [x] Add "write volatile" to write over heights
 - [x] Exponential backoff for locators
 
 #### Filters
