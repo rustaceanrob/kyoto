@@ -103,7 +103,7 @@ impl Node {
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
         // Load the headers from storage
-        let db = SqliteHeaderDb::new(network, checkpoints.last(), checkpoint, data_path)
+        let db = SqliteHeaderDb::new(network, checkpoint, data_path)
             .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         // Take the canonical Bitcoin addresses and map them to a script we can scan for
         let mut scripts = HashSet::new();

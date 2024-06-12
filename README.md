@@ -8,16 +8,16 @@ Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino
 
 ## Running an example
 
-The folder `example` contains programs that use Kyoto find relevant blocks and transactions for a set of scripts. To run the Signet example, use: `cargo run --example signet`.
+To run the Signet example, fork the project and run: `cargo run --example signet` in the root directory.
 
 ## Scope
 
 #### Functional Goals
 
-- [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
 - [x] Provide an archival index for transactions related to a set of `scriptPubKey`, presumably because the user is interested in transactions with these scripts involved.
 - [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Once BIP-324 is integrated, access to the P2P will also be encrypted.
 - [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network.
+- [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
 
 With these few simple goals in mind, the tools are set out for developers to create Bitcoin applications that directly interface with the Bitcoin protocol. The scope of such wallets is incredibly large, from a Lightning Network wallet running on a mobile device to a federated mint where some members do not always index the full blockchain. The privacy tradeoffs of using a light client like Kyoto far exceed that of using a chain oracle where the user inquires for transactions _directly_. With Kyoto, full network nodes only know that they have sent you an entire _block_, which can, and most likely will, contain thousands of transactions. If you would like to read more about the use cases for light clients, you can read my [blog post](https://robnetzke.com/blog/13-clients).
 
@@ -25,137 +25,28 @@ With these few simple goals in mind, the tools are set out for developers to cre
 
 - Any wallet functionality beyond indexing transactions. This includes balances, transaction construction, etc. Why? Bitcoin wallets are complex for a number of reasons, and additional functionality within this scope would detract from other improvements.
 
-## Checklist
+#### Getting Started
 
-#### Peers
+The following snippet demonstrates how to build a Kyoto node. See the docs for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
-- [x] Bootstrap peer list with DNS
-  - [ ] Home brewed DNS resolver?
-  - [ ] Check for DNS flooding/poisoning?
-- [x] Persist to storage
-  - [ ] Organize by `/16`?
-  - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
-- [ ] Ban peers
-- [x] Add optional whitelist
-
-#### Headers
-
-- [x] Sync to known checkpoints with a designated "sync peer"
-- [ ] Validation
-  - [x] Median time past
-  - [x] All headers connect
-  - [x] No forks before last known checkpoint
-  - [x] Header pass their own PoW
-  - [ ] Difficulty retargeting audit:
-    - [x] [PR](https://github.com/rust-bitcoin/rust-bitcoin/pull/2740)
-  - [ ] Network adjusted time
-- [x] Handle forks [took the Neutrino approach and just disconnect peers if they send forks with less work]
-  - [ ] Manage orphaned header chains
-  - [x] Extend valid forks
-  - [ ] Create new forks
-  - [x] Try to reorg when encountering new forks
-  - [ ] Take the old best chain and make it a fork
-- [x] Persist to storage
-  - [x] Determine if the block hash or height should be the primary key
-  - [x] Speed up writes with pointers
-  - [x] Add "write volatile" to write over heights
-- [x] Exponential backoff for locators
-
-#### Filters
-
-- [ ] API
-  - [ ] Compute block filter from block
-  - [x] Check set inclusion given filter
-- [ ] Chain
-  - [x] Manage a queue of proposed header chains
-  - [x] Find disputes
-  - [x] Broadcast the next CF header message to all peers
-  - [ ] Resolve disputes by downloading blocks
-  - [x] Add new filters to the chain, verifying with the `FilterHash`
-- [ ] Optimizations
-  - [x] Hashmap the `BlockHash` to `FilterHash` relationship in memory
-  - [ ] Persist SPKs that have already been proven to be in a filter
-
-#### Main thread
-
-- [x] Respond to peers with next `getheader` message
-- [x] Manage the number of peers and disconnects
-- [x] Organize the peers in a `BTreeMap` or similar
-  - [x] Poll handles for progress
-  - [x] Designate a "sync" peer
-  - [x] Track "network adjusted time"
-- [x] Have some `State` to manage what messages to send out
-- [x] Seed with SPKs and wallet "birthday"
-  - [x] Add SPKs
-  - [x] Build from `HeaderCheckpoint`
-- [ ] Rescan with new `ScriptBuf`
-
-#### Peer threads
-
-- [x] Reach out with v1 version message
-- [x] Respond to `Ping`
-- [x] Send `Verack` and eagerly send `GetAddr`
-  - [ ] May limit addresses if peer persistence is saturated
-- [x] Filter messages at the reader level
-  - [ ] Add back: `Inv`, `Block`, `TX`, ?
-    - [x] `Inv` (blocks)
-    - [x] `Block`
-  - [x] Update `Inv` of block headers to header chain
-- [ ] Set up "peer config"
-  - [x] TCP timeout
-  - [ ] Should ask for IP addresses
-    - [ ] Filter by CPF
-  - [x] Should serve CPF
-- [ ] Set up "timer"
-  - [x] Check for DOS
-  - [ ] `Ping` if peer has not been heard from
-- [ ] `Disconnect` peers with high latency
-- [ ] Add BIP-324 with V1 fallback
-
-#### Transaction Broadcaster
-
-- [ ] Rebroadcast for every TX not included in new blocks (`Inv`)
-- [ ] Add `ScriptBuf` to script set
-
-#### Meta
-
-- [x] Add more error cases for loading faulty headers from persistence
-- [ ] Handle `Inv` during CF header download
-- [ ] Add local unconfirmed transaction DB
-- [ ] Too many `clone`
-
-#### Testing
-
-- [ ] Chain
-  - [x] Usual extend
-  - [x] Fork with less work
-  - [ ] Orphaned fork
-  - [x] Fork with equal work
-  - [x] Fork with more work
-- [ ] CF header chain
-  - [ ] Unexpected stop hash
-  - [ ] Unexpected filter hash
-  - [ ] Multiple peers expected filter hash
-  - [ ] Properly identify bad peers
-- [ ] Filter chain
-  - [ ] Repeated filter
-  - [ ] Bad filter
-- [ ] Header Chain
-  - [x] Expected height
-  - [x] Expected height after fork
-  - [x] Expected hash at height
-  - [x] Expected work after height
-  - [x] Properly handles fork
-  - [x] `extend` handles forks, including down to the anchor
-- [ ] CI
-  - [x] MacOS, Windows, Linux
-  - [x] 1.63, stable, beta, nightly
-  - [x] Format and clippy
-  - [ ] Regtest sync with Bitcoin Core
-  - [ ] On PR
-
-#### Bindings
-
-- [ ] Add UniFFI to repository
-- [ ] Build UDL
-- [ ] Build for Python
+```rust
+use kyoto::node::NodeBuilder;
+let builder = NodeBuilder::new(bitcoin::Network::Signet);
+// Add node preferences and build the node/client
+let (mut node, mut client) = builder
+    // Add the peers
+    .add_peers(vec![(peer, 38333), (peer_2, 38333)])
+    // The Bitcoin scripts to monitor
+    .add_scripts(addresses)
+    // Only scan blocks strictly after an anchor checkpoint
+    .anchor_checkpoint(HeaderCheckpoint::new(
+        180_000,
+        BlockHash::from_str("0000000870f15246ba23c16e370a7ffb1fc8a3dcf8cb4492882ed4b0e3d4cd26")
+            .unwrap(),
+    ))
+    // The number of connections we would like to maintain
+    .num_required_peers(2)
+    // Create the node and client
+    .build_node()
+    .await;
+```

@@ -31,13 +31,11 @@ pub(crate) struct SqliteHeaderDb {
     conn: Arc<Mutex<Connection>>,
     anchor_height: u32,
     anchor_hash: BlockHash,
-    last_checkpoint: HeaderCheckpoint,
 }
 
 impl SqliteHeaderDb {
     pub fn new(
         network: Network,
-        last_checkpoint: HeaderCheckpoint,
         anchor_checkpoint: HeaderCheckpoint,
         path: Option<PathBuf>,
     ) -> Result<Self, HeaderDatabaseError> {
@@ -56,7 +54,6 @@ impl SqliteHeaderDb {
             conn: Arc::new(Mutex::new(conn)),
             anchor_height: anchor_checkpoint.height,
             anchor_hash: anchor_checkpoint.hash,
-            last_checkpoint,
         })
     }
 }
@@ -135,12 +132,7 @@ impl HeaderStore for SqliteHeaderDb {
                 let time: u32 = header.time;
                 let bits: u32 = header.bits.to_consensus();
                 let nonce: u32 = header.nonce;
-                // Do not allow rewrites before a checkpoint. if they were written to the db they were correct
-                let stmt = if height.le(&self.last_checkpoint.height) {
-                    "INSERT OR IGNORE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
-                } else {
-                    "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
-                };
+                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
                 tx.execute(
                     stmt,
                     params![
