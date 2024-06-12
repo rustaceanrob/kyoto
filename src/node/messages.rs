@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
-use bitcoin::ScriptBuf;
-pub use bitcoin::{Block, Transaction};
+pub use bitcoin::{Block, ScriptBuf, Transaction};
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
@@ -30,9 +29,10 @@ pub enum NodeMessage {
 /// Commands to issue a node.
 #[derive(Debug, Clone)]
 pub enum ClientMessage {
-    /// Stop the node
+    /// Stop the node.
     Shutdown,
-    /// Broadcast a [`Transaction`] with a [`crate::TxBroadcastPolicy`]
+    /// Broadcast a [`Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(TxBroadcast),
+    /// Add more Bitcoin [`ScriptBuf`] to look for.
     AddScripts(HashSet<ScriptBuf>),
 }

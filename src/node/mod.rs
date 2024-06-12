@@ -1,3 +1,4 @@
+mod broadcaster;
 /// Convenient way to build a compact filters node.
 pub mod builder;
 pub(crate) mod channel_messages;

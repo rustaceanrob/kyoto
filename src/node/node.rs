@@ -35,6 +35,7 @@ use crate::{
 };
 
 use super::{
+    broadcaster::Broadcaster,
     channel_messages::{
         GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
         RemoteVersion,
@@ -170,6 +171,7 @@ impl Node {
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network);
+        let mut tx_broadcaster = Broadcaster::new();
         loop {
             self.advance_state().await;
             node_map.clean().await;
@@ -194,6 +196,31 @@ impl Node {
                     .send_dialog("Sending block request to a random peer".into())
                     .await;
                 node_map.send_random(block_request).await;
+            }
+            // If we have a transaction to broadcast and we are connected to peers, we should broadcast it
+            if node_map.live().ge(&1) && !tx_broadcaster.is_empty() {
+                let transaction = tx_broadcaster.next().unwrap();
+                match transaction.broadcast_policy {
+                    TxBroadcastPolicy::AllPeers => {
+                        self.dialog
+                            .send_dialog(format!(
+                                "Sending transaction to {} connected peers.",
+                                node_map.live()
+                            ))
+                            .await;
+                        node_map
+                            .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
+                            .await
+                    }
+                    TxBroadcastPolicy::RandomPeer => {
+                        self.dialog
+                            .send_dialog("Sending transaction to a random peer.".into())
+                            .await;
+                        node_map
+                            .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
+                            .await
+                    }
+                }
             }
             // Either handle a message from a remote peer or from our client
             select! {
@@ -267,7 +294,6 @@ impl Node {
                                 }
                                 _ => continue,
                             }
-                            // self.advance_state().await;
                         },
                         _ => continue,
                     }
@@ -276,24 +302,7 @@ impl Node {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
-                            ClientMessage::Broadcast(transaction) => {
-                                let connected_peers = node_map.live();
-                                if connected_peers < 1 {
-                                    self.dialog.send_data(NodeMessage::TxBroadcastFailure).await;
-                                    continue;
-                                }
-                                match transaction.broadcast_policy {
-                                    TxBroadcastPolicy::AllPeers => {
-                                        self.dialog.send_dialog(format!("Sending transaction to {} connected peers.", connected_peers))
-                                            .await;
-                                        node_map.broadcast(MainThreadMessage::BroadcastTx(transaction.tx)).await
-                                    },
-                                    TxBroadcastPolicy::RandomPeer => {
-                                        self.dialog.send_dialog("Sending transaction to a random peer.".into())
-                                            .await;
-                                        node_map.send_random(MainThreadMessage::BroadcastTx(transaction.tx)).await },
-                                }
-                            },
+                            ClientMessage::Broadcast(transaction) => tx_broadcaster.add(transaction),
                             ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
                         }
                     }
@@ -350,6 +359,7 @@ impl Node {
         }
     }
 
+    // When syncing headers we are only interested in one peer to start
     async fn next_required_peers(&self) -> usize {
         let state = self.state.read().await;
         match *state {
@@ -358,6 +368,7 @@ impl Node {
         }
     }
 
+    // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
         &mut self,
         version_message: RemoteVersion,
@@ -405,6 +416,7 @@ impl Node {
         }
     }
 
+    // We always send headers to our peers, so our next message depends on our state
     async fn handle_headers(&mut self, headers: Vec<Header>) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.sync_chain(headers).await {
@@ -445,6 +457,7 @@ impl Node {
         None
     }
 
+    // Compact filter headers may result in a number of outcomes, including the need to audit filters.
     async fn handle_cf_headers(
         &mut self,
         peer_id: u32,
@@ -531,6 +544,7 @@ impl Node {
         }
     }
 
+    // The block queue holds all the block hashes we may be interested in
     async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
         let state = self.state.read().await;
         let mut chain = self.chain.lock().await;
@@ -554,6 +568,7 @@ impl Node {
         }
     }
 
+    // If new inventory came in, we need to download the headers and update the node state
     async fn handle_inventory_blocks(&mut self, new_height: u32) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
         match *state {
