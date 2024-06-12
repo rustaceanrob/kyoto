@@ -5,7 +5,7 @@ pub(crate) mod channel_messages;
 /// Structures to communicate with a node.
 pub mod client;
 /// Node configuration options.
-pub mod config;
+pub(crate) mod config;
 pub(crate) mod dialog;
 /// Errors associated with a node.
 pub mod error;

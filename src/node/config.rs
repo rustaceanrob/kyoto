@@ -2,7 +2,7 @@ use std::{net::IpAddr, path::PathBuf};
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
-pub struct NodeConfig {
+pub(crate) struct NodeConfig {
     pub required_peers: u8,
     pub white_list: Option<Vec<(IpAddr, u16)>>,
     pub addresses: Vec<bitcoin::Address>,

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-pub use bitcoin::{Block, ScriptBuf, Transaction};
+use bitcoin::ScriptBuf;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
 pub use tokio::sync::mpsc::Sender;
@@ -39,7 +39,7 @@ impl Client {
     /// Return a [`Receiver`] to listen for incoming node events.
     /// You may call this function as many times as required, however please note
     /// there are memory and performance implications when calling this method. Namely, a clone of the object,
-    /// potentially a large data structure like a [`Block`], is held in memory for _every_ receiver until _all_
+    /// potentially a large data structure like a [`crate::Block`], is held in memory for _every_ receiver until _all_
     /// receivers have gotten the message.
     /// You should only call this twice if two separate portions of your application need to process
     /// data differently. For example, a Lightning Network node implementation.
