@@ -13,7 +13,7 @@ use bitcoin::{
         message_network::VersionMessage,
         Address, ServiceFlags,
     },
-    BlockHash, Network,
+    BlockHash, Network, Transaction,
 };
 
 use crate::{node::channel_messages::GetBlockConfig, prelude::default_port_from_network};
@@ -100,6 +100,12 @@ impl V1OutboundMessage {
 
     pub(crate) fn new_pong(&self, nonce: u64) -> Vec<u8> {
         let msg = NetworkMessage::Pong(nonce);
+        let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
+        serialize(&data)
+    }
+
+    pub(crate) fn new_transaction(&self, transaction: Transaction) -> Vec<u8> {
+        let msg = NetworkMessage::Tx(transaction);
         let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
         serialize(&data)
     }

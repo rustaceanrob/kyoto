@@ -1,7 +1,11 @@
+use std::collections::HashSet;
+
+use bitcoin::ScriptBuf;
 pub use bitcoin::{Block, Transaction};
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
+    TxBroadcast,
 };
 
 /// Messages receivable by a running node.
@@ -19,6 +23,8 @@ pub enum NodeMessage {
     Synced(HeaderCheckpoint),
     /// Blocks were reorganized out of the chain
     BlocksDisconnected(Vec<DisconnectedHeader>),
+    /// A problem occured sending a transaction.
+    TxBroadcastFailure,
 }
 
 /// Commands to issue a node.
@@ -26,6 +32,7 @@ pub enum NodeMessage {
 pub enum ClientMessage {
     /// Stop the node
     Shutdown,
-    /// Broadcast a [`Transaction`]
-    Broadcast(Transaction),
+    /// Broadcast a [`Transaction`] with a [`crate::TxBroadcastPolicy`]
+    Broadcast(TxBroadcast),
+    AddScripts(HashSet<ScriptBuf>),
 }

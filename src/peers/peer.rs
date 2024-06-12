@@ -282,6 +282,13 @@ impl Peer {
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
             }
+            MainThreadMessage::BroadcastTx(transaction) => {
+                let message = message_generator.new_transaction(transaction);
+                writer
+                    .write_all(&message)
+                    .await
+                    .map_err(|_| PeerError::BufferWrite)?;
+            }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),
         }
         Ok(())

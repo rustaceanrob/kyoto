@@ -12,7 +12,7 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter},
         Address, ServiceFlags,
     },
-    Block, Network,
+    Block, Network, ScriptBuf,
 };
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use tokio::sync::{broadcast, mpsc::Receiver, Mutex, RwLock};
@@ -31,6 +31,7 @@ use crate::{
     filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
     peers::dns::Dns,
+    TxBroadcastPolicy,
 };
 
 use super::{
@@ -275,7 +276,25 @@ impl Node {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
-                            ClientMessage::Broadcast(tx) => drop(tx),
+                            ClientMessage::Broadcast(transaction) => {
+                                let connected_peers = node_map.live();
+                                if connected_peers < 1 {
+                                    self.dialog.send_data(NodeMessage::TxBroadcastFailure).await;
+                                    continue;
+                                }
+                                match transaction.broadcast_policy {
+                                    TxBroadcastPolicy::AllPeers => {
+                                        self.dialog.send_dialog(format!("Sending transaction to {} connected peers.", connected_peers))
+                                            .await;
+                                        node_map.broadcast(MainThreadMessage::BroadcastTx(transaction.tx)).await
+                                    },
+                                    TxBroadcastPolicy::RandomPeer => {
+                                        self.dialog.send_dialog("Sending transaction to a random peer.".into())
+                                            .await;
+                                        node_map.send_random(MainThreadMessage::BroadcastTx(transaction.tx)).await },
+                                }
+                            },
+                            ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
                         }
                     }
                 }
@@ -632,5 +651,10 @@ impl Node {
                 Ok((ret_ip, None))
             }
         }
+    }
+
+    async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
+        let mut chain = self.chain.lock().await;
+        chain.put_scripts(scripts);
     }
 }

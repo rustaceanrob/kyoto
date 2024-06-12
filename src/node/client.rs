@@ -1,9 +1,11 @@
-pub use bitcoin::{Block, Transaction};
+use std::collections::HashSet;
+
+pub use bitcoin::{Block, ScriptBuf, Transaction};
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
 pub use tokio::sync::mpsc::Sender;
 
-use crate::{IndexedBlock, IndexedTransaction};
+use crate::{IndexedBlock, IndexedTransaction, TxBroadcast};
 
 use super::{
     error::ClientError,
@@ -150,9 +152,17 @@ impl ClientSender {
     }
 
     /// Broadcast a new transaction to the network.
-    pub async fn broadcast_tx(&mut self, tx: Transaction) -> Result<(), ClientError> {
+    pub async fn broadcast_tx(&mut self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Broadcast(tx))
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
+    /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
+    pub async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::AddScripts(scripts))
             .await
             .map_err(|_| ClientError::SendError)
     }

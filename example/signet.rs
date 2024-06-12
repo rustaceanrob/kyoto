@@ -58,6 +58,9 @@ async fn main() {
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;
                 }
+                NodeMessage::TxBroadcastFailure => {
+                    tracing::error!("The transaction could not be broadcast.")
+                }
                 NodeMessage::Synced(tip) => {
                     tracing::info!("Synced chain up to block {}", tip.height,);
                     tracing::info!("Chain tip: {}", tip.hash.to_string(),);

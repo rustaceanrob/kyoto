@@ -4,7 +4,7 @@ use bitcoin::{
         message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
         Address, ServiceFlags,
     },
-    Block, BlockHash,
+    Block, BlockHash, Transaction,
 };
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,7 @@ pub(crate) enum MainThreadMessage {
     GetFilters(GetCFilters),
     GetBlock(GetBlockConfig),
     Disconnect,
+    BroadcastTx(Transaction),
     // more messages
 }
 

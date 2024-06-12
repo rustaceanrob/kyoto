@@ -68,3 +68,30 @@ impl IndexedBlock {
         Self { height, block }
     }
 }
+
+/// Broadcast a [`Transaction`] to a set of connected peers.
+#[derive(Debug, Clone)]
+pub struct TxBroadcast {
+    /// The presumably valid Bitcoin transaction.
+    pub tx: Transaction,
+    /// The strategy for how this transaction should be shared with the network
+    pub broadcast_policy: TxBroadcastPolicy,
+}
+
+impl TxBroadcast {
+    pub fn new(tx: Transaction, broadcast_policy: TxBroadcastPolicy) -> Self {
+        Self {
+            tx,
+            broadcast_policy,
+        }
+    }
+}
+
+/// The strategy for how this transaction should be shared with the network
+#[derive(Debug, Clone)]
+pub enum TxBroadcastPolicy {
+    /// Broadcast the transaction to all peers at the same time.
+    AllPeers,
+    /// Broadcast the transaction to a single random peer, optimal for user privacy.
+    RandomPeer,
+}

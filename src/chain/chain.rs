@@ -611,6 +611,12 @@ impl Chain {
             .iter()
             .any(|out| self.scripts.contains(&out.script_pubkey))
     }
+
+    pub(crate) fn put_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
+        for script in scripts {
+            self.scripts.insert(script);
+        }
+    }
 }
 
 #[cfg(test)]

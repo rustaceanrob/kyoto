@@ -103,15 +103,12 @@ impl HeaderStore for SqliteHeaderDb {
                 "db corruption. incorrect header hash."
             );
 
-            match headers.values().last() {
-                Some(header) => {
-                    assert_eq!(
-                        header.block_hash(),
-                        next_header.prev_blockhash,
-                        "db corruption. headers do not link."
-                    );
-                }
-                None => (),
+            if let Some(header) = headers.values().last() {
+                assert_eq!(
+                    header.block_hash(),
+                    next_header.prev_blockhash,
+                    "db corruption. headers do not link."
+                );
             }
             headers.insert(height, next_header);
         }
