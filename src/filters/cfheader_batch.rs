@@ -40,6 +40,10 @@ impl CFHeaderBatch {
     pub(crate) fn inner(&self) -> Vec<(FilterHeader, FilterHash)> {
         self.inner.clone()
     }
+
+    pub(crate) fn last_header(&self) -> Option<FilterHeader> {
+        self.inner.last().map(|(header, _)| *header)
+    }
 }
 
 impl From<CFHeaders> for CFHeaderBatch {

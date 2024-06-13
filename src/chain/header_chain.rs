@@ -339,7 +339,10 @@ mod tests {
             chain.values()
         );
         assert_eq!(chain.header_at_height(12), None);
+        assert_eq!(chain.header_at_height(11), Some(&block_11));
         assert_eq!(chain.header_at_height(10), Some(&new_block_10));
+        assert_eq!(chain.header_at_height(9), Some(&block_9));
+        assert_eq!(chain.header_at_height(8), Some(&block_8));
     }
 
     #[test]
@@ -369,6 +372,10 @@ mod tests {
             vec![block_1, block_2, new_block_3, new_block_4],
             chain.values()
         );
+        assert_eq!(chain.header_at_height(4), Some(&new_block_4));
+        assert_eq!(chain.header_at_height(3), Some(&new_block_3));
+        assert_eq!(chain.header_at_height(2), Some(&block_2));
+        assert_eq!(chain.header_at_height(1), Some(&block_1));
     }
 
     #[tokio::test]

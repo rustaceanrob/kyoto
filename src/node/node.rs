@@ -305,6 +305,7 @@ impl Node {
                             ClientMessage::Shutdown => return Ok(()),
                             ClientMessage::Broadcast(transaction) => tx_broadcaster.add(transaction),
                             ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
+                            ClientMessage::Rescan => return Ok(()),
                         }
                     }
                 }

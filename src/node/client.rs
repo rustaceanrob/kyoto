@@ -166,4 +166,12 @@ impl ClientSender {
             .await
             .map_err(|_| ClientError::SendError)
     }
+
+    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    pub async fn rescan(&mut self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::Rescan)
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
 }

@@ -35,4 +35,6 @@ pub enum ClientMessage {
     Broadcast(TxBroadcast),
     /// Add more Bitcoin [`ScriptBuf`] to look for.
     AddScripts(HashSet<ScriptBuf>),
+    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    Rescan,
 }

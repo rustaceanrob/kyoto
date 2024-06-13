@@ -45,6 +45,10 @@ tokio = { version = "1", default-features = false, features = [
 name = "signet"
 path = "example/signet.rs"
 
+[[example]]
+name = "rescan"
+path = "example/rescan.rs"
+
 [lib]
 name = "kyoto"
 path = "src/lib.rs"

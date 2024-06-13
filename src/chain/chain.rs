@@ -406,6 +406,18 @@ impl Chain {
                     .unwrap(),
             )
             .await;
+        match batch.last_header() {
+            Some(batch_last) => {
+                if let Some(prev_header) = self.cf_header_chain.prev_header() {
+                    // A new block was mined and we ended up asking for this batch twice,
+                    // or the quorum required is less than our connected peers.
+                    if batch_last.eq(&prev_header) {
+                        return Ok(CFHeaderSyncResult::AddedToQueue);
+                    }
+                }
+            }
+            None => return Err(CFHeaderSyncError::EmptyMessage),
+        }
         self.audit_cf_headers(&batch).await?;
         match self.cf_header_chain.append(peer_id, batch).await? {
             AppendAttempt::AddedToQueue => Ok(CFHeaderSyncResult::AddedToQueue),
