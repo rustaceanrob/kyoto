@@ -571,12 +571,13 @@ impl Chain {
     // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
         self.block_queue.receive_one();
-        let mut contains_relevant = false;
         match self.height_of_hash(block.block_hash()).await {
             Some(height) => {
+                self.dialog
+                    .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
+                    .await;
                 for tx in &block.txdata {
                     if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
-                        contains_relevant = true;
                         self.dialog
                             .send_data(NodeMessage::Transaction(IndexedTransaction::new(
                                 tx.clone(),
@@ -588,11 +589,6 @@ impl Chain {
                             .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
                             .await;
                     }
-                }
-                if contains_relevant {
-                    self.dialog
-                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
-                        .await;
                 }
                 Ok(())
             }
@@ -612,6 +608,7 @@ impl Chain {
             .any(|out| self.scripts.contains(&out.script_pubkey))
     }
 
+    // Add more scripts to our list
     pub(crate) fn put_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
         for script in scripts {
             self.scripts.insert(script);

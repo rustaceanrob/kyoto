@@ -173,6 +173,7 @@ impl Node {
         let mut node_map = PeerMap::new(mtx, self.network);
         let mut tx_broadcaster = Broadcaster::new();
         loop {
+            // Try to advance the state of the node and remove old connections
             self.advance_state().await;
             node_map.clean().await;
             // Rehydrate on peers when lower than a threshold
