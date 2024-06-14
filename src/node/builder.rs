@@ -1,6 +1,6 @@
-use std::{net::IpAddr, path::PathBuf};
+use std::{collections::HashSet, net::IpAddr, path::PathBuf};
 
-use bitcoin::Network;
+use bitcoin::{Network, ScriptBuf};
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
@@ -28,7 +28,7 @@ impl NodeBuilder {
     }
 
     /// Add Bitcoin scripts to monitor for.
-    pub fn add_scripts(mut self, addresses: Vec<bitcoin::Address>) -> Self {
+    pub fn add_scripts(mut self, addresses: HashSet<ScriptBuf>) -> Self {
         self.config.addresses = addresses;
         self
     }

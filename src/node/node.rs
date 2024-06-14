@@ -83,7 +83,7 @@ impl Node {
     pub(crate) async fn new(
         network: Network,
         white_list: Whitelist,
-        addresses: Vec<bitcoin::Address>,
+        scripts: HashSet<ScriptBuf>,
         data_path: Option<PathBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: usize,
@@ -105,9 +105,6 @@ impl Node {
         // Load the headers from storage
         let db = SqliteHeaderDb::new(network, checkpoint, data_path)
             .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
-        // Take the canonical Bitcoin addresses and map them to a script we can scan for
-        let mut scripts = HashSet::new();
-        scripts.extend(addresses.iter().map(|address| address.script_pubkey()));
         // A structured way to talk to the client
         let mut dialog = Dialog::new(ntx);
         // Build the chain

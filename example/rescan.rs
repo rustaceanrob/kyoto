@@ -16,8 +16,10 @@ async fn main() {
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
         .require_network(bitcoin::Network::Signet)
-        .unwrap();
-    let addresses = vec![address];
+        .unwrap()
+        .into();
+    let mut addresses = HashSet::new();
+    addresses.insert(address);
     // Add preferred peers to connect to
     let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
     let peer_2 = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
@@ -73,7 +75,6 @@ async fn main() {
     sender.add_scripts(new_scripts).await.unwrap();
     // // Tell the node to look for these new scripts
     sender.rescan().await.unwrap();
-    // Continually listen for events until the node has rescaned the filters.
     loop {
         if let Ok(message) = receiver.recv().await {
             match message {

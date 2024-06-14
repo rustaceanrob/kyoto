@@ -1,11 +1,13 @@
-use std::{net::IpAddr, path::PathBuf};
+use std::{collections::HashSet, net::IpAddr, path::PathBuf};
+
+use bitcoin::ScriptBuf;
 
 use crate::chain::checkpoints::HeaderCheckpoint;
 
 pub(crate) struct NodeConfig {
     pub required_peers: u8,
     pub white_list: Option<Vec<(IpAddr, u16)>>,
-    pub addresses: Vec<bitcoin::Address>,
+    pub addresses: HashSet<ScriptBuf>,
     pub data_path: Option<PathBuf>,
     pub header_checkpoint: Option<HeaderCheckpoint>,
 }
