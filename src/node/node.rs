@@ -196,7 +196,7 @@ impl Node {
                 node_map.send_random(block_request).await;
             }
             // If we have a transaction to broadcast and we are connected to peers, we should broadcast it
-            if node_map.live().ge(&1) && !tx_broadcaster.is_empty() {
+            if node_map.live().ge(&self.required_peers) && !tx_broadcaster.is_empty() {
                 let transaction = tx_broadcaster.next().unwrap();
                 match transaction.broadcast_policy {
                     TxBroadcastPolicy::AllPeers => {
@@ -260,7 +260,7 @@ impl Node {
                                 PeerMessage::Filter(filter) => {
                                     match self.handle_filter(peer_thread.nonce, filter).await {
                                         Some(response) => {
-                                            node_map.broadcast(response).await;
+                                            node_map.send_message(peer_thread.nonce, response).await;
                                         }
                                         None => continue,
                                     }
@@ -302,7 +302,11 @@ impl Node {
                             ClientMessage::Shutdown => return Ok(()),
                             ClientMessage::Broadcast(transaction) => tx_broadcaster.add(transaction),
                             ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
-                            ClientMessage::Rescan => return Ok(()),
+                            ClientMessage::Rescan => {
+                                if let Some(response) = self.rescan().await {
+                                    node_map.broadcast(response).await;
+                                }
+                            },
                         }
                     }
                 }
@@ -483,13 +487,13 @@ impl Node {
                     }
                 }
                 CFHeaderSyncResult::Dispute(_) => {
-                    // Request the block from the peer
+                    // TODO: Request the filter and block from the peer
                     self.dialog
                         .send_warning(
                             "Found a conflict while peers are sending filter headers".into(),
                         )
                         .await;
-                    None
+                    Some(MainThreadMessage::Disconnect)
                 }
             },
             Err(e) => {
@@ -587,6 +591,29 @@ impl Node {
         }
     }
 
+    // Add more scripts to the chain to look for. Does not imply a rescan.
+    async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
+        let mut chain = self.chain.lock().await;
+        chain.put_scripts(scripts);
+    }
+
+    // Clear the filter hash cache and redownload the filters.
+    async fn rescan(&mut self) -> Option<MainThreadMessage> {
+        let mut state = self.state.write().await;
+        let mut chain = self.chain.lock().await;
+        match *state {
+            NodeState::Behind => None,
+            NodeState::HeadersSynced => None,
+            _ => {
+                chain.clear_filters().await;
+                *state = NodeState::FilterHeadersSynced;
+                Some(MainThreadMessage::GetFilters(
+                    chain.next_filter_message().await,
+                ))
+            }
+        }
+    }
+
     // First we seach the whitelist for peers that we trust. Then, depending on the state
     // we either need to catch up on block headers or we may start requesting filters and blocks.
     // When requesting filters, we try to select peers that have signaled for CF support.
@@ -665,10 +692,5 @@ impl Node {
                 Ok((ret_ip, None))
             }
         }
-    }
-
-    async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
-        let mut chain = self.chain.lock().await;
-        chain.put_scripts(scripts);
     }
 }

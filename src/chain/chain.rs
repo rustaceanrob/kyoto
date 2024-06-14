@@ -626,6 +626,11 @@ impl Chain {
             self.scripts.insert(script);
         }
     }
+
+    //
+    pub(crate) async fn clear_filters(&mut self) {
+        self.filter_chain.clear_cache().await;
+    }
 }
 
 #[cfg(test)]
