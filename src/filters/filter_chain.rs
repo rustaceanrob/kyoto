@@ -41,18 +41,4 @@ impl FilterChain {
     pub(crate) fn last_stop_hash_request(&mut self) -> &Option<BlockHash> {
         &self.prev_stophash_request
     }
-
-    // pub(crate) fn filter_at_height(&self, height: usize) -> Option<Filter> {
-    //     let adjusted_height = self.adjusted_height(height);
-    //     match adjusted_height {
-    //         Some(height) => {
-    //             if let Some(filter) = self.chain.get(height) {
-    //                 Some(filter.clone())
-    //             } else {
-    //                 None
-    //             }
-    //         }
-    //         None => None,
-    //     }
-    // }
 }

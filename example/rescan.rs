@@ -38,7 +38,7 @@ async fn main() {
                 .unwrap(),
         ))
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .num_required_peers(3)
         // Create the node and client
         .build_node()
         .await;
@@ -75,6 +75,7 @@ async fn main() {
     sender.add_scripts(new_scripts).await.unwrap();
     // // Tell the node to look for these new scripts
     sender.rescan().await.unwrap();
+    tracing::info!("Starting rescan");
     loop {
         if let Ok(message) = receiver.recv().await {
             match message {
