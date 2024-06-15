@@ -8,6 +8,7 @@
 - [x] Persist to storage
   - [ ] Organize by `/16`?
   - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
+  - [ ] Condense to single DB
 - [ ] Ban peers
 - [x] Add optional whitelist
 
@@ -37,13 +38,13 @@
 #### Filters
 
 - [ ] API
-  - [ ] Compute block filter from block
+  - [ ] Compute block filter from block?
   - [x] Check set inclusion given filter
 - [ ] Chain
   - [x] Manage a queue of proposed header chains
   - [x] Find disputes
   - [x] Broadcast the next CF header message to all peers
-  - [ ] Resolve disputes by downloading blocks
+  - [ ] Resolve disputes by downloading blocks?
   - [x] Add new filters to the chain, verifying with the `FilterHash`
 - [ ] Optimizations
   - [x] Hashmap the `BlockHash` to `FilterHash` relationship in memory
@@ -61,7 +62,7 @@
 - [x] Seed with SPKs and wallet "birthday"
   - [x] Add SPKs
   - [x] Build from `HeaderCheckpoint`
-- [ ] Rescan with new `ScriptBuf`
+- [x] Rescan with new `ScriptBuf`
 
 #### Peer threads
 
@@ -77,10 +78,10 @@
 - [ ] Set up "peer config"
   - [x] TCP timeout
   - [ ] Should ask for IP addresses
-    - [ ] Filter by CPF
   - [x] Should serve CPF
 - [ ] Set up "timer"
   - [x] Check for DOS
+  - [ ] Message counter
   - [ ] `Ping` if peer has not been heard from
 - [ ] `Disconnect` peers with high latency
 - [ ] Add BIP-324 with V1 fallback
@@ -88,13 +89,13 @@
 #### Transaction Broadcaster
 
 - [ ] Rebroadcast for every TX not included in new blocks (`Inv`)
-- [ ] Add `ScriptBuf` to script set
+- [x] Add `ScriptBuf` to script set
 
 #### Meta
 
 - [x] Add more error cases for loading faulty headers from persistence
-- [ ] Handle `Inv` during CF header download
-- [ ] Add local unconfirmed transaction DB
+- [x] Handle `Inv` during CF header download
+- [ ] Add local unconfirmed transaction DB?
 - [ ] Too many `clone`
 
 #### Testing
