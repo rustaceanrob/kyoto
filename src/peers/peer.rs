@@ -16,7 +16,7 @@ use crate::{
     prelude::default_port_from_network,
 };
 
-use super::reader::Reader;
+use super::{counter::MessageCounter, reader::Reader};
 
 pub(crate) struct Peer {
     nonce: u32,
@@ -25,12 +25,7 @@ pub(crate) struct Peer {
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
-}
-
-enum State {
-    NotConnected,
-    Connected,
-    Verack,
+    message_counter: MessageCounter,
 }
 
 impl Peer {
@@ -43,6 +38,7 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
     ) -> Self {
         let default_port = default_port_from_network(&network);
+        let message_counter = MessageCounter::new();
         Self {
             nonce,
             ip_addr,
@@ -50,6 +46,7 @@ impl Peer {
             main_thread_sender,
             main_thread_recv,
             network,
+            message_counter,
         }
     }
 
@@ -90,6 +87,10 @@ impl Peer {
         });
         loop {
             if read_handle.is_finished() {
+                return Ok(());
+            }
+            if self.message_counter.unsolicited() {
+                println!("oh no");
                 return Ok(());
             }
             select! {
@@ -141,6 +142,7 @@ impl Peer {
     ) -> Result<(), PeerError> {
         match message {
             PeerMessage::Version(version) => {
+                self.message_counter.got_version();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -160,6 +162,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Addr(addrs) => {
+                self.message_counter.got_addrs();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -170,6 +173,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Headers(headers) => {
+                self.message_counter.got_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -180,6 +184,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::FilterHeaders(cf_headers) => {
+                self.message_counter.got_filter_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -190,6 +195,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Filter(filter) => {
+                self.message_counter.got_filter();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -200,6 +206,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Block(block) => {
+                self.message_counter.got_block();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -219,7 +226,10 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Verack => Ok(()),
+            PeerMessage::Verack => {
+                self.message_counter.got_verack();
+                Ok(())
+            }
             PeerMessage::Ping(nonce) => {
                 writer
                     .write_all(&message_generator.new_pong(nonce))
@@ -249,12 +259,14 @@ impl Peer {
     ) -> Result<(), PeerError> {
         match request {
             MainThreadMessage::GetAddr => {
+                self.message_counter.sent_addrs();
                 writer
                     .write_all(&message_generator.new_get_addr())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetHeaders(config) => {
+                self.message_counter.sent_header();
                 let message = message_generator.new_get_headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
@@ -262,6 +274,7 @@ impl Peer {
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetFilterHeaders(config) => {
+                self.message_counter.sent_filter_header();
                 let message = message_generator.new_cf_headers(config);
                 writer
                     .write_all(&message)
@@ -269,6 +282,7 @@ impl Peer {
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetFilters(config) => {
+                self.message_counter.sent_filters();
                 let message = message_generator.new_filters(config);
                 writer
                     .write_all(&message)
@@ -276,6 +290,7 @@ impl Peer {
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetBlock(message) => {
+                self.message_counter.sent_block();
                 let message = message_generator.new_block(message);
                 writer
                     .write_all(&message)

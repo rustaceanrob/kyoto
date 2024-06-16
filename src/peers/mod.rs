@@ -1,3 +1,4 @@
+pub(crate) mod counter;
 pub(crate) mod dns;
 pub(crate) mod outbound_messages;
 pub(crate) mod peer;

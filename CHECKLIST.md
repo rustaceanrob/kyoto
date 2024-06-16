@@ -48,7 +48,7 @@
   - [x] Add new filters to the chain, verifying with the `FilterHash`
 - [ ] Optimizations
   - [x] Hashmap the `BlockHash` to `FilterHash` relationship in memory
-  - [ ] Persist SPKs that have already been proven to be in a filter
+  - [ ] Persist SPKs that have already been proven to be in a filter?
 
 #### Main thread
 
@@ -81,7 +81,7 @@
   - [x] Should serve CPF
 - [ ] Set up "timer"
   - [x] Check for DOS
-  - [ ] Message counter
+  - [x] Message counter
   - [ ] `Ping` if peer has not been heard from
 - [ ] `Disconnect` peers with high latency
 - [ ] Add BIP-324 with V1 fallback
