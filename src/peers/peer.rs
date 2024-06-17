@@ -90,7 +90,6 @@ impl Peer {
                 return Ok(());
             }
             if self.message_counter.unsolicited() {
-                println!("oh no");
                 return Ok(());
             }
             select! {

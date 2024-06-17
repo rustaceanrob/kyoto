@@ -614,7 +614,7 @@ impl Node {
         }
     }
 
-    // First we seach the whitelist for peers that we trust. Then, depending on the state
+    // First we search the whitelist for peers that we trust. Then, depending on the state
     // we either need to catch up on block headers or we may start requesting filters and blocks.
     // When requesting filters, we try to select peers that have signaled for CF support.
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
@@ -645,7 +645,7 @@ impl Node {
     }
 
     async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
-        // Rmpty the whitelist, if there is one
+        // Empty the whitelist, if there is one
         if let Some(whitelist) = &mut self.white_list {
             if let Some((ip, port)) = whitelist.pop() {
                 return {

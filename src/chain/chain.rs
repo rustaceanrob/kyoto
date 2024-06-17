@@ -627,7 +627,7 @@ impl Chain {
         }
     }
 
-    //
+    // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) async fn clear_filters(&mut self) {
         self.filter_chain.clear_cache().await;
     }
