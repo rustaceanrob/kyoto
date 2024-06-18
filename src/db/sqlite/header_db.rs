@@ -10,7 +10,6 @@ use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
 use tokio::sync::Mutex;
 
-use crate::chain::checkpoints::HeaderCheckpoint;
 use crate::db::error::HeaderDatabaseError;
 use crate::db::traits::HeaderStore;
 
@@ -29,16 +28,10 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
 pub(crate) struct SqliteHeaderDb {
     network: Network,
     conn: Arc<Mutex<Connection>>,
-    anchor_height: u32,
-    anchor_hash: BlockHash,
 }
 
 impl SqliteHeaderDb {
-    pub fn new(
-        network: Network,
-        anchor_checkpoint: HeaderCheckpoint,
-        path: Option<PathBuf>,
-    ) -> Result<Self, HeaderDatabaseError> {
+    pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, HeaderDatabaseError> {
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
         path.push(network.to_string());
@@ -52,8 +45,6 @@ impl SqliteHeaderDb {
         Ok(Self {
             network,
             conn: Arc::new(Mutex::new(conn)),
-            anchor_height: anchor_checkpoint.height,
-            anchor_hash: anchor_checkpoint.hash,
         })
     }
 }
@@ -61,7 +52,10 @@ impl SqliteHeaderDb {
 #[async_trait]
 impl HeaderStore for SqliteHeaderDb {
     // load all the known headers from storage
-    async fn load(&mut self) -> Result<BTreeMap<u32, Header>, HeaderDatabaseError> {
+    async fn load(
+        &mut self,
+        anchor_height: u32,
+    ) -> Result<BTreeMap<u32, Header>, HeaderDatabaseError> {
         let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
@@ -74,7 +68,7 @@ impl HeaderStore for SqliteHeaderDb {
         while let Some(row) = rows.next().map_err(|_| HeaderDatabaseError::LoadError)? {
             let height: u32 = row.get(0).map_err(|_| HeaderDatabaseError::LoadError)?;
             // The anchor height should not be included in the chain, as the anchor is non-inclusive
-            if height.le(&self.anchor_height) {
+            if height.le(&anchor_height) {
                 continue;
             }
             let hash: String = row.get(1).map_err(|_| HeaderDatabaseError::LoadError)?;
@@ -190,5 +184,17 @@ impl HeaderStore for SqliteHeaderDb {
         }
         tx.commit().map_err(|_| HeaderDatabaseError::WriteError)?;
         Ok(())
+    }
+
+    async fn height_of<'a>(
+        &mut self,
+        block_hash: &'a BlockHash,
+    ) -> Result<Option<u32>, HeaderDatabaseError> {
+        let write_lock = self.conn.lock().await;
+        let stmt = "SELECT height FROM headers WHERE block_hash = ?1";
+        let row: Option<u32> = write_lock
+            .query_row(stmt, params![block_hash.to_string()], |row| row.get(0))
+            .map_err(|_| HeaderDatabaseError::LoadError)?;
+        Ok(row)
     }
 }

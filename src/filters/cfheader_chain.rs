@@ -151,4 +151,8 @@ impl CFHeaderChain {
     pub(crate) fn hash_at(&self, block: &BlockHash) -> Option<&FilterHash> {
         self.block_to_hash.get(block)
     }
+
+    pub(crate) fn quorum_required(&self) -> usize {
+        self.quorum_required
+    }
 }

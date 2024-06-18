@@ -20,6 +20,8 @@ pub enum HeaderSyncError {
     FloatingHeaders,
     #[error("less work fork")]
     LessWorkFork,
+    #[error("the database could not load a fork")]
+    DbError,
 }
 
 #[derive(Error, Debug)]
