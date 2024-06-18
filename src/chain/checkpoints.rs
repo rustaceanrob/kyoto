@@ -96,6 +96,10 @@ pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
         190000,
         "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
     ),
+    (
+        200000,
+        "0000007d60f5ffc47975418ac8331c0ea52cf551730ef7ead7ff9082a536f13c",
+    ),
 ];
 
 /// A known block hash in the chain of most work.

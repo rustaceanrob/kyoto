@@ -34,6 +34,8 @@ use crate::{
     IndexedBlock, IndexedTransaction,
 };
 
+const MAX_REORG_DEPTH: u32 = 5_000;
+
 #[derive(Debug)]
 pub(crate) struct Chain {
     header_chain: HeaderChain,
@@ -60,7 +62,7 @@ impl Chain {
     ) -> Result<Self, HeaderPersistenceError> {
         let params = params_from_network(network);
         let mut loaded_headers = db
-            .load()
+            .load(anchor.height)
             .await
             .map_err(|_| HeaderPersistenceError::SQLite)?;
         if loaded_headers.len().gt(&0) {
@@ -239,11 +241,11 @@ impl Chain {
                 self.header_chain.extend(header_batch.inner());
                 return Ok(());
             }
-            // We are not accepting floating chains from any peer
-            // the prev_hash of the last block in their chain does not
-            // point to any header we know of
-            if !self.contains_hash(header_batch.first().prev_blockhash) {
-                return Err(HeaderSyncError::FloatingHeaders);
+            // We see if we have this previous hash in the database, and reload our
+            // chain from that hash if so.
+            let fork_start_hash = header_batch.first().prev_blockhash;
+            if !self.contains_hash(fork_start_hash) {
+                self.load_fork(&header_batch).await?;
             }
             //
             self.evaluate_fork(&header_batch).await?;
@@ -325,8 +327,6 @@ impl Chain {
                         "Peer is sending us malicious headers, restarting header sync.".into(),
                     )
                     .await;
-                // We assume that this would be so rare that we just clear the whole header chain
-                self.header_chain.clear_all();
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
         }
@@ -385,6 +385,38 @@ impl Chain {
             }
         } else {
             Err(HeaderSyncError::FloatingHeaders)
+        }
+    }
+
+    async fn load_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
+        let mut db_lock = self.db.lock().await;
+        let prev_hash = header_batch.first().prev_blockhash;
+        let maybe_height = db_lock
+            .height_of(&prev_hash)
+            .await
+            .map_err(|_| HeaderSyncError::DbError)?;
+        match maybe_height {
+            Some(height) => {
+                // This is a very generous check to ensure a peer cannot get us to load an
+                // absurd amount of headers into RAM. Because headers come in batches of 2,000,
+                // we wouldn't accept a fork of a depth more than around 2,000 anyway.
+                // The only reorgs that have ever been recorded are of depth 1.
+                if self.height() - height > MAX_REORG_DEPTH {
+                    Err(HeaderSyncError::FloatingHeaders)
+                } else {
+                    let older_anchor = HeaderCheckpoint::new(height, prev_hash);
+                    let loaded_headers = db_lock
+                        .load(older_anchor.height)
+                        .await
+                        .map_err(|_| HeaderSyncError::DbError)?;
+                    self.header_chain = HeaderChain::new(older_anchor, loaded_headers);
+                    self.cf_header_chain =
+                        CFHeaderChain::new(older_anchor, self.cf_header_chain.quorum_required());
+                    self.filter_chain = FilterChain::new(older_anchor);
+                    Ok(())
+                }
+            }
+            None => Err(HeaderSyncError::FloatingHeaders),
         }
     }
 
