@@ -22,13 +22,13 @@ async fn main() {
     addresses.insert(address);
     // Add preferred peers to connect to
     let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
-    let peer_2 = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
+    // let peer_2 = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
     let (mut node, mut client) = builder
         // Add the peers
-        .add_peers(vec![(peer, 38333), (peer_2, 38333)])
+        .add_peers(vec![(peer, 38333)])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
