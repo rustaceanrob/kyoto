@@ -2,7 +2,10 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf};
 
 use bitcoin::{Network, ScriptBuf};
 
-use crate::chain::checkpoints::HeaderCheckpoint;
+use crate::{
+    chain::checkpoints::HeaderCheckpoint,
+    db::traits::{HeaderStore, PeerStore},
+};
 
 use super::{client::Client, config::NodeConfig, node::Node};
 
@@ -55,8 +58,23 @@ impl NodeBuilder {
     }
 
     /// Consume the node builder and receive a [`Node`] and [`Client`].
+    #[cfg(feature = "database")]
     pub async fn build_node(&self) -> (Node, Client) {
-        Node::new_from_config(&self.config, self.network)
+        use crate::db::sqlite::{header_db::SqliteHeaderDb, peer_db::SqlitePeerDb};
+        let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone()).unwrap();
+        let header_store =
+            SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();
+        Node::new_from_config(&self.config, self.network, peer_store, header_store)
+            .await
+            .unwrap()
+    }
+
+    pub async fn build_node_with_custom_databases(
+        &self,
+        peer_store: impl PeerStore + Send + Sync + 'static,
+        header_store: impl HeaderStore + Send + Sync + 'static,
+    ) -> (Node, Client) {
+        Node::new_from_config(&self.config, self.network, peer_store, header_store)
             .await
             .unwrap()
     }

@@ -153,11 +153,6 @@ impl Peer {
                     .write_all(&message_generator.new_verack())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
-                // writer
-                //     .write_all(&message_generator.new_get_addr())
-                //     .await
-                //     .map_err(|_| PeerError::BufferWrite)?;
-                // can ask for addresses here depending on if we need them
                 Ok(())
             }
             PeerMessage::Addr(addrs) => {

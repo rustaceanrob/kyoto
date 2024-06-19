@@ -20,13 +20,13 @@ async fn main() {
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
-    // Add preferred peers to connect to
-    let peer = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
+    // Define a peer to connect to
+    let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
     let (mut node, mut client) = builder
-        // Add the peers
+        // Add the peer
         .add_peers(vec![(peer, 38333)])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
@@ -37,14 +37,12 @@ async fn main() {
                 .unwrap(),
         ))
         // The number of connections we would like to maintain
-        .num_required_peers(2)
-        // Create the node and client
-        .build_node()
+        .num_required_peers(1)
+        // Create the node and client without the usual SQL databases
+        .build_node_with_custom_databases((), ())
         .await;
-    // Check if the node is running. Another part of the program may be giving us the node.
-    if !node.is_running() {
-        tokio::task::spawn(async move { node.run().await });
-    }
+    // Run the node
+    tokio::task::spawn(async move { node.run().await });
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
