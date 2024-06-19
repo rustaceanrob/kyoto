@@ -1,6 +1,6 @@
-use bitcoin::{params::Params, Network};
+use std::net::IpAddr;
 
-extern crate alloc;
+use bitcoin::{params::Params, Network};
 
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
 pub const MEDIAN_TIME_PAST: usize = 11;
@@ -49,6 +49,24 @@ impl Median<u32> for Vec<u32> {
         } else {
             let mid = len / 2;
             Some((self[mid - 1] + self[mid]) / 2)
+        }
+    }
+}
+
+pub trait SlashSixteen {
+    fn slash_sixteen(&mut self) -> String;
+}
+
+impl SlashSixteen for IpAddr {
+    fn slash_sixteen(&mut self) -> String {
+        if self.is_ipv4() {
+            self.to_string()
+                .split('.')
+                .take(2)
+                .collect::<Vec<&str>>()
+                .join(".")
+        } else {
+            "V6ADDR".to_string()
         }
     }
 }
