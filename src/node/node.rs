@@ -14,7 +14,6 @@ use bitcoin::{
     },
     Block, Network, ScriptBuf,
 };
-use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use tokio::sync::{broadcast, mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
@@ -27,10 +26,9 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
-    db::sqlite::header_db::SqliteHeaderDb,
+    db::{peer_man::PeerManager, sqlite::header_db::SqliteHeaderDb},
     filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
-    peers::dns::Dns,
     TxBroadcastPolicy,
 };
 
@@ -70,7 +68,7 @@ pub enum NodeState {
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
-    peer_db: Arc<Mutex<SqlitePeerDb>>,
+    peer_man: Arc<Mutex<PeerManager>>,
     required_peers: usize,
     white_list: Whitelist,
     network: Network,
@@ -95,16 +93,17 @@ impl Node {
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Load the databases
+        // Configure the address manager
         let peer_db = SqlitePeerDb::new(network, data_path.clone())
             .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
-        let peer_db = Arc::new(Mutex::new(peer_db));
+        let peer_man = Arc::new(Mutex::new(PeerManager::new(peer_db, &network)));
+        // Load the headers from storage
+        let db = SqliteHeaderDb::new(network, data_path)
+            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         // Prepare the header checkpoints for the chain source
         let mut checkpoints = HeaderCheckpoints::new(&network);
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
-        // Load the headers from storage
-        let db = SqliteHeaderDb::new(network, data_path)
-            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         // A structured way to talk to the client
         let mut dialog = Dialog::new(ntx);
         // Build the chain
@@ -129,7 +128,7 @@ impl Node {
             Self {
                 state,
                 chain,
-                peer_db,
+                peer_man,
                 required_peers,
                 white_list,
                 network,
@@ -408,14 +407,31 @@ impl Node {
     }
 
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
-        let mut chain = self.peer_db.lock().await;
-        if let Err(e) = chain.add_cpf_peers(new_peers).await {
-            self.dialog
-                .send_warning(format!(
-                    "Encountered error adding peer to the database: {}",
-                    e
-                ))
-                .await;
+        self.dialog
+            .send_dialog(format!(
+                "Adding {} new peers to the peer database",
+                new_peers.len()
+            ))
+            .await;
+        let mut lock = self.peer_man.lock().await;
+        for addr in new_peers {
+            if let Err(e) = lock
+                .add_new_peer(
+                    addr.socket_addr()
+                        .expect("IP should have been screened")
+                        .ip(),
+                    Some(addr.port),
+                    Some(addr.services),
+                )
+                .await
+            {
+                self.dialog
+                    .send_warning(format!(
+                        "Encountered error adding peer to the database: {}",
+                        e
+                    ))
+                    .await;
+            }
         }
     }
 
@@ -614,38 +630,10 @@ impl Node {
         }
     }
 
-    // First we search the whitelist for peers that we trust. Then, depending on the state
-    // we either need to catch up on block headers or we may start requesting filters and blocks.
-    // When requesting filters, we try to select peers that have signaled for CF support.
+    // First we search the whitelist for peers that we trust. If we don't have any more whitelisted peers,
+    // we try to get a new peer from the peer manager. If that fails and our database is empty, we try DNS.
+    // Otherwise, the node throws an error.
     async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
-        let state = *self.state.read().await;
-        match state {
-            NodeState::Behind => self.any_peer().await,
-            _ => match self.cpf_peer().await {
-                Ok(got_peer) => match got_peer {
-                    Some(peer) => Ok(peer),
-                    None => self.any_peer().await,
-                },
-                Err(e) => Err(e),
-            },
-        }
-        // self.any_peer().await
-    }
-
-    async fn cpf_peer(&mut self) -> Result<Option<(IpAddr, Option<u16>)>, NodeError> {
-        let mut chain = self.peer_db.lock().await;
-        if let Some(peer) = chain
-            .get_random_cpf_peer()
-            .await
-            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?
-        {
-            return Ok(Some((peer.0, Some(peer.1))));
-        }
-        Ok(None)
-    }
-
-    async fn any_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
-        // Empty the whitelist, if there is one
         if let Some(whitelist) = &mut self.white_list {
             if let Some((ip, port)) = whitelist.pop() {
                 return {
@@ -656,40 +644,39 @@ impl Node {
                 };
             }
         }
-        let mut chain = self.peer_db.lock().await;
-        // Try to get any new peer
-        let next_peer = chain
-            .get_random_new()
-            .await
-            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
-        match next_peer {
-            // We found some peer to use but may not be reachable
-            Some(peer) => {
+        let mut peer_manager = self.peer_man.lock().await;
+        match peer_manager.next_peer().await {
+            Ok((ip, port)) => {
                 self.dialog
-                    .send_dialog(format!("Loaded peer from the database {}", peer.0))
+                    .send_dialog("Found an existing peer in the database".into())
                     .await;
-                Ok((peer.0, Some(peer.1)))
+                Ok((ip, Some(port)))
             }
-            // We have no peers in our DB, try DNS
-            None => {
-                let mut new_peers = Dns::bootstrap(self.network)
+            Err(_) => {
+                let current_count = peer_manager
+                    .peer_count()
                     .await
-                    .map_err(|_| NodeError::DnsFailure)?;
-                let mut rng = StdRng::from_entropy();
-                new_peers.shuffle(&mut rng);
-                // DNS fails if there is an insufficient number of peers
-                let ret_ip = new_peers[0];
-                for peer in new_peers {
-                    if let Err(e) = chain.add_new(peer, None, None).await {
-                        self.dialog
-                            .send_warning(format!(
-                                "Encountered error adding a peer to the database: {}",
-                                e
-                            ))
-                            .await;
-                    }
+                    .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
+                if current_count < 1 {
+                    self.dialog
+                        .send_dialog(
+                            "Peer count is less than one, using DNS to find new peers.".into(),
+                        )
+                        .await;
+                    peer_manager
+                        .bootstrap()
+                        .await
+                        .map_err(|_| NodeError::DnsFailure)?;
+                    let next_peer = peer_manager
+                        .next_peer()
+                        .await
+                        .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
+                    return Ok((next_peer.0, Some(next_peer.1)));
                 }
-                Ok((ret_ip, None))
+                self.dialog
+                    .send_warning("An error occured while finding a new peer".into())
+                    .await;
+                Err(NodeError::LoadError(PersistenceError::PeerLoadFailure))
             }
         }
     }
