@@ -1,13 +1,9 @@
 use std::{collections::HashSet, net::IpAddr, sync::Arc};
 
 use bitcoin::{p2p::ServiceFlags, Network};
-use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use tokio::sync::Mutex;
 
-use crate::{
-    peers::dns::Dns,
-    prelude::{default_port_from_network, SlashSixteen},
-};
+use crate::prelude::{default_port_from_network, SlashSixteen};
 
 use super::{error::PeerManagerError, traits::PeerStore, PersistedPeer};
 
@@ -46,7 +42,10 @@ impl PeerManager {
         Ok((next.addr, next.port))
     }
 
+    #[cfg(feature = "dns")]
     pub(crate) async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
+        use crate::peers::dns::Dns;
+        use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
         let mut db_lock = self.db.lock().await;
         let mut new_peers = Dns::bootstrap(self.network)
             .await

@@ -1,3 +1,7 @@
+//! The following configuration is likely a common set-up for most users.
+//! New peers are stored in a local database, and the node connects to multiple peers
+//! to improve the anonymity set when broadcasting transactions to the Bitcoin network.
+
 use bitcoin::BlockHash;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};

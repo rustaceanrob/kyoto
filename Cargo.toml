@@ -18,11 +18,9 @@ bitcoin = { version = "0.32.0", features = [
     "std",
     "serde",
 ], default-features = false }
-dns-lookup = "2.0.0"
 # Enable the tokio-console task and poll observations
 # console-subscriber = "0.2.0" 
 rand = "0.8.0"
-rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
 thiserror = { version = "1" }
 tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
@@ -33,9 +31,15 @@ tokio = { version = "1", default-features = false, features = [
     "macros",
 ] }
 
+# Optional dependencies
+dns-lookup = { version = "2.0.0", optional = true }
+rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
+
+
 [features]
-default = ["database"]
+default = ["database", "dns"]
 database = ["rusqlite"]
+dns = ["dns-lookup"]
 
 [dev-dependencies]
 hex = { version = "0.4.0" }
