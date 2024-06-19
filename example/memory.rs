@@ -1,3 +1,8 @@
+//! This example demonstrates a limited resource device connecting to a single peer.
+//! While this configuration limits dependencies and requires practically no storage on
+//! the underlying machine, there is no privacy if the connected node is also used to broadcast
+//! transactions to the Bitcoin P2P network.
+
 use bitcoin::BlockHash;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};

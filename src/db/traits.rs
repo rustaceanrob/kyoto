@@ -1,12 +1,7 @@
-use std::{
-    collections::BTreeMap,
-    net::{IpAddr, Ipv4Addr},
-};
+use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use bitcoin::{block::Header, p2p::ServiceFlags, BlockHash};
-
-use crate::prelude::default_port_from_network;
+use bitcoin::{block::Header, BlockHash};
 
 use super::{error::DatabaseError, PersistedPeer};
 
@@ -83,19 +78,11 @@ impl PeerStore for () {
     }
 
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
-        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let port = default_port_from_network(&bitcoin::Network::Regtest);
-        Ok(PersistedPeer::new(
-            addr,
-            port,
-            ServiceFlags::COMPACT_FILTERS,
-            true,
-            false,
-        ))
+        Err(DatabaseError::LoadError)
     }
 
     async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
-        Ok(1)
+        Ok(0)
     }
 }
 

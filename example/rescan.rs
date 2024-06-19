@@ -1,3 +1,7 @@
+//! When adding new scripts that have a previous history, we can rescan
+//! the filters for inclusions of these scripts and download the relevant
+//! blocks.
+
 use bitcoin::BlockHash;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};

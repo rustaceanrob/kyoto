@@ -28,9 +28,11 @@ const MAINNET_SEEDS: &[&str; 9] = &[
     "seed.bitcoin.wiz.biz",
 ];
 
+#[cfg(feature = "dns")]
 pub(crate) struct Dns {}
 
 impl Dns {
+    #[cfg(feature = "dns")]
     pub async fn bootstrap(network: Network) -> Result<Vec<IpAddr>, DnsBootstrapError> {
         let seeds = match network {
             Network::Bitcoin => MAINNET_SEEDS.to_vec(),

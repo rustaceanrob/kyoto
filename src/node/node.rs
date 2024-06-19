@@ -658,14 +658,18 @@ impl Node {
                     .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
                 if current_count < 1 {
                     self.dialog
-                        .send_dialog(
-                            "Peer count is less than one, using DNS to find new peers.".into(),
-                        )
+                        .send_warning("There are no peers in the database".into())
                         .await;
+                    #[cfg(feature = "dns")]
+                    self.dialog
+                        .send_dialog("Using DNS to find new peers".into())
+                        .await;
+                    #[cfg(feature = "dns")]
                     peer_manager
                         .bootstrap()
                         .await
                         .map_err(|_| NodeError::DnsFailure)?;
+
                     let next_peer = peer_manager
                         .next_peer()
                         .await
