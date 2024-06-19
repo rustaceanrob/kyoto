@@ -10,21 +10,26 @@ use crate::prelude::default_port_from_network;
 
 use super::{error::DatabaseError, PersistedPeer};
 
+/// Methods required to persist the chain of block headers.
 #[async_trait]
-pub(crate) trait HeaderStore {
+pub trait HeaderStore {
+    /// Load all headers with heights *strictly after* the specified anchor height.
     async fn load(&mut self, anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError>;
 
+    /// Write an indexed map of block headers to the database, ignoring if they already exist.
     async fn write<'a>(
         &mut self,
         header_chain: &'a BTreeMap<u32, Header>,
     ) -> Result<(), DatabaseError>;
 
+    /// Write the headers to the database, replacing headers over the specified height.
     async fn write_over<'a>(
         &mut self,
         header_chain: &'a BTreeMap<u32, Header>,
         height: u32,
     ) -> Result<(), DatabaseError>;
 
+    /// Return the height of a block hash in the database, if it exists.
     async fn height_of<'a>(&mut self, hash: &'a BlockHash) -> Result<Option<u32>, DatabaseError>;
 }
 
@@ -58,18 +63,22 @@ impl HeaderStore for () {
     }
 }
 
+/// Methods that define a list of peers on the Bitcoin P2P network.
 #[async_trait]
-pub(crate) trait PeerStore {
-    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError>;
+pub trait PeerStore {
+    /// Add a peer to the database, defining if it should be replaced or not.
+    async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError>;
 
+    /// Get any peer from the database, selected at random.
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError>;
 
+    /// The number of peers in the database that are not marked as banned.
     async fn num_unbanned(&mut self) -> Result<u32, DatabaseError>;
 }
 
 #[async_trait]
 impl PeerStore for () {
-    async fn update(&mut self, _peer: PersistedPeer) -> Result<(), DatabaseError> {
+    async fn update(&mut self, _peer: PersistedPeer, _replace: bool) -> Result<(), DatabaseError> {
         Ok(())
     }
 

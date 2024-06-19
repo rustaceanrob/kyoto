@@ -6,9 +6,10 @@
 //! and vetted.
 
 #![allow(dead_code)]
-/// Strucutres related to the blockchain.
+/// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
-mod db;
+/// Traits and structures that define the data persistence required for a node.
+pub mod db;
 mod filters;
 /// Tools to build and run a compact block filters node.
 pub mod node;

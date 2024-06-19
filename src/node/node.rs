@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
     net::IpAddr,
-    path::PathBuf,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -26,7 +25,10 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
-    db::{peer_man::PeerManager, sqlite::header_db::SqliteHeaderDb},
+    db::{
+        peer_man::PeerManager,
+        traits::{HeaderStore, PeerStore},
+    },
     filters::cfheader_chain::CFHeaderSyncResult,
     node::{error::PersistenceError, peer_map::PeerMap},
     TxBroadcastPolicy,
@@ -44,7 +46,6 @@ use super::{
     error::NodeError,
     messages::{ClientMessage, NodeMessage},
 };
-use crate::db::sqlite::peer_db::SqlitePeerDb;
 
 type Whitelist = Option<Vec<(IpAddr, u16)>>;
 
@@ -82,9 +83,10 @@ impl Node {
         network: Network,
         white_list: Whitelist,
         scripts: HashSet<ScriptBuf>,
-        data_path: Option<PathBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: usize,
+        peer_store: impl PeerStore + Send + Sync + 'static,
+        header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> Result<(Self, Client), NodeError> {
         // Set up a communication channel between the node and client
         let (ntx, _) = broadcast::channel::<NodeMessage>(32);
@@ -92,14 +94,8 @@ impl Node {
         let client = Client::new(ntx.clone(), ctx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
-        // Load the databases
         // Configure the address manager
-        let peer_db = SqlitePeerDb::new(network, data_path.clone())
-            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
-        let peer_man = Arc::new(Mutex::new(PeerManager::new(peer_db, &network)));
-        // Load the headers from storage
-        let db = SqliteHeaderDb::new(network, data_path)
-            .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
+        let peer_man = Arc::new(Mutex::new(PeerManager::new(peer_store, &network)));
         // Prepare the header checkpoints for the chain source
         let mut checkpoints = HeaderCheckpoints::new(&network);
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
@@ -113,13 +109,13 @@ impl Node {
             checkpoint,
             checkpoints,
             dialog.clone(),
-            db,
+            header_store,
             required_peers,
         )
         .await
         .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
         // Initialize the height of the chain
-        let best_known_height = loaded_chain.height() as u32;
+        let best_known_height = loaded_chain.height();
         let chain = Arc::new(Mutex::new(loaded_chain));
         dialog
             .send_dialog(format!("Starting sync from block {}", best_known_height))
@@ -143,14 +139,17 @@ impl Node {
     pub(crate) async fn new_from_config(
         config: &NodeConfig,
         network: Network,
+        peer_store: impl PeerStore + Send + Sync + 'static,
+        header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> Result<(Self, Client), NodeError> {
         Node::new(
             network,
             config.white_list.clone(),
             config.addresses.clone(),
-            config.data_path.clone(),
             config.header_checkpoint,
             config.required_peers as usize,
+            peer_store,
+            header_store,
         )
         .await
     }

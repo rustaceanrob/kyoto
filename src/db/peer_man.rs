@@ -56,13 +56,10 @@ impl PeerManager {
         // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock
-                .update(PersistedPeer::new(
-                    peer,
-                    self.default_port,
-                    ServiceFlags::NONE,
-                    false,
-                    false,
-                ))
+                .update(
+                    PersistedPeer::new(peer, self.default_port, ServiceFlags::NONE, false, false),
+                    true,
+                )
                 .await
                 .map_err(PeerManagerError::Database)?;
         }
@@ -117,13 +114,16 @@ impl PeerManager {
     ) -> Result<(), PeerManagerError> {
         let mut db_lock = self.db.lock().await;
         db_lock
-            .update(PersistedPeer::new(
-                addr,
-                port.unwrap_or(self.default_port),
-                services.unwrap_or(ServiceFlags::NONE),
+            .update(
+                PersistedPeer::new(
+                    addr,
+                    port.unwrap_or(self.default_port),
+                    services.unwrap_or(ServiceFlags::NONE),
+                    tried,
+                    ban,
+                ),
                 tried,
-                ban,
-            ))
+            )
             .await
             .map_err(PeerManagerError::Database)?;
         Ok(())

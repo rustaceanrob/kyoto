@@ -2,17 +2,26 @@ use std::net::IpAddr;
 
 use bitcoin::p2p::ServiceFlags;
 
-pub(crate) mod error;
+/// Errors a database backend may produce.
+pub mod error;
 pub(crate) mod peer_man;
+#[cfg(feature = "database")]
 pub(crate) mod sqlite;
-pub(crate) mod traits;
+/// Traits that define the header and peer databases.
+pub mod traits;
 
+/// A peer that will be saved to the [`traits::PeerStore`].
 #[derive(Debug, Clone)]
 pub struct PersistedPeer {
+    /// Canonical IP address of this peer.
     pub addr: IpAddr,
+    /// The port believed to be listening for connections.
     pub port: u16,
+    /// The services this peer may offer.
     pub services: ServiceFlags,
+    /// Have we tried this peer before.
     pub tried: bool,
+    /// Did we ban this peer for faulty behavior.
     pub banned: bool,
 }
 

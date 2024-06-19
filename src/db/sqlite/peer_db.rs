@@ -46,9 +46,9 @@ impl SqlitePeerDb {
 
 #[async_trait]
 impl PeerStore for SqlitePeerDb {
-    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
+    async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError> {
         let lock = self.conn.lock().await;
-        let stmt = if !peer.tried {
+        let stmt = if !replace {
             "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)"
         } else {
             "INSERT OR REPLACE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)"
