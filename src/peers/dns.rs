@@ -4,6 +4,8 @@ use std::net::IpAddr;
 use thiserror::Error;
 
 const MIN_PEERS: usize = 10;
+// Mitigate DNS cache poisoning.
+const MAX_PEERS: usize = 256;
 
 const SIGNET_SEEDS: &[&str; 2] = &["seed.dlsouza.lol", "seed.signet.bitcoin.sprovoost.nl"];
 
@@ -40,9 +42,13 @@ impl Dns {
         let mut ip_addrs: Vec<IpAddr> = vec![];
 
         for host in seeds {
+            let mut count = 0;
             if let Ok(addrs) = dns_lookup::getaddrinfo(Some(host), None, None) {
                 for addr in addrs.filter_map(Result::ok) {
-                    ip_addrs.push(addr.sockaddr.ip());
+                    if count < 256 {
+                        ip_addrs.push(addr.sockaddr.ip());
+                    }
+                    count += 1;
                 }
             }
         }
@@ -69,7 +75,7 @@ mod test {
     use super::Dns;
 
     #[tokio::test]
-    #[ignore = "correct"]
+    #[ignore = "dns works"]
     async fn dns_responds() {
         Dns::bootstrap(bitcoin::network::Network::Signet)
             .await
