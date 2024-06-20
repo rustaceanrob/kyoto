@@ -3,14 +3,15 @@
 #### Peers
 
 - [x] Bootstrap peer list with DNS
-  - [ ] Home brewed DNS resolver?
-  - [ ] Check for DNS flooding/poisoning?
+  - [ ] Home brewed DNS resolver? (Too hard. Feature gated DNS instead)
+  - [x] Check for DNS flooding/poisoning? (Kind of: just limit to 256 peers per DNS query)
 - [x] Persist to storage
-  - [ ] Organize by `/16`?
+  - [x] Organize by `/16`? (Just don't select peers from the same net group)
   - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
-  - [ ] Condense to single DB
+  - [x] Condense to single DB
 - [ ] Ban peers
 - [x] Add optional whitelist
+- [ ] Add in-memory `PeerStore` implementor
 
 #### Headers
 
@@ -23,12 +24,12 @@
   - [ ] Difficulty retargeting audit:
     - [x] [PR](https://github.com/rust-bitcoin/rust-bitcoin/pull/2740)
   - [ ] Network adjusted time
-- [x] Handle forks [took the Neutrino approach and just disconnect peers if they send forks with less work]
-  - [ ] Manage orphaned header chains
+- [x] Handle forks (took the Neutrino approach and just disconnect peers if they send forks with less work)
+  - [ ] Manage orphaned header chains (Not necessary if we just follow the chain of most work and store the headers)
   - [x] Extend valid forks
-  - [ ] Create new forks
+  - [x] Create new forks
   - [x] Try to reorg when encountering new forks
-  - [ ] Take the old best chain and make it a fork
+  - [ ] Take the old best chain and make it a fork (Again, we just drop it and assume we will pick it back up if it gets more work)
 - [x] Persist to storage
   - [x] Determine if the block hash or height should be the primary key
   - [x] Speed up writes with pointers
@@ -38,17 +39,17 @@
 #### Filters
 
 - [ ] API
-  - [ ] Compute block filter from block?
+  - [ ] Compute block filter from block? (Non-trivial. The computed filter relies on previous outputs not contained in the block. We could estimate the `ScriptBuf` using the `Witness`?)
   - [x] Check set inclusion given filter
 - [ ] Chain
   - [x] Manage a queue of proposed header chains
   - [x] Find disputes
   - [x] Broadcast the next CF header message to all peers
-  - [ ] Resolve disputes by downloading blocks?
+  - [ ] Resolve disputes by downloading blocks? (Again, hard to resolve the dispute if you can't compute the filter)
   - [x] Add new filters to the chain, verifying with the `FilterHash`
 - [ ] Optimizations
   - [x] Hashmap the `BlockHash` to `FilterHash` relationship in memory
-  - [ ] Persist SPKs that have already been proven to be in a filter?
+  - [ ] Persist SPKs that have already been proven to be in a filter? (Not necessary, the crate should remain mostly state-less)
 
 #### Main thread
 
@@ -77,7 +78,7 @@
   - [x] Update `Inv` of block headers to header chain
 - [ ] Set up "peer config"
   - [x] TCP timeout
-  - [ ] Should ask for IP addresses
+  - [ ] Should ask for IP addresses (More of a DB level thing. We need peers if we are below a certain threshold)
   - [x] Should serve CPF
 - [ ] Set up "timer"
   - [x] Check for DOS
@@ -88,14 +89,14 @@
 
 #### Transaction Broadcaster
 
-- [ ] Rebroadcast for every TX not included in new blocks (`Inv`)
+- [ ] Rebroadcast for every TX not included in new blocks (Not possible without persistence, probably unnecessary)
 - [x] Add `ScriptBuf` to script set
 
 #### Meta
 
 - [x] Add more error cases for loading faulty headers from persistence
 - [x] Handle `Inv` during CF header download
-- [ ] Add local unconfirmed transaction DB?
+- [ ] Add local unconfirmed transaction DB? (Advised against by downstream)
 - [ ] Too many `clone`
 
 #### Testing
@@ -110,7 +111,7 @@
   - [ ] Unexpected stop hash
   - [ ] Unexpected filter hash
   - [ ] Multiple peers expected filter hash
-  - [ ] Properly identify bad peers
+  - [ ] Properly identify bad peers (Not testable without a way to compute the filters)
 - [ ] Filter chain
   - [ ] Repeated filter
   - [ ] Bad filter
