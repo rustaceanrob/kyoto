@@ -28,7 +28,7 @@ pub trait HeaderStore {
     async fn height_of<'a>(&mut self, hash: &'a BlockHash) -> Result<Option<u32>, DatabaseError>;
 }
 
-// Do nothing
+/// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
 #[async_trait]
 impl HeaderStore for () {
     async fn load(&mut self, _anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError> {
@@ -64,7 +64,7 @@ pub trait PeerStore {
     /// Add a peer to the database, defining if it should be replaced or not.
     async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError>;
 
-    /// Get any peer from the database, selected at random.
+    /// Get any peer from the database, selected at random. If no peers exist, an error is thrown.
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError>;
 
     /// The number of peers in the database that are not marked as banned.

@@ -79,12 +79,14 @@ pub struct Node {
 }
 
 impl Node {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(
         network: Network,
         white_list: Whitelist,
         scripts: HashSet<ScriptBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: usize,
+        target_peer_size: u32,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> Result<(Self, Client), NodeError> {
@@ -95,7 +97,11 @@ impl Node {
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the address manager
-        let peer_man = Arc::new(Mutex::new(PeerManager::new(peer_store, &network)));
+        let peer_man = Arc::new(Mutex::new(PeerManager::new(
+            peer_store,
+            &network,
+            target_peer_size,
+        )));
         // Prepare the header checkpoints for the chain source
         let mut checkpoints = HeaderCheckpoints::new(&network);
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
@@ -148,6 +154,7 @@ impl Node {
             config.addresses.clone(),
             config.header_checkpoint,
             config.required_peers as usize,
+            config.target_peer_size,
             peer_store,
             header_store,
         )
@@ -230,6 +237,9 @@ impl Node {
                                     node_map.set_height(peer_thread.nonce, version.height as u32);
                                     let best = *node_map.best_height().unwrap_or(&0);
                                     let response = self.handle_version(version, best).await;
+                                    if self.need_peers().await? {
+                                        node_map.send_message(peer_thread.nonce, MainThreadMessage::GetAddr).await;
+                                    }
                                     node_map.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
                                         .await;
@@ -637,7 +647,7 @@ impl Node {
             if let Some((ip, port)) = whitelist.pop() {
                 return {
                     self.dialog
-                        .send_dialog("Using a peer from the white list".into())
+                        .send_dialog(format!("Using a peer from the white list: {}", ip))
                         .await;
                     Ok((ip, Some(port)))
                 };
@@ -647,7 +657,7 @@ impl Node {
         match peer_manager.next_peer().await {
             Ok((ip, port)) => {
                 self.dialog
-                    .send_dialog("Found an existing peer in the database".into())
+                    .send_dialog(format!("Found an existing peer in the database: {}", ip))
                     .await;
                 Ok((ip, Some(port)))
             }
@@ -682,5 +692,14 @@ impl Node {
                 Err(NodeError::LoadError(PersistenceError::PeerLoadFailure))
             }
         }
+    }
+
+    async fn need_peers(&mut self) -> Result<bool, NodeError> {
+        self.peer_man
+            .lock()
+            .await
+            .need_peers()
+            .await
+            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))
     }
 }
