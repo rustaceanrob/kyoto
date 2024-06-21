@@ -157,6 +157,17 @@ impl HeaderChain {
         locators
     }
 
+    // The last ten heights and headers in chronological order
+    pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
+        self.headers
+            .iter()
+            .rev()
+            .take(10)
+            .rev()
+            .map(|(height, header)| (*height, header.clone()))
+            .collect()
+    }
+
     // Extend the current chain, potentially rewriting history. Higher order functions should decide what we extend
     pub(crate) fn extend(&mut self, batch: &[Header]) -> Vec<DisconnectedHeader> {
         let mut reorged = Vec::new();

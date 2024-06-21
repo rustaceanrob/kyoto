@@ -67,9 +67,15 @@ async fn main() {
                 NodeMessage::TxBroadcastFailure => {
                     tracing::error!("The transaction could not be broadcast.")
                 }
-                NodeMessage::Synced(tip) => {
-                    tracing::info!("Synced chain up to block {}", tip.height,);
-                    tracing::info!("Chain tip: {}", tip.hash.to_string(),);
+                NodeMessage::Synced(update) => {
+                    tracing::info!("Synced chain up to block {}", update.tip.height);
+                    tracing::info!("Chain tip: {}", update.tip.hash);
+                    let recent = update.recent_history;
+                    tracing::info!("Recent history:");
+                    for (height, hash) in recent {
+                        tracing::info!("Synced chain up to block {}", height);
+                        tracing::info!("Chain tip: {}", hash.block_hash());
+                    }
                     break;
                 }
             }

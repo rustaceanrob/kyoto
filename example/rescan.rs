@@ -57,9 +57,9 @@ async fn main() {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{}", d),
                 NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::Synced(tip) => {
-                    tracing::info!("Synced chain up to block {}", tip.height,);
-                    tracing::info!("Chain tip: {}", tip.hash.to_string(),);
+                NodeMessage::Synced(update) => {
+                    tracing::info!("Synced chain up to block {}", update.tip().height);
+                    tracing::info!("Chain tip: {}", update.tip().hash);
                     break;
                 }
                 _ => (),
@@ -85,9 +85,9 @@ async fn main() {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{}", d),
                 NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::Synced(tip) => {
-                    tracing::info!("Synced chain up to block {}", tip.height,);
-                    tracing::info!("Chain tip: {}", tip.hash.to_string(),);
+                NodeMessage::Synced(update) => {
+                    tracing::info!("Synced chain up to block {}", update.tip.height);
+                    tracing::info!("Chain tip: {}", update.tip.hash);
                     break;
                 }
                 _ => (),
