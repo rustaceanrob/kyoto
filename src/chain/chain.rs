@@ -166,6 +166,11 @@ impl Chain {
         self.checkpoints.is_exhausted()
     }
 
+    // The last ten heights and headers in the chain
+    pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
+        self.header_chain.last_ten()
+    }
+
     // Set the best known height to our peer
     pub(crate) async fn set_best_known_height(&mut self, height: u32) {
         self.dialog

@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use bitcoin::ScriptBuf;
+use bitcoin::{block::Header, ScriptBuf};
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
@@ -19,11 +19,44 @@ pub enum NodeMessage {
     /// A relevant [`crate::Block`] based on the user provided scripts
     Block(IndexedBlock),
     /// The node is fully synced, having scanned the requested range
-    Synced(HeaderCheckpoint),
+    Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A problem occured sending a transaction.
     TxBroadcastFailure,
+}
+
+/// The node has synced to a new tip of the chain.
+#[derive(Debug, Clone)]
+pub struct SyncUpdate {
+    /// Last known tip of the blockchain
+    pub tip: HeaderCheckpoint,
+    /// Ten recent headers ending with the tip
+    pub recent_history: BTreeMap<u32, Header>,
+}
+
+impl SyncUpdate {
+    pub(crate) fn new(tip: HeaderCheckpoint, recent_history: BTreeMap<u32, Header>) -> Self {
+        Self {
+            tip,
+            recent_history,
+        }
+    }
+
+    /// Get the tip of the blockchain after this sync.
+    pub fn tip(&self) -> HeaderCheckpoint {
+        self.tip.clone()
+    }
+
+    /// Get the ten most recent blocks in chronological order after this sync.
+    /// For nodes that do not save any block header history, it is recommmended to use
+    /// a block with significant depth, say 10 blocks deep, as the anchor for the
+    /// next sync. This is so the node may gracefully handle block reorganizations,
+    /// so long as they occur within 10 blocks of depth. This occurs at more than
+    /// a 99% probability.
+    pub fn recent_history(&self) -> &BTreeMap<u32, Header> {
+        &self.recent_history
+    }
 }
 
 /// Commands to issue a node.

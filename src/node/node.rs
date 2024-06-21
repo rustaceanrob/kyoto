@@ -44,7 +44,7 @@ use super::{
     config::NodeConfig,
     dialog::Dialog,
     error::NodeError,
-    messages::{ClientMessage, NodeMessage},
+    messages::{ClientMessage, NodeMessage, SyncUpdate},
 };
 
 type Whitelist = Option<Vec<(IpAddr, u16)>>;
@@ -357,13 +357,11 @@ impl Node {
                 let header_chain = self.chain.lock().await;
                 if header_chain.block_queue_empty() {
                     *state = NodeState::TransactionsSynced;
-                    let _ = self
-                        .dialog
-                        .send_data(NodeMessage::Synced(HeaderCheckpoint::new(
-                            header_chain.height(),
-                            header_chain.tip(),
-                        )))
-                        .await;
+                    let update = SyncUpdate::new(
+                        HeaderCheckpoint::new(header_chain.height(), header_chain.tip()),
+                        header_chain.last_ten(),
+                    );
+                    let _ = self.dialog.send_data(NodeMessage::Synced(update)).await;
                 }
             }
             NodeState::TransactionsSynced => (),
