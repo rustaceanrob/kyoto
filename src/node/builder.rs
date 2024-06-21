@@ -2,6 +2,7 @@ use std::{collections::HashSet, net::IpAddr, path::PathBuf};
 
 use bitcoin::{Network, ScriptBuf};
 
+use crate::db::error::DatabaseError;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
@@ -24,13 +25,13 @@ impl NodeBuilder {
         }
     }
 
-    /// Add preferred and most likely trusted peers to try to connect to.
+    /// Add preferred peers to try to connect to.
     pub fn add_peers(mut self, whitelist: Vec<(IpAddr, u16)>) -> Self {
         self.config.white_list = Some(whitelist);
         self
     }
 
-    /// Add Bitcoin scripts to monitor for.
+    /// Add Bitcoin scripts to monitor for. You may add more later with the [`Client`].
     pub fn add_scripts(mut self, addresses: HashSet<ScriptBuf>) -> Self {
         self.config.addresses = addresses;
         self
@@ -43,8 +44,19 @@ impl NodeBuilder {
     }
 
     /// Add the minimum number of peer connections that should be maintained by the node.
+    /// Adding more connections increases the node's anonymity, but requires waiting for more responses,
+    /// higher bandwidth, and higher memory requirements.
     pub fn num_required_peers(mut self, num_peers: u8) -> Self {
         self.config.required_peers = num_peers;
+        self
+    }
+
+    /// Set the desired number of peers for the database to keep track of. For limited or in-memory peer storage,
+    /// this number may be small, however a sufficient margin of peers should be set so the node can try many options
+    /// when downloading compact block filters. For nodes that store peers on disk, more peers will typically result in
+    /// fewer errors.
+    pub fn peer_db_size(mut self, target_num: u32) -> Self {
+        self.config.target_peer_size = target_num;
         self
     }
 
@@ -66,6 +78,7 @@ impl NodeBuilder {
             SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();
         Node::new_from_config(&self.config, self.network, peer_store, header_store)
             .await
+            .map_err(|_| DatabaseError::LoadError)
             .unwrap()
     }
 
@@ -76,6 +89,7 @@ impl NodeBuilder {
     ) -> (Node, Client) {
         Node::new_from_config(&self.config, self.network, peer_store, header_store)
             .await
+            .map_err(|_| DatabaseError::LoadError)
             .unwrap()
     }
 }

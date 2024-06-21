@@ -4,6 +4,8 @@ use bitcoin::p2p::ServiceFlags;
 
 /// Errors a database backend may produce.
 pub mod error;
+/// In-memory persistence trait implementations for light-weight nodes running on constrained or semi-trusted setups.
+pub mod memory;
 pub(crate) mod peer_man;
 #[cfg(feature = "database")]
 pub(crate) mod sqlite;
@@ -11,7 +13,7 @@ pub(crate) mod sqlite;
 pub mod traits;
 
 /// A peer that will be saved to the [`traits::PeerStore`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PersistedPeer {
     /// Canonical IP address of this peer.
     pub addr: IpAddr,

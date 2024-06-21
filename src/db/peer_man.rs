@@ -13,16 +13,22 @@ pub(crate) struct PeerManager {
     netgroups: HashSet<String>,
     network: Network,
     default_port: u16,
+    target_size: u32,
 }
 
 impl PeerManager {
-    pub(crate) fn new(db: impl PeerStore + Send + Sync + 'static, network: &Network) -> Self {
+    pub(crate) fn new(
+        db: impl PeerStore + Send + Sync + 'static,
+        network: &Network,
+        target_size: u32,
+    ) -> Self {
         let default_port = default_port_from_network(network);
         Self {
             db: Arc::new(Mutex::new(db)),
             netgroups: HashSet::new(),
             network: *network,
             default_port,
+            target_size,
         }
     }
 
@@ -40,6 +46,14 @@ impl PeerManager {
         let mut next = db_lock.random().await.map_err(PeerManagerError::Database)?;
         self.netgroups.insert(next.addr.slash_sixteen());
         Ok((next.addr, next.port))
+    }
+
+    pub(crate) async fn need_peers(&mut self) -> Result<bool, PeerManagerError> {
+        let peer_count = self.peer_count().await?;
+        if peer_count < self.target_size {
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     #[cfg(feature = "dns")]

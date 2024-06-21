@@ -3,8 +3,10 @@
 //! the underlying machine, there is no privacy if the connected node is also used to broadcast
 //! transactions to the Bitcoin P2P network.
 
-use bitcoin::BlockHash;
+use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
+use kyoto::db::memory::peers::StatelessPeerStore;
 use kyoto::node::messages::NodeMessage;
+use kyoto::BlockHash;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
 use std::collections::HashSet;
 use std::{
@@ -25,8 +27,13 @@ async fn main() {
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
+    // If you don't have any checkpoint stored yet, you can use a predefined header.
+    let (height, hash) = SIGNET_HEADER_CP.last().unwrap();
+    let anchor = HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap());
     // Define a peer to connect to
     let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
+    // Limited devices may not save any peers to disk
+    let peer_store = StatelessPeerStore::new();
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
@@ -36,15 +43,13 @@ async fn main() {
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(HeaderCheckpoint::new(
-            190_000,
-            BlockHash::from_str("0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2")
-                .unwrap(),
-        ))
+        .anchor_checkpoint(anchor)
         // The number of connections we would like to maintain
-        .num_required_peers(1)
-        // Create the node and client without the usual SQL databases
-        .build_node_with_custom_databases((), ())
+        .num_required_peers(2)
+        // We only maintain a list of 32 peers in memory
+        .peer_db_size(32)
+        // Build without the default databases
+        .build_node_with_custom_databases(peer_store, ())
         .await;
     // Run the node
     tokio::task::spawn(async move { node.run().await });
