@@ -11,7 +11,7 @@
   - [x] Condense to single DB
 - [ ] Ban peers
 - [x] Add optional whitelist
-- [ ] Add in-memory `PeerStore` implementor
+- [x] Add in-memory `PeerStore` implementor
 
 #### Headers
 
@@ -78,7 +78,7 @@
   - [x] Update `Inv` of block headers to header chain
 - [ ] Set up "peer config"
   - [x] TCP timeout
-  - [ ] Should ask for IP addresses (More of a DB level thing. We need peers if we are below a certain threshold)
+  - [x] Should ask for IP addresses (More of a DB level thing. We need peers if we are below a certain threshold)
   - [x] Should serve CPF
 - [ ] Set up "timer"
   - [x] Check for DOS
@@ -127,7 +127,7 @@
   - [x] 1.63, stable, beta, nightly
   - [x] Format and clippy
   - [ ] Regtest sync with Bitcoin Core
-  - [ ] On PR
+  - [x] On PR
 
 #### Bindings
 
