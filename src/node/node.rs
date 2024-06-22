@@ -213,7 +213,7 @@ impl Node {
                             .await;
                         node_map
                             .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await
+                            .await;
                     }
                     TxBroadcastPolicy::RandomPeer => {
                         self.dialog
@@ -221,9 +221,10 @@ impl Node {
                             .await;
                         node_map
                             .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await
+                            .await;
                     }
                 }
+                self.dialog.send_data(NodeMessage::TxSent).await;
             }
             // Either handle a message from a remote peer or from our client
             select! {
@@ -548,26 +549,14 @@ impl Node {
     }
 
     async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
-        let state = *self.state.read().await;
         let mut chain = self.chain.lock().await;
-        match state {
-            NodeState::Behind => Some(MainThreadMessage::Disconnect),
-            NodeState::HeadersSynced => {
-                // do something with the block to resolve a conflict
-                None
-            }
-            NodeState::FilterHeadersSynced => None,
-            NodeState::FiltersSynced => {
-                if let Err(e) = chain.scan_block(&block).await {
-                    self.dialog
-                        .send_warning(format!("Unexpected block scanning error: {}", e))
-                        .await;
-                    return Some(MainThreadMessage::Disconnect);
-                }
-                None
-            }
-            NodeState::TransactionsSynced => None,
+        if let Err(e) = chain.scan_block(&block).await {
+            self.dialog
+                .send_warning(format!("Unexpected block scanning error: {}", e))
+                .await;
+            return Some(MainThreadMessage::Disconnect);
         }
+        None
     }
 
     // The block queue holds all the block hashes we may be interested in
@@ -640,14 +629,14 @@ impl Node {
     // First we search the whitelist for peers that we trust. If we don't have any more whitelisted peers,
     // we try to get a new peer from the peer manager. If that fails and our database is empty, we try DNS.
     // Otherwise, the node throws an error.
-    async fn next_peer(&mut self) -> Result<(IpAddr, Option<u16>), NodeError> {
+    async fn next_peer(&mut self) -> Result<(IpAddr, u16), NodeError> {
         if let Some(whitelist) = &mut self.white_list {
             if let Some((ip, port)) = whitelist.pop() {
                 return {
                     self.dialog
                         .send_dialog(format!("Using a peer from the white list: {}", ip))
                         .await;
-                    Ok((ip, Some(port)))
+                    Ok((ip, port))
                 };
             }
         }
@@ -657,7 +646,7 @@ impl Node {
                 self.dialog
                     .send_dialog(format!("Found an existing peer in the database: {}", ip))
                     .await;
-                Ok((ip, Some(port)))
+                Ok((ip, port))
             }
             Err(_) => {
                 let current_count = peer_manager
@@ -682,7 +671,7 @@ impl Node {
                         .next_peer()
                         .await
                         .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
-                    return Ok((next_peer.0, Some(next_peer.1)));
+                    return Ok((next_peer.0, next_peer.1));
                 }
                 self.dialog
                     .send_warning("An error occured while finding a new peer".into())

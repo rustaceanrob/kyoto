@@ -26,12 +26,13 @@ async fn main() {
     addresses.insert(address);
     // Add preferred peers to connect to
     let peer = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
+    let peer_2 = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
     let (mut node, mut client) = builder
         // Add the peers
-        .add_peers(vec![(peer, 38333)])
+        .add_peers(vec![(peer, 38333), (peer_2, 38333)])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
@@ -41,7 +42,7 @@ async fn main() {
                 .unwrap(),
         ))
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .num_required_peers(3)
         // Create the node and client
         .build_node()
         .await;
@@ -63,6 +64,9 @@ async fn main() {
                 NodeMessage::Block(b) => drop(b),
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;
+                }
+                NodeMessage::TxSent => {
+                    tracing::info!("Transaction sent");
                 }
                 NodeMessage::TxBroadcastFailure => {
                     tracing::error!("The transaction could not be broadcast.")

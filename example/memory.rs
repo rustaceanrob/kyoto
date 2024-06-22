@@ -68,6 +68,9 @@ async fn main() {
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;
                 }
+                NodeMessage::TxSent => {
+                    tracing::info!("Transaction sent");
+                }
                 NodeMessage::TxBroadcastFailure => {
                     tracing::error!("The transaction could not be broadcast.")
                 }

@@ -13,7 +13,6 @@ use tokio::{
 use crate::{
     node::channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
     peers::outbound_messages::V1OutboundMessage,
-    prelude::default_port_from_network,
 };
 
 use super::{counter::MessageCounter, reader::Reader};
@@ -32,17 +31,16 @@ impl Peer {
     pub fn new(
         nonce: u32,
         ip_addr: IpAddr,
-        port: Option<u16>,
+        port: u16,
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
     ) -> Self {
-        let default_port = default_port_from_network(&network);
         let message_counter = MessageCounter::new();
         Self {
             nonce,
             ip_addr,
-            port: port.unwrap_or(default_port),
+            port,
             main_thread_sender,
             main_thread_recv,
             network,
@@ -302,22 +300,6 @@ impl Peer {
         }
         Ok(())
     }
-}
-
-pub(crate) struct PeerConfig {
-    find_addrs: FindAddresses,
-    cpf_policy: CPFilterPolicy,
-}
-
-pub(crate) enum FindAddresses {
-    None,
-    Cpf,
-    Any,
-}
-
-pub(crate) enum CPFilterPolicy {
-    BlockHeadersOnly,
-    MustHaveCPFilters,
 }
 
 #[derive(Error, Debug)]

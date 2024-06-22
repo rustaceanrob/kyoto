@@ -88,7 +88,7 @@ impl PeerMap {
         }
     }
 
-    pub async fn dispatch(&mut self, ip: IpAddr, port: Option<u16>) {
+    pub async fn dispatch(&mut self, ip: IpAddr, port: u16) {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
