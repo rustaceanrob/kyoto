@@ -8,7 +8,7 @@ use bitcoin::{
     block::Header,
     consensus::Params,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    Block, BlockHash, Network, ScriptBuf, TxIn, TxOut, Work,
+    Block, BlockHash, Network, ScriptBuf, TxOut, Work,
 };
 use tokio::sync::Mutex;
 
@@ -619,36 +619,33 @@ impl Chain {
 
     // Scan an incoming block for transactions with our scripts
     pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
-        self.block_queue.receive_one();
-        match self.height_of_hash(block.block_hash()).await {
-            Some(height) => {
-                self.dialog
-                    .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
-                    .await;
-                for tx in &block.txdata {
-                    if self.scan_inputs(&tx.input) || self.scan_outputs(&tx.output) {
-                        self.dialog
-                            .send_data(NodeMessage::Transaction(IndexedTransaction::new(
-                                tx.clone(),
-                                height,
-                                block.block_hash(),
-                            )))
-                            .await;
-                        self.dialog
-                            .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
-                            .await;
+        if self.block_queue.received(&block.block_hash()) {
+            match self.height_of_hash(block.block_hash()).await {
+                Some(height) => {
+                    self.dialog
+                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
+                        .await;
+                    for tx in &block.txdata {
+                        if self.scan_outputs(&tx.output) {
+                            self.dialog
+                                .send_data(NodeMessage::Transaction(IndexedTransaction::new(
+                                    tx.clone(),
+                                    height,
+                                    block.block_hash(),
+                                )))
+                                .await;
+                            self.dialog
+                                .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
+                                .await;
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
+                None => Err(BlockScanError::NoBlockHash),
             }
-            None => Err(BlockScanError::NoBlockHash),
+        } else {
+            Ok(())
         }
-    }
-
-    fn scan_inputs(&mut self, inputs: &[TxIn]) -> bool {
-        inputs
-            .iter()
-            .any(|input| self.scripts.contains(&input.script_sig))
     }
 
     fn scan_outputs(&mut self, inputs: &[TxOut]) -> bool {

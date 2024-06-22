@@ -164,7 +164,7 @@ impl HeaderChain {
             .rev()
             .take(10)
             .rev()
-            .map(|(height, header)| (*height, header.clone()))
+            .map(|(height, header)| (*height, *header))
             .collect()
     }
 

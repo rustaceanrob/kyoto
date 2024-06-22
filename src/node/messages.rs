@@ -22,6 +22,8 @@ pub enum NodeMessage {
     Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain
     BlocksDisconnected(Vec<DisconnectedHeader>),
+    /// A transaction was sent to one or more connected peers.
+    TxSent,
     /// A problem occured sending a transaction.
     TxBroadcastFailure,
 }
@@ -45,7 +47,7 @@ impl SyncUpdate {
 
     /// Get the tip of the blockchain after this sync.
     pub fn tip(&self) -> HeaderCheckpoint {
-        self.tip.clone()
+        self.tip
     }
 
     /// Get the ten most recent blocks in chronological order after this sync.
