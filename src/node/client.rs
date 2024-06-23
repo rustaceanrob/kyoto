@@ -5,11 +5,11 @@ use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
 pub use tokio::sync::mpsc::Sender;
 
-use crate::{IndexedBlock, IndexedTransaction, TxBroadcast};
+use crate::{IndexedBlock, TxBroadcast};
 
 use super::{
     error::ClientError,
-    messages::{ClientMessage, NodeMessage},
+    messages::{ClientMessage, NodeMessage, SyncUpdate},
 };
 
 /// A [`Client`] allows for communication with a running node.
@@ -55,33 +55,13 @@ impl Client {
             .map_err(|_| ClientError::SendError)
     }
 
-    /// Collect the transctions received from the node into an in-memory cache,
-    /// returning once the node is synced to its peers.
-    /// To instead respond to transactions or blocks as the node receives them,
-    /// see [`Client::receiver`]. Responding to events is more appropriate for implementations
-    /// such as Lightning Network nodes, which are expected to be online for long durations.
-    pub async fn collect_relevant_tx(&mut self) -> Vec<IndexedTransaction> {
-        let mut txs = Vec::new();
-        let mut rec = self.nrx.subscribe();
-        loop {
-            while let Ok(message) = rec.recv().await {
-                match message {
-                    NodeMessage::Transaction(tx) => txs.push(tx),
-                    NodeMessage::Synced(_) => {
-                        drop(rec);
-                        return txs;
-                    }
-                    _ => (),
-                }
-            }
-        }
-    }
-
     /// Collect the blocks received from the node into an in-memory cache,
     /// returning once the node is synced to its peers.
     /// Only recommended for machines that can tolerate such a memory allocation,
-    /// such as a server or desktop computer.
-    /// For devices like smart phones, see [`Client::collect_relevant_tx`].
+    /// like a server or desktop computer. Internally, this method also creates a new receiver,
+    /// which has more performance implications.
+    /// For devices like smart phones, it is advisable to
+    /// respond to each block in an event loop. See [`Client::split`] or [`Client::receiver`].
     pub async fn collect_relevant_blocks(&mut self) -> Vec<IndexedBlock> {
         let mut rec = self.nrx.subscribe();
         let mut blocks = Vec::new();
@@ -99,33 +79,43 @@ impl Client {
         }
     }
 
-    /// Wait until the client's headers and filters are fully synced to connected peers, dropping any block and transaction messages.
-    pub async fn wait_until_synced(&mut self) {
+    /// Broadcast a transaction and wait for the transaction to be sent to at least one node.
+    /// Note that this may take a significant amount of time depending on your peer and broadcast policy.
+    /// Furthermore, this is not a guarantee that the transaction has been _propagated_ throughout the network,
+    /// only that one or more peers has received the transaction.
+    pub async fn wait_for_broadcast(&mut self, tx: TxBroadcast) -> Result<(), ClientError> {
+        let txid = tx.tx.compute_txid();
+        self.ntx
+            .send(ClientMessage::Broadcast(tx))
+            .await
+            .map_err(|_| ClientError::SendError)?;
         let mut rec = self.nrx.subscribe();
         loop {
             while let Ok(message) = rec.recv().await {
-                if let NodeMessage::Synced(_) = message {
-                    drop(rec);
-                    return;
+                match message {
+                    NodeMessage::TxSent(id) => {
+                        if id.eq(&txid) {
+                            return Ok(());
+                        }
+                    }
+                    NodeMessage::TxBroadcastFailure(id) => {
+                        if id.eq(&txid) {
+                            return Err(ClientError::BroadcastFailure);
+                        }
+                    }
+                    _ => continue,
                 }
             }
         }
     }
 
-    /// Print a stream of logs to the console. This function continually loops for the duration of the program, and is not particularly helpful in production applications.
-    /// See [`Client::receiver`] to listen for events from the node.
-    pub async fn print_log_stream(&mut self) {
+    /// Wait until the client's headers and filters are fully synced to connected peers, dropping any block and transaction messages.
+    pub async fn wait_until_synced(&mut self) -> SyncUpdate {
         let mut rec = self.nrx.subscribe();
         loop {
             while let Ok(message) = rec.recv().await {
-                match message {
-                    NodeMessage::Dialog(message) => {
-                        println!("\x1b[32mInfo\x1b[0m {}", message);
-                    }
-                    NodeMessage::Warning(message) => {
-                        println!("\x1b[93mWarn\x1b[0m {}", message);
-                    }
-                    _ => (),
+                if let NodeMessage::Synced(update) = message {
+                    return update;
                 }
             }
         }

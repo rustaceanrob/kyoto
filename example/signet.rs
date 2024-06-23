@@ -65,11 +65,11 @@ async fn main() {
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;
                 }
-                NodeMessage::TxSent => {
-                    tracing::info!("Transaction sent");
+                NodeMessage::TxSent(t) => {
+                    tracing::info!("Transaction sent. TXID: {t}");
                 }
-                NodeMessage::TxBroadcastFailure => {
-                    tracing::error!("The transaction could not be broadcast.")
+                NodeMessage::TxBroadcastFailure(t) => {
+                    tracing::error!("The transaction could not be broadcast. TXID: {t}")
                 }
                 NodeMessage::Synced(update) => {
                     tracing::info!("Synced chain up to block {}", update.tip.height);

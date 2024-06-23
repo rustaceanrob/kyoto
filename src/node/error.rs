@@ -28,4 +28,7 @@ pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
     #[error("the receiver of this message was dropped from memory")]
     SendError,
+    /// The transaction was not broadcast to any peers.
+    #[error("the transaction was not broadcast to any peers")]
+    BroadcastFailure,
 }

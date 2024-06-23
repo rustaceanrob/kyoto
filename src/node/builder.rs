@@ -82,7 +82,7 @@ impl NodeBuilder {
             .unwrap()
     }
 
-    pub async fn build_node_with_custom_databases(
+    pub async fn build_with_databases(
         &self,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
