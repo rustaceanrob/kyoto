@@ -31,7 +31,7 @@ use crate::{
     },
     node::{dialog::Dialog, messages::NodeMessage},
     prelude::{params_from_network, MEDIAN_TIME_PAST},
-    IndexedBlock, IndexedTransaction,
+    IndexedBlock,
 };
 
 const MAX_REORG_DEPTH: u32 = 5_000;
@@ -625,20 +625,6 @@ impl Chain {
                     self.dialog
                         .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
                         .await;
-                    for tx in &block.txdata {
-                        if self.scan_outputs(&tx.output) {
-                            self.dialog
-                                .send_data(NodeMessage::Transaction(IndexedTransaction::new(
-                                    tx.clone(),
-                                    height,
-                                    block.block_hash(),
-                                )))
-                                .await;
-                            self.dialog
-                                .send_dialog(format!("Found transaction: {}", tx.compute_txid()))
-                                .await;
-                        }
-                    }
                     Ok(())
                 }
                 None => Err(BlockScanError::NoBlockHash),
@@ -648,6 +634,7 @@ impl Chain {
         }
     }
 
+    // Should we care about this block
     fn scan_outputs(&mut self, inputs: &[TxOut]) -> bool {
         inputs
             .iter()

@@ -178,7 +178,7 @@ impl Node {
             // Try to advance the state of the node and remove old connections
             self.advance_state().await;
             node_map.clean().await;
-            // Rehydrate on peers when lower than a threshold
+            // Find more peers when lower than the desired threshold.
             if node_map.live() < self.next_required_peers().await {
                 self.dialog
                     .send_dialog(format!(
@@ -203,6 +203,7 @@ impl Node {
             // If we have a transaction to broadcast and we are connected to peers, we should broadcast it
             if node_map.live().ge(&self.required_peers) && !tx_broadcaster.is_empty() {
                 let transaction = tx_broadcaster.next().unwrap();
+                let txid = transaction.tx.compute_txid();
                 match transaction.broadcast_policy {
                     TxBroadcastPolicy::AllPeers => {
                         self.dialog
@@ -224,7 +225,7 @@ impl Node {
                             .await;
                     }
                 }
-                self.dialog.send_data(NodeMessage::TxSent).await;
+                self.dialog.send_data(NodeMessage::TxSent(txid)).await;
             }
             // Either handle a message from a remote peer or from our client
             select! {

@@ -1,7 +1,5 @@
-//! This example demonstrates a limited resource device connecting to a single peer.
-//! While this configuration limits dependencies and requires practically no storage on
-//! the underlying machine, there is no privacy if the connected node is also used to broadcast
-//! transactions to the Bitcoin P2P network.
+//! This example demonstrates a limited resource device running with no default features.
+//! Note that, without DNS enabled, at least one peer must be provided when building the node.
 
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::db::memory::peers::StatelessPeerStore;
@@ -49,7 +47,7 @@ async fn main() {
         // We only maintain a list of 32 peers in memory
         .peer_db_size(32)
         // Build without the default databases
-        .build_node_with_custom_databases(peer_store, ())
+        .build_with_databases(peer_store, ())
         .await;
     // Run the node
     tokio::task::spawn(async move { node.run().await });
@@ -68,11 +66,11 @@ async fn main() {
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;
                 }
-                NodeMessage::TxSent => {
-                    tracing::info!("Transaction sent");
+                NodeMessage::TxSent(t) => {
+                    tracing::info!("Transaction sent. TXID: {t}");
                 }
-                NodeMessage::TxBroadcastFailure => {
-                    tracing::error!("The transaction could not be broadcast.")
+                NodeMessage::TxBroadcastFailure(t) => {
+                    tracing::error!("The transaction could not be broadcast. TXID: {t}")
                 }
                 NodeMessage::Synced(update) => {
                     tracing::info!("Synced chain up to block {}", update.tip().height,);

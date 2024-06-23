@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use bitcoin::{block::Header, ScriptBuf};
+use bitcoin::{block::Header, ScriptBuf, Txid};
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
@@ -23,9 +23,9 @@ pub enum NodeMessage {
     /// Blocks were reorganized out of the chain
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A transaction was sent to one or more connected peers.
-    TxSent,
+    TxSent(Txid),
     /// A problem occured sending a transaction.
-    TxBroadcastFailure,
+    TxBroadcastFailure(Txid),
 }
 
 /// The node has synced to a new tip of the chain.

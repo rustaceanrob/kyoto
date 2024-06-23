@@ -17,6 +17,8 @@ use crate::{
 
 use super::{counter::MessageCounter, reader::Reader};
 
+const CONNECTION_TIMEOUT: u64 = 3;
+
 pub(crate) struct Peer {
     nonce: u32,
     ip_addr: IpAddr,
@@ -50,7 +52,7 @@ impl Peer {
 
     pub async fn connect(&mut self) -> Result<(), PeerError> {
         let timeout = tokio::time::timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(CONNECTION_TIMEOUT),
             TcpStream::connect((self.ip_addr, self.port)),
         )
         .await
