@@ -456,6 +456,10 @@ impl Node {
                         return Some(MainThreadMessage::GetFilterHeaders(
                             chain.next_cf_header_message().await,
                         ));
+                    } else if !chain.is_filters_synced() {
+                        return Some(MainThreadMessage::GetFilters(
+                            chain.next_filter_message().await,
+                        ));
                     }
                     return None;
                 }

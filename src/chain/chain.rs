@@ -378,6 +378,8 @@ impl Chain {
                 self.dialog
                     .send_data(NodeMessage::BlocksDisconnected(reorged))
                     .await;
+                self.clear_filter_headers().await;
+                self.clear_filters().await;
                 self.flush_over_height(stem).await;
                 Ok(())
             } else {
@@ -498,11 +500,6 @@ impl Chain {
             return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
         }
         Ok(())
-    }
-
-    // If we receive an inventory, our merge queue was interrupted
-    pub(crate) fn clear_filter_header_queue(&mut self) {
-        self.cf_header_chain.clear_queue()
     }
 
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
@@ -646,6 +643,12 @@ impl Chain {
         for script in scripts {
             self.scripts.insert(script);
         }
+    }
+
+    // We found a reorg and some filters are no longer valid.
+    async fn clear_filter_headers(&mut self) {
+        self.cf_header_chain.clear_queue();
+        self.cf_header_chain.clear_headers();
     }
 
     // Clear the filter header cache to rescan the filters for new scripts.

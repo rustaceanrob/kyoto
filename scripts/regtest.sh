@@ -1,0 +1,1 @@
+bitcoind --chain=regtest --txindex --blockfilterindex --peerblockfilters --rpcport=18443 --rpcuser=test --rpcpassword=kyoto --rest=1 --server=1 --listen=1
