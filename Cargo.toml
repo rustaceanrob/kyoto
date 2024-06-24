@@ -42,6 +42,7 @@ database = ["rusqlite"]
 dns = ["dns-lookup"]
 
 [dev-dependencies]
+bitcoincore-rpc = "0.19.0"
 hex = { version = "0.4.0" }
 tracing = "0.1"
 tracing-subscriber = "0.3"

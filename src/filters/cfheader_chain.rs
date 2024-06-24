@@ -139,6 +139,10 @@ impl CFHeaderChain {
         self.merged_queue.clear()
     }
 
+    pub(crate) fn clear_headers(&mut self) {
+        self.header_chain.clear();
+    }
+
     pub(crate) async fn join(&mut self, headers: &[Header]) {
         headers
             .iter()
