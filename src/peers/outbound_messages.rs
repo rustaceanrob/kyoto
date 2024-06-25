@@ -18,6 +18,8 @@ use bitcoin::{
 
 use crate::{node::channel_messages::GetBlockConfig, prelude::default_port_from_network};
 
+use super::traits::MessageGenerator;
+
 pub const PROTOCOL_VERSION: u32 = 70015;
 
 pub(crate) struct V1OutboundMessage {
@@ -28,8 +30,10 @@ impl V1OutboundMessage {
     pub(crate) fn new(network: Network) -> Self {
         Self { network }
     }
+}
 
-    pub(crate) fn new_version_message(&self, port: Option<u16>) -> Vec<u8> {
+impl MessageGenerator for V1OutboundMessage {
+    fn version_message(&mut self, port: Option<u16>) -> Vec<u8> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
@@ -55,18 +59,18 @@ impl V1OutboundMessage {
         serialize(&data)
     }
 
-    pub(crate) fn new_verack(&self) -> Vec<u8> {
+    fn verack(&mut self) -> Vec<u8> {
         let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::Verack);
         serialize(&data)
     }
 
-    pub(crate) fn new_get_addr(&self) -> Vec<u8> {
+    fn get_addr(&mut self) -> Vec<u8> {
         let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetAddr);
         serialize(&data)
     }
 
-    pub(crate) fn new_get_headers(
-        &self,
+    fn get_headers(
+        &mut self,
         locator_hashes: Vec<BlockHash>,
         stop_hash: Option<BlockHash>,
     ) -> Vec<u8> {
@@ -77,7 +81,7 @@ impl V1OutboundMessage {
         serialize(&data)
     }
 
-    pub(crate) fn new_cf_headers(&self, message: GetCFHeaders) -> Vec<u8> {
+    fn cf_headers(&mut self, message: GetCFHeaders) -> Vec<u8> {
         let data = &mut RawNetworkMessage::new(
             self.network.magic(),
             NetworkMessage::GetCFHeaders(message),
@@ -85,26 +89,26 @@ impl V1OutboundMessage {
         serialize(&data)
     }
 
-    pub(crate) fn new_filters(&self, message: GetCFilters) -> Vec<u8> {
+    fn filters(&mut self, message: GetCFilters) -> Vec<u8> {
         let data =
             &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFilters(message));
         serialize(&data)
     }
 
-    pub(crate) fn new_block(&self, config: GetBlockConfig) -> Vec<u8> {
+    fn block(&mut self, config: GetBlockConfig) -> Vec<u8> {
         let inv = Inventory::Block(config.locator);
         let data =
             &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetData(vec![inv]));
         serialize(&data)
     }
 
-    pub(crate) fn new_pong(&self, nonce: u64) -> Vec<u8> {
+    fn pong(&mut self, nonce: u64) -> Vec<u8> {
         let msg = NetworkMessage::Pong(nonce);
         let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
         serialize(&data)
     }
 
-    pub(crate) fn new_transaction(&self, transaction: Transaction) -> Vec<u8> {
+    fn transaction(&mut self, transaction: Transaction) -> Vec<u8> {
         let msg = NetworkMessage::Tx(transaction);
         let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
         serialize(&data)
