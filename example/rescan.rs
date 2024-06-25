@@ -3,6 +3,7 @@
 //! blocks.
 
 use bitcoin::BlockHash;
+use kyoto::db::sqlite::peers::SqlitePeerDb;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
 use std::collections::HashSet;
@@ -21,6 +22,8 @@ async fn main() {
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
+    // Use the SQL lite peer database.
+    let peer_store = SqlitePeerDb::new(bitcoin::Network::Signet, None).unwrap();
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
@@ -35,8 +38,8 @@ async fn main() {
         ))
         // The number of connections we would like to maintain
         .num_required_peers(1)
-        // Create the node and client
-        .build_node()
+        // Create the node and client, choosing not to store headers
+        .build_with_databases(peer_store, ())
         .await;
     // Run the node and wait for the sync message;
     tokio::task::spawn(async move { node.run().await });

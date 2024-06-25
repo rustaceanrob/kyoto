@@ -21,12 +21,15 @@ const PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
     banned BOOLEAN NOT NULL
 )";
 
+/// Structure to create a SQL Lite backend to store peers.
 #[derive(Debug)]
-pub(crate) struct SqlitePeerDb {
+pub struct SqlitePeerDb {
     conn: Arc<Mutex<Connection>>,
 }
 
 impl SqlitePeerDb {
+    /// Create a new peer storage with an optional directory path. If no path is provided,
+    /// the file will be stored in a `data` subdirectory where the program is ran.
     pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, DatabaseError> {
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
