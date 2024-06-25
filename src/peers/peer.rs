@@ -15,7 +15,7 @@ use crate::{
     peers::outbound_messages::V1OutboundMessage,
 };
 
-use super::{counter::MessageCounter, reader::Reader};
+use super::{counter::MessageCounter, reader::Reader, traits::MessageGenerator};
 
 const CONNECTION_TIMEOUT: u64 = 3;
 
@@ -70,8 +70,8 @@ impl Peer {
                 .await;
             return Err(PeerError::TcpConnectionFailed);
         }
-        let outbound_messages = V1OutboundMessage::new(self.network);
-        let version_message = outbound_messages.new_version_message(None);
+        let mut outbound_messages = V1OutboundMessage::new(self.network);
+        let version_message = outbound_messages.version_message(None);
         stream
             .write_all(&version_message)
             .await
@@ -97,7 +97,7 @@ impl Peer {
                 peer_message = rx.recv() => {
                     match peer_message {
                         Some(message) => {
-                            match self.handle_peer_message(message, &mut writer, &outbound_messages).await {
+                            match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
@@ -115,7 +115,7 @@ impl Peer {
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
-                            match self.main_thread_request(message, &mut writer, &outbound_messages).await {
+                            match self.main_thread_request(message, &mut writer, &mut outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
@@ -133,12 +133,15 @@ impl Peer {
         }
     }
 
-    async fn handle_peer_message(
+    async fn handle_peer_message<M>(
         &mut self,
         message: PeerMessage,
         writer: &mut OwnedWriteHalf,
-        message_generator: &V1OutboundMessage,
-    ) -> Result<(), PeerError> {
+        message_generator: &mut M,
+    ) -> Result<(), PeerError>
+    where
+        M: MessageGenerator,
+    {
         match message {
             PeerMessage::Version(version) => {
                 self.message_counter.got_version();
@@ -150,7 +153,7 @@ impl Peer {
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
                 writer
-                    .write_all(&message_generator.new_verack())
+                    .write_all(&message_generator.verack())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
                 Ok(())
@@ -226,7 +229,7 @@ impl Peer {
             }
             PeerMessage::Ping(nonce) => {
                 writer
-                    .write_all(&message_generator.new_pong(nonce))
+                    .write_all(&message_generator.pong(nonce))
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
                 Ok(())
@@ -245,23 +248,26 @@ impl Peer {
         }
     }
 
-    async fn main_thread_request(
+    async fn main_thread_request<M>(
         &mut self,
         request: MainThreadMessage,
         writer: &mut OwnedWriteHalf,
-        message_generator: &V1OutboundMessage,
-    ) -> Result<(), PeerError> {
+        message_generator: &mut M,
+    ) -> Result<(), PeerError>
+    where
+        M: MessageGenerator,
+    {
         match request {
             MainThreadMessage::GetAddr => {
                 self.message_counter.sent_addrs();
                 writer
-                    .write_all(&message_generator.new_get_addr())
+                    .write_all(&message_generator.get_addr())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
-                let message = message_generator.new_get_headers(config.locators, config.stop_hash);
+                let message = message_generator.get_headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
                     .await
@@ -269,7 +275,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 self.message_counter.sent_filter_header();
-                let message = message_generator.new_cf_headers(config);
+                let message = message_generator.cf_headers(config);
                 writer
                     .write_all(&message)
                     .await
@@ -277,7 +283,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
-                let message = message_generator.new_filters(config);
+                let message = message_generator.filters(config);
                 writer
                     .write_all(&message)
                     .await
@@ -285,14 +291,14 @@ impl Peer {
             }
             MainThreadMessage::GetBlock(message) => {
                 self.message_counter.sent_block();
-                let message = message_generator.new_block(message);
+                let message = message_generator.block(message);
                 writer
                     .write_all(&message)
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::BroadcastTx(transaction) => {
-                let message = message_generator.new_transaction(transaction);
+                let message = message_generator.transaction(transaction);
                 writer
                     .write_all(&message)
                     .await
