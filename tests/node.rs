@@ -45,7 +45,7 @@ async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
 }
 
 #[tokio::test]
-async fn reorg() {
+async fn test_reorg() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if let Err(_) = rpc_result {
@@ -55,6 +55,7 @@ async fn reorg() {
     let rpc = rpc_result.unwrap();
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
     rpc.generate_to_address(10, &miner).unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
     let best = rpc.get_best_block_hash().unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
     // Make sure we sync up to the tip under usual conditions.
@@ -104,7 +105,7 @@ async fn reorg() {
 }
 
 #[tokio::test]
-async fn broadcast() {
+async fn test_broadcast() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if let Err(_) = rpc_result {
@@ -176,5 +177,40 @@ async fn broadcast() {
         }
     }
     client.shutdown().await.unwrap();
+    rpc.stop().unwrap();
+}
+
+#[tokio::test]
+async fn test_long_chain() {
+    let rpc_result = initialize_client();
+    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
+    if let Err(_) = rpc_result {
+        println!("Bitcoin Core is not running. Skipping this test...");
+        return;
+    }
+    let rpc = rpc_result.unwrap();
+    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
+    rpc.generate_to_address(500, &miner).unwrap();
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    let best = rpc.get_best_block_hash().unwrap();
+    // Make sure we sync up to the tip under usual conditions.
+    let mut scripts = HashSet::new();
+    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    scripts.insert(other.into());
+    let (mut node, mut client) = new_node(scripts.clone()).await;
+    tokio::task::spawn(async move { node.run().await });
+    let (mut sender, mut recv) = client.split();
+    while let Ok(message) = recv.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::Synced(update) => {
+                assert_eq!(update.tip().hash, best);
+                break;
+            }
+            _ => {}
+        }
+    }
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
