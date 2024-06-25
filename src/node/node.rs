@@ -26,11 +26,12 @@ use crate::{
         error::HeaderSyncError,
     },
     db::{
+        error::{DatabaseError, PeerManagerError},
         peer_man::PeerManager,
         traits::{HeaderStore, PeerStore},
     },
     filters::cfheader_chain::CFHeaderSyncResult,
-    node::{error::PersistenceError, peer_map::PeerMap},
+    node::peer_map::PeerMap,
     TxBroadcastPolicy,
 };
 
@@ -119,7 +120,7 @@ impl Node {
             required_peers,
         )
         .await
-        .map_err(|_| NodeError::LoadError(PersistenceError::HeaderLoadError))?;
+        .map_err(NodeError::HeaderDatabase)?;
         // Initialize the height of the chain
         let best_known_height = loaded_chain.height();
         let chain = Arc::new(Mutex::new(loaded_chain));
@@ -657,7 +658,7 @@ impl Node {
                 let current_count = peer_manager
                     .peer_count()
                     .await
-                    .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
+                    .map_err(NodeError::PeerDatabase)?;
                 if current_count < 1 {
                     self.dialog
                         .send_warning("There are no peers in the database".into())
@@ -670,18 +671,20 @@ impl Node {
                     peer_manager
                         .bootstrap()
                         .await
-                        .map_err(|_| NodeError::DnsFailure)?;
+                        .map_err(NodeError::PeerDatabase)?;
 
                     let next_peer = peer_manager
                         .next_peer()
                         .await
-                        .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))?;
+                        .map_err(NodeError::PeerDatabase)?;
                     return Ok((next_peer.0, next_peer.1));
                 }
                 self.dialog
                     .send_warning("An error occured while finding a new peer".into())
                     .await;
-                Err(NodeError::LoadError(PersistenceError::PeerLoadFailure))
+                Err(NodeError::PeerDatabase(PeerManagerError::Database(
+                    DatabaseError::Load,
+                )))
             }
         }
     }
@@ -692,6 +695,6 @@ impl Node {
             .await
             .need_peers()
             .await
-            .map_err(|_| NodeError::LoadError(PersistenceError::PeerLoadFailure))
+            .map_err(NodeError::PeerDatabase)
     }
 }

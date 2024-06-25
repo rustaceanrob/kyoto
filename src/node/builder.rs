@@ -78,7 +78,7 @@ impl NodeBuilder {
             SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();
         Node::new_from_config(&self.config, self.network, peer_store, header_store)
             .await
-            .map_err(|_| DatabaseError::LoadError)
+            .map_err(|_| DatabaseError::Load)
             .unwrap()
     }
 
@@ -89,7 +89,7 @@ impl NodeBuilder {
     ) -> (Node, Client) {
         Node::new_from_config(&self.config, self.network, peer_store, header_store)
             .await
-            .map_err(|_| DatabaseError::LoadError)
+            .map_err(|_| DatabaseError::Load)
             .unwrap()
     }
 }

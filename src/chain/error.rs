@@ -1,43 +1,47 @@
 use thiserror::Error;
 
+use crate::db::error::DatabaseError;
+
 #[derive(Error, Debug, PartialEq)]
-pub enum HeaderSyncError {
-    #[error("empty headers message")]
+pub(crate) enum HeaderSyncError {
+    #[error("Empty headers message.")]
     EmptyMessage,
-    #[error("the headers received do not connect")]
+    #[error("The headers received do not connect.")]
     HeadersNotConnected,
-    #[error("one or more headers does not match its own PoW target")]
+    #[error("One or more headers does not match its own PoW target.")]
     InvalidHeaderWork,
-    #[error("one or more headers does not have a valid block time")]
+    #[error("One or more headers does not have a valid block time.")]
     InvalidHeaderTimes,
-    #[error("the sync peer sent us a discontinuous chain")]
+    #[error("The sync peer sent us a discontinuous chain.")]
     PreCheckpointFork,
-    #[error("a checkpoint in the chain did not match")]
+    #[error("A checkpoint in the chain did not match.")]
     InvalidCheckpoint,
-    #[error("a computed difficulty adjustment did not match")]
+    #[error("A computed difficulty adjustment did not match.")]
     MiscalculatedDifficulty,
-    #[error("the peer sent us a chain that does not connect to any header of ours")]
+    #[error("The peer sent us a chain that does not connect to any header of ours.")]
     FloatingHeaders,
-    #[error("less work fork")]
+    #[error("A peer sent us a fork with less work than our chain.")]
     LessWorkFork,
-    #[error("the database could not load a fork")]
+    #[error("The database could not load a fork.")]
     DbError,
 }
 
+/// Errors with the block header representation that prevent the node from operating.
 #[derive(Error, Debug)]
 pub enum HeaderPersistenceError {
-    #[error("the headers loaded from the persistence layer do not match the network")]
-    GenesisMismatch,
-    #[error("the headers loaded from persistence do not link together")]
+    /// The block headers do not point to each other in a list.
+    #[error("The headers loaded from persistence do not link together.")]
     HeadersDoNotLink,
-    #[error("the headers loaded do not match a known checkpoint")]
+    /// Some predefined checkpoint does not match.
+    #[error("The headers loaded do not match a known checkpoint.")]
     MismatchedCheckpoints,
-    #[error("the headers could not be loaded from sqlite")]
-    SQLite,
+    /// A database error.
+    #[error("The headers could not be loaded from sqlite.")]
+    Database(DatabaseError),
 }
 
 #[derive(Error, Debug)]
-pub enum BlockScanError {
-    #[error("unknown block hash")]
+pub(crate) enum BlockScanError {
+    #[error("The block sent to us does not have a known hash.")]
     NoBlockHash,
 }

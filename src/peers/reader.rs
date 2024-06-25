@@ -235,14 +235,14 @@ impl Decodable for V1Header {
 
 #[derive(Error, Debug)]
 pub enum PeerReadError {
-    #[error("reading bytes off the stream failed")]
+    #[error("Reading bytes off the stream failed.")]
     ReadBuffer,
-    #[error("the message could not be properly deserialized")]
+    #[error("The message could not be properly deserialized.")]
     Deserialization,
-    #[error("DOS protection")]
+    #[error("DOS protection.")]
     TooManyMessages,
-    #[error("peer timeout")]
+    #[error("Peer timeout.")]
     PeerTimeout,
-    #[error("sending over the channel failed")]
+    #[error("Sending over the channel failed.")]
     MpscChannel,
 }
