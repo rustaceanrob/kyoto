@@ -78,7 +78,7 @@ impl PeerStore for () {
     }
 
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
-        Err(DatabaseError::LoadError)
+        Err(DatabaseError::Load)
     }
 
     async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {

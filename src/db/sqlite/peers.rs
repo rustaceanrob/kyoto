@@ -37,10 +37,9 @@ impl SqlitePeerDb {
         if !path.exists() {
             fs::create_dir_all(&path).unwrap();
         }
-        let conn =
-            Connection::open(path.join("peers.db")).map_err(|_| DatabaseError::WriteError)?;
+        let conn = Connection::open(path.join("peers.db")).map_err(|_| DatabaseError::Open)?;
         conn.execute(PEER_SCHEMA, [])
-            .map_err(|_| DatabaseError::WriteError)?;
+            .map_err(|_| DatabaseError::Write)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -66,7 +65,7 @@ impl PeerStore for SqlitePeerDb {
                 peer.banned,
             ],
         )
-        .map_err(|_| DatabaseError::WriteError)?;
+        .map_err(|_| DatabaseError::Write)?;
         Ok(())
     }
 
@@ -74,21 +73,21 @@ impl PeerStore for SqlitePeerDb {
         let lock = self.conn.lock().await;
         let mut stmt = lock
             .prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")
-            .map_err(|_| DatabaseError::LoadError)?;
-        let mut rows = stmt.query([]).map_err(|_| DatabaseError::LoadError)?;
-        if let Some(row) = rows.next().map_err(|_| DatabaseError::LoadError)? {
-            let ip_addr: String = row.get(0).map_err(|_| DatabaseError::LoadError)?;
-            let port: u16 = row.get(1).map_err(|_| DatabaseError::LoadError)?;
-            let service_flags: u64 = row.get(2).map_err(|_| DatabaseError::LoadError)?;
-            let tried: bool = row.get(3).map_err(|_| DatabaseError::LoadError)?;
-            let banned: bool = row.get(4).map_err(|_| DatabaseError::LoadError)?;
+            .map_err(|_| DatabaseError::Write)?;
+        let mut rows = stmt.query([]).map_err(|_| DatabaseError::Load)?;
+        if let Some(row) = rows.next().map_err(|_| DatabaseError::Load)? {
+            let ip_addr: String = row.get(0).map_err(|_| DatabaseError::Load)?;
+            let port: u16 = row.get(1).map_err(|_| DatabaseError::Load)?;
+            let service_flags: u64 = row.get(2).map_err(|_| DatabaseError::Load)?;
+            let tried: bool = row.get(3).map_err(|_| DatabaseError::Load)?;
+            let banned: bool = row.get(4).map_err(|_| DatabaseError::Load)?;
             let ip = ip_addr
                 .parse::<IpAddr>()
-                .map_err(|_| DatabaseError::LoadError)?;
+                .map_err(|_| DatabaseError::Deserialization)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             return Ok(PersistedPeer::new(ip, port, services, tried, banned));
         } else {
-            return Err(DatabaseError::LoadError);
+            return Err(DatabaseError::Load);
         }
     }
 
@@ -96,10 +95,10 @@ impl PeerStore for SqlitePeerDb {
         let lock = self.conn.lock().await;
         let mut stmt = lock
             .prepare("SELECT COUNT(*) FROM peers WHERE banned = false")
-            .map_err(|_| DatabaseError::LoadError)?;
+            .map_err(|_| DatabaseError::Load)?;
         let count: u32 = stmt
             .query_row([], |row| row.get(0))
-            .map_err(|_| DatabaseError::LoadError)?;
+            .map_err(|_| DatabaseError::Deserialization)?;
         Ok(count)
     }
 }

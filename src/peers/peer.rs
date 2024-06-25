@@ -312,14 +312,14 @@ impl Peer {
 
 #[derive(Error, Debug)]
 pub enum PeerError {
-    #[error("the peer's TCP port was closed or we could not connect")]
+    #[error("The peer's TCP port was closed or we could not connect.")]
     TcpConnectionFailed,
-    #[error("a message could not be written to the peer")]
+    #[error("A message could not be written to the peer.")]
     BufferWrite,
-    #[error("experienced an error sending a message over the channel")]
+    #[error("Experienced an error sending a message over the channel.")]
     ThreadChannel,
-    #[error("the main thread advised this peer to disconnect")]
+    #[error("The main thread advised this peer to disconnect.")]
     DisconnectCommand,
-    #[error("the ereading thread encountered an error")]
+    #[error("The ereading thread encountered an error.")]
     Reader,
 }

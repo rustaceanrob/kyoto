@@ -64,7 +64,7 @@ impl Chain {
         let mut loaded_headers = db
             .load(anchor.height)
             .await
-            .map_err(|_| HeaderPersistenceError::SQLite)?;
+            .map_err(HeaderPersistenceError::Database)?;
         if loaded_headers.len().gt(&0) {
             if loaded_headers
                 .values()

@@ -43,8 +43,8 @@ impl PeerStore for StatelessPeerStore {
             iter.choose(&mut rng).map(|(key, _)| *key)
         };
         match random_peer {
-            Some(ip) => self.list.remove(&ip).ok_or(DatabaseError::LoadError),
-            None => Err(DatabaseError::LoadError),
+            Some(ip) => self.list.remove(&ip).ok_or(DatabaseError::Load),
+            None => Err(DatabaseError::Load),
         }
     }
 
