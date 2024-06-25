@@ -24,13 +24,16 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     nonce INTEGER NOT NULL
 ) STRICT";
 
+/// Header storage implementation with SQL Lite.
 #[derive(Debug)]
-pub(crate) struct SqliteHeaderDb {
+pub struct SqliteHeaderDb {
     network: Network,
     conn: Arc<Mutex<Connection>>,
 }
 
 impl SqliteHeaderDb {
+    /// Create a new [`SqliteHeaderDb`] with an optional file path. If no path is provided,
+    /// the file will be stored in a `data` subdirectory where the program is ran.
     pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, DatabaseError> {
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
@@ -51,7 +54,6 @@ impl SqliteHeaderDb {
 
 #[async_trait]
 impl HeaderStore for SqliteHeaderDb {
-    // load all the known headers from storage
     async fn load(&mut self, anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError> {
         let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";

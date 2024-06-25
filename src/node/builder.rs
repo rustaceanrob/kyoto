@@ -72,7 +72,7 @@ impl NodeBuilder {
     /// Consume the node builder and receive a [`Node`] and [`Client`].
     #[cfg(feature = "database")]
     pub async fn build_node(&self) -> (Node, Client) {
-        use crate::db::sqlite::{header_db::SqliteHeaderDb, peer_db::SqlitePeerDb};
+        use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone()).unwrap();
         let header_store =
             SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();

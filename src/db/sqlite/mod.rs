@@ -1,2 +1,4 @@
-pub(crate) mod header_db;
-pub(crate) mod peer_db;
+/// SQL block header storage.
+pub mod headers;
+/// SQL peer storage.
+pub mod peers;
