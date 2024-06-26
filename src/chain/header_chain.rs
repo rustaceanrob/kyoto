@@ -218,7 +218,7 @@ impl HeaderChain {
                     .insert(current_anchor + 1 + index as u32, *header);
             }
         }
-        reorged
+        reorged.into_iter().rev().collect()
     }
 
     fn remove(&mut self, height: &u32) {
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(reorged.len(), 2);
         assert_eq!(
             reorged.iter().map(|f| f.header).collect::<Vec<Header>>(),
-            vec![block_2, block_1]
+            vec![block_1, block_2]
         );
         assert_eq!(vec![new_block_1, new_block_2], chain.values());
         let no_org = chain.extend(&batch_2);

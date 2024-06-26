@@ -29,7 +29,7 @@ async fn main() {
     let (height, hash) = SIGNET_HEADER_CP.last().unwrap();
     let anchor = HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap());
     // Define a peer to connect to
-    let peer = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
+    let peer = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
     // Limited devices may not save any peers to disk
     let peer_store = StatelessPeerStore::new();
     // Create a new node builder
