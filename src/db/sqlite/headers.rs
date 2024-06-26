@@ -142,8 +142,8 @@ impl HeaderStore for SqliteHeaderDb {
     ) -> Result<(), DatabaseError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction().map_err(|_| DatabaseError::Write)?;
-        for (h, header) in header_chain {
-            if h.ge(&height) {
+        for (new_height, header) in header_chain {
+            if new_height.ge(&height) {
                 let hash: String = header.block_hash().to_string();
                 let version: i32 = header.version.to_consensus();
                 let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
@@ -155,7 +155,7 @@ impl HeaderStore for SqliteHeaderDb {
                 tx.execute(
                     stmt,
                     params![
-                        height,
+                        new_height,
                         hash,
                         version,
                         prev_hash,
