@@ -203,7 +203,7 @@ impl Chain {
                 let mut db_lock = self.db.lock().await;
                 let hash = db_lock.hash_at(older_locator).await;
                 if let Ok(Some(locator)) = hash {
-                    vec![locator]
+                    vec![self.tip(), locator]
                 } else {
                     // We couldn't find a header deep enough to send over. Just proceed as usual
                     self.header_chain.locators()
@@ -249,7 +249,7 @@ impl Chain {
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // If our chain already has the last header in the message there is no new information
-        if self.contains_header(header_batch.last()) {
+        if self.contains_hash(header_batch.last().block_hash()) {
             return Ok(());
         }
         let initially_syncing = !self.checkpoints.is_exhausted();
@@ -270,7 +270,7 @@ impl Chain {
             if !self.contains_hash(fork_start_hash) {
                 self.load_fork(&header_batch).await?;
             }
-            //
+            // Check if the fork has more work.
             self.evaluate_fork(&header_batch).await?;
         }
         Ok(())
