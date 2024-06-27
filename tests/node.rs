@@ -71,7 +71,11 @@ async fn new_node_anchor_sql(
     (node, client)
 }
 
-// This test may be run as much as required without altering Bitcoin Core's database.
+// Steps to run this test.
+// 1. Run `scripts/regtest.sh`
+// 2. Run `cargo test test_reorg -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_reorg() {
     let rpc_result = initialize_client();
@@ -135,7 +139,12 @@ async fn test_reorg() {
     rpc.stop().unwrap();
 }
 
-// This test may be repeated as much as required without altering Bitcoin Core's database.
+// Steps to run this test.
+// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
+// 2. Run `scripts/regtest.sh`
+// 3. Run `cargo test test_broadcast -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_broadcast() {
     let rpc_result = initialize_client();
@@ -218,6 +227,11 @@ async fn test_broadcast() {
     rpc.stop().unwrap();
 }
 
+// Steps to run this test.
+// 1. Run `scripts/regtest.sh`
+// 2. Run `cargo test test_long_chain -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_long_chain() {
     let rpc_result = initialize_client();
@@ -253,7 +267,13 @@ async fn test_long_chain() {
     rpc.stop().unwrap();
 }
 
-// This test requires a clean Bitcoin Core regtest instance or unchange headers from Bitcoin Core since the last test.
+// Steps to run this test.
+// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
+// 2. Delete `data` from your root directory, if it exists.
+// 3. Run `scripts/regtest.sh`
+// 4. Run `cargo test test_sql_reorg -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_sql_reorg() {
     let rpc_result = initialize_client();
@@ -344,7 +364,13 @@ async fn test_sql_reorg() {
     rpc.stop().unwrap();
 }
 
-// This test requires a clean Bitcoin Core regtest instance or unchange headers from Bitcoin Core since the last test.
+// Steps to run this test.
+// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
+// 2. Delete `data` from your root directory, if it exists.
+// 3. Run `scripts/regtest.sh`
+// 4. Run `cargo test test_two_deep_reorg -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_two_deep_reorg() {
     let rpc_result = initialize_client();
@@ -437,7 +463,14 @@ async fn test_two_deep_reorg() {
     rpc.stop().unwrap();
 }
 
-// This test requires a clean Bitcoin Core regtest instance or unchange headers from Bitcoin Core since the last test.
+// Steps to run this test.
+// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
+// 2. Delete `data` from your root directory, if it exists.
+// 3. Run `scripts/regtest.sh`
+// 4. Run `scripts/mine.sh`
+// 5. Run `cargo test test_sql_stale_anchor -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_sql_stale_anchor() {
     let rpc = bitcoincore_rpc::Client::new(
