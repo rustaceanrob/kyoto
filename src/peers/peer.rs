@@ -235,6 +235,17 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Pong(_) => Ok(()),
+            PeerMessage::Reject(payload) => {
+                self.message_counter.got_reject();
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::Reject(payload),
+                    })
+                    .await
+                    .map_err(|_| PeerError::ThreadChannel)?;
+                Ok(())
+            }
             PeerMessage::Disconnect => {
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -298,6 +309,7 @@ impl Peer {
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::BroadcastTx(transaction) => {
+                self.message_counter.sent_tx();
                 let message = message_generator.transaction(transaction);
                 writer
                     .write_all(&message)

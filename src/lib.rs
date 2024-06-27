@@ -17,7 +17,8 @@ mod peers;
 mod prelude;
 
 pub use bitcoin::block::Header;
-pub use bitcoin::{Address, Block, BlockHash, Network, Transaction};
+pub use bitcoin::p2p::message_network::RejectReason;
+pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
 
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]

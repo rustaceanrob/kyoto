@@ -2,6 +2,8 @@ use thiserror::Error;
 
 use crate::{chain::error::HeaderPersistenceError, db::error::PeerManagerError};
 
+use super::messages::RejectPayload;
+
 /// Errors that prevent the node from running.
 #[derive(Error, Debug)]
 pub enum NodeError {
@@ -21,5 +23,5 @@ pub enum ClientError {
     SendError,
     /// The transaction was not broadcast to any peers.
     #[error("The transaction was not broadcast to any peers.")]
-    BroadcastFailure,
+    BroadcastFailure(RejectPayload),
 }

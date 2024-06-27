@@ -8,6 +8,7 @@ pub(crate) struct MessageCounter {
     filters: i64,
     addrs: i32,
     block: i32,
+    tx: i32,
 }
 
 impl MessageCounter {
@@ -20,6 +21,7 @@ impl MessageCounter {
             filters: 0,
             addrs: 0,
             block: 0,
+            tx: 0,
         }
     }
 
@@ -51,6 +53,10 @@ impl MessageCounter {
         self.block -= 1;
     }
 
+    pub(crate) fn got_reject(&mut self) {
+        self.tx -= 1;
+    }
+
     pub(crate) fn sent_header(&mut self) {
         self.header += 1;
     }
@@ -71,6 +77,10 @@ impl MessageCounter {
         self.block += 1;
     }
 
+    pub(crate) fn sent_tx(&mut self) {
+        self.tx += 1;
+    }
+
     pub(crate) fn unsolicited(&self) -> bool {
         self.version < 0
             || self.header < 0
@@ -79,5 +89,6 @@ impl MessageCounter {
             || self.filter_header < 0
             || self.addrs < 0
             || self.block < 0
+            || self.tx < 0
     }
 }
