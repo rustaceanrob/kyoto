@@ -439,7 +439,6 @@ async fn test_two_deep_reorg() {
 
 // This test requires a clean Bitcoin Core regtest instance or unchange headers from Bitcoin Core since the last test.
 #[tokio::test]
-#[ignore = "broken"]
 async fn test_sql_stale_anchor() {
     let rpc = bitcoincore_rpc::Client::new(
         HOST,
@@ -447,8 +446,9 @@ async fn test_sql_stale_anchor() {
     )
     .unwrap();
     // Do a call that will only fail if we are not connected to RPC.
-    if let Err(_) = rpc.get_best_block_hash() {
-        println!("Bitcoin Core is not running. Skipping this test...");
+    if let Err(_) = rpc.get_new_address(None, None) {
+        println!("There is no wallet loaded. Have you ran `mine.sh`?");
+        return;
     }
     // Get an address and the tip of the chain.
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
@@ -507,12 +507,44 @@ async fn test_sql_stale_anchor() {
         }
     }
     client.shutdown().await.unwrap();
-    // Mine more blocks
+    // Don't do anything, but reload the node from the checkpoint
+    let cp = rpc.get_best_block_hash().unwrap();
+    let old_height = rpc.get_block_count().unwrap();
+    let best = rpc.get_best_block_hash().unwrap();
+    // Make sure the node does not have any corrupted headers
+    let (mut node, mut client) = new_node_anchor_sql(
+        scripts.clone(),
+        HeaderCheckpoint::new(old_height as u32, cp),
+    )
+    .await;
+    tokio::task::spawn(async move { node.run().await });
+    let (_, mut recv) = client.split();
+    // The node properly syncs after persisting a reorg
+    while let Ok(message) = recv.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::Synced(update) => {
+                println!("Done");
+                assert_eq!(update.tip().hash, best);
+                break;
+            }
+            _ => {}
+        }
+    }
+    client.shutdown().await.unwrap();
+    // Mine more blocks and reload from the checkpoint
+    let cp = rpc.get_best_block_hash().unwrap();
+    let old_height = rpc.get_block_count().unwrap();
     rpc.generate_to_address(2, &miner).unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the node does not have any corrupted headers
-    let (mut node, mut client) = new_node_sql(scripts.clone()).await;
+    let (mut node, mut client) = new_node_anchor_sql(
+        scripts.clone(),
+        HeaderCheckpoint::new(old_height as u32, cp),
+    )
+    .await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg

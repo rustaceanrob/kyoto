@@ -26,6 +26,9 @@ pub trait HeaderStore {
 
     /// Return the height of a block hash in the database, if it exists.
     async fn height_of<'a>(&mut self, hash: &'a BlockHash) -> Result<Option<u32>, DatabaseError>;
+
+    /// Return the hash at the height in the database, if it exists.
+    async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, DatabaseError>;
 }
 
 /// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
@@ -54,6 +57,10 @@ impl HeaderStore for () {
         &mut self,
         _block_hash: &'a BlockHash,
     ) -> Result<Option<u32>, DatabaseError> {
+        Ok(None)
+    }
+
+    async fn hash_at(&mut self, _height: u32) -> Result<Option<BlockHash>, DatabaseError> {
         Ok(None)
     }
 }
