@@ -99,8 +99,8 @@ impl Client {
                         }
                     }
                     NodeMessage::TxBroadcastFailure(id) => {
-                        if id.eq(&txid) {
-                            return Err(ClientError::BroadcastFailure);
+                        if id.txid.eq(&txid) {
+                            return Err(ClientError::BroadcastFailure(id));
                         }
                     }
                     _ => continue,

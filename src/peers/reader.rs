@@ -12,6 +12,7 @@ use bitcoin::p2p::Address;
 use bitcoin::p2p::Magic;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
+use bitcoin::Txid;
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
@@ -19,6 +20,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::node::channel_messages::PeerMessage;
 use crate::node::channel_messages::RemoteVersion;
+use crate::node::messages::RejectPayload;
 
 const ONE_MONTH: u64 = 2_500_000;
 const ONE_MINUTE: u64 = 60;
@@ -171,7 +173,13 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::GetBlockTxn(_) => None,
         NetworkMessage::BlockTxn(_) => None,
         NetworkMessage::Alert(_) => None,
-        NetworkMessage::Reject(_) => None,
+        NetworkMessage::Reject(rejection) => {
+            let txid = Txid::from(rejection.hash);
+            Some(PeerMessage::Reject(RejectPayload {
+                reason: rejection.ccode,
+                txid,
+            }))
+        }
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {

@@ -294,6 +294,11 @@ impl Node {
                                         None => continue,
                                     }
                                 }
+                                PeerMessage::Reject(payload) => {
+                                    self.dialog
+                                        .send_warning(format!("Peer {} rejected transaction with ID {}", peer_thread.nonce, payload.txid)).await;
+                                    self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
+                                }
                                 PeerMessage::Disconnect => {
                                     node_map.clean().await;
                                 }

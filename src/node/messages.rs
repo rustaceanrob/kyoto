@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use bitcoin::{block::Header, ScriptBuf, Txid};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid};
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
@@ -25,7 +25,7 @@ pub enum NodeMessage {
     /// A transaction was sent to one or more connected peers.
     TxSent(Txid),
     /// A problem occured sending a transaction.
-    TxBroadcastFailure(Txid),
+    TxBroadcastFailure(RejectPayload),
 }
 
 /// The node has synced to a new tip of the chain.
@@ -59,6 +59,15 @@ impl SyncUpdate {
     pub fn recent_history(&self) -> &BTreeMap<u32, Header> {
         &self.recent_history
     }
+}
+
+/// An attempt to broadcast a tranasction failed.
+#[derive(Debug, Clone, Copy)]
+pub struct RejectPayload {
+    /// An enumeration of the reason for the transaction failure.
+    pub reason: RejectReason,
+    /// The transaction that was rejected.
+    pub txid: Txid,
 }
 
 /// Commands to issue a node.

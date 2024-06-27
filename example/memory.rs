@@ -70,7 +70,7 @@ async fn main() {
                     tracing::info!("Transaction sent. TXID: {t}");
                 }
                 NodeMessage::TxBroadcastFailure(t) => {
-                    tracing::error!("The transaction could not be broadcast. TXID: {t}")
+                    tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
                 }
                 NodeMessage::Synced(update) => {
                     tracing::info!("Synced chain up to block {}", update.tip().height,);

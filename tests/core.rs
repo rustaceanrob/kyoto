@@ -4,11 +4,15 @@ use std::{
     time::Duration,
 };
 
-use bitcoin::{consensus::serialize, Amount, ScriptBuf};
+use bitcoin::{address::NetworkChecked, consensus::serialize, Amount, ScriptBuf};
 use bitcoincore_rpc::{json::CreateRawTransactionInput, RpcApi};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
-    node::{client::Client, node::Node},
+    node::{
+        client::{Client, Receiver},
+        messages::NodeMessage,
+        node::Node,
+    },
     TxBroadcast,
 };
 
@@ -71,6 +75,36 @@ async fn new_node_anchor_sql(
     (node, client)
 }
 
+async fn mine_blocks(
+    rpc: &bitcoincore_rpc::Client,
+    miner: &bitcoin::Address<NetworkChecked>,
+    num_blocks: u64,
+    time: u64,
+) {
+    rpc.generate_to_address(num_blocks, miner).unwrap();
+    tokio::time::sleep(Duration::from_secs(time)).await;
+}
+
+async fn invalidate_block(rpc: &bitcoincore_rpc::Client, hash: &bitcoin::BlockHash) {
+    rpc.invalidate_block(hash).unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+}
+
+async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut Receiver<NodeMessage>) {
+    while let Ok(message) = channel.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::Synced(update) => {
+                assert_eq!(update.tip().hash, *best);
+                println!("Correct sync");
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
 // Steps to run this test.
 // 1. Run `scripts/regtest.sh`
 // 2. Run `cargo test test_reorg -- --nocapture`
@@ -87,10 +121,8 @@ async fn test_reorg() {
     let rpc = rpc_result.unwrap();
     // Mine some blocks
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.generate_to_address(10, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    mine_blocks(&rpc, &miner, 10, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
     // Build and run a node
     let mut scripts = HashSet::new();
     let other = rpc.get_new_address(None, None).unwrap().assume_checked();
@@ -98,24 +130,12 @@ async fn test_reorg() {
     let (mut node, mut client) = new_node(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (mut sender, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = rpc.get_block_count().unwrap();
-    rpc.invalidate_block(&best).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    invalidate_block(&rpc, &best).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the reorg was caught
     while let Ok(message) = recv.recv().await {
@@ -146,7 +166,7 @@ async fn test_reorg() {
 //
 // If the test fails: run `scripts/kill.sh`
 #[tokio::test]
-async fn test_broadcast() {
+async fn test_broadcast_success() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if let Err(_) = rpc_result {
@@ -156,8 +176,7 @@ async fn test_broadcast() {
     // Mine some blocks
     let rpc = rpc_result.unwrap();
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.generate_to_address(105, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    mine_blocks(&rpc, &miner, 105, 5).await;
     // Send to a random address
     let other = rpc.get_new_address(None, None).unwrap().assume_checked();
     rpc.send_to_address(
@@ -172,7 +191,7 @@ async fn test_broadcast() {
     )
     .unwrap();
     // Confirm the transaction
-    rpc.generate_to_address(10, &miner).unwrap();
+    mine_blocks(&rpc, &miner, 10, 1).await;
     // Get inputs and outputs for a new transaction
     let inputs = rpc
         .list_unspent(Some(1), None, Some(&[&other]), None, None)
@@ -228,6 +247,87 @@ async fn test_broadcast() {
 }
 
 // Steps to run this test.
+// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
+// 2. Run `scripts/regtest.sh`
+// 3. Run `cargo test test_broadcast -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
+#[tokio::test]
+async fn test_broadcast_fail() {
+    let rpc_result = initialize_client();
+    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
+    if let Err(_) = rpc_result {
+        println!("Bitcoin Core is not running. Skipping this test...");
+        return;
+    }
+    // Mine some blocks
+    let rpc = rpc_result.unwrap();
+    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
+    mine_blocks(&rpc, &miner, 105, 5).await;
+    // Send to a random address
+    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    rpc.send_to_address(
+        &other.clone(),
+        Amount::from_btc(100.).unwrap(),
+        None,
+        None,
+        Some(true),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    // Confirm the transaction
+    mine_blocks(&rpc, &miner, 10, 1).await;
+    // Get inputs and outputs for a new transaction
+    let inputs = rpc
+        .list_unspent(Some(1), None, Some(&[&other]), None, None)
+        .unwrap();
+    let raw_tx_inputs: Vec<CreateRawTransactionInput> = inputs
+        .iter()
+        .map(|input| CreateRawTransactionInput {
+            txid: input.txid,
+            vout: input.vout,
+            sequence: None,
+        })
+        .collect::<_>();
+    let burn = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let mut outs = HashMap::new();
+    outs.insert(burn.to_string(), Amount::from_sat(1000));
+    // Create but do not sign the transaction
+    let tx = rpc
+        .create_raw_transaction(&raw_tx_inputs, &outs, None, None)
+        .unwrap();
+    println!("Built unsigned transaction with TXID {}", tx.compute_txid());
+    let mut scripts = HashSet::new();
+    scripts.insert(burn.into());
+    let (mut node, mut client) = new_node(scripts.clone()).await;
+    tokio::task::spawn(async move { node.run().await });
+    let (mut sender, mut recv) = client.split();
+    // Broadcast the transaction to the network
+    sender
+        .broadcast_tx(TxBroadcast::new(tx, kyoto::TxBroadcastPolicy::AllPeers))
+        .await
+        .unwrap();
+    while let Ok(message) = recv.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::TxSent(t) => {
+                println!("Sent transaction: {t}");
+                break;
+            }
+            kyoto::node::messages::NodeMessage::TxBroadcastFailure(_) => {
+                panic!()
+            }
+            _ => {}
+        }
+    }
+    client.shutdown().await.unwrap();
+    rpc.stop().unwrap();
+}
+
+// Steps to run this test.
 // 1. Run `scripts/regtest.sh`
 // 2. Run `cargo test test_long_chain -- --nocapture`
 //
@@ -243,8 +343,7 @@ async fn test_long_chain() {
     let rpc = rpc_result.unwrap();
     // Mine a lot of blocks
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.generate_to_address(500, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(15)).await;
+    mine_blocks(&rpc, &miner, 500, 15).await;
     let best = rpc.get_best_block_hash().unwrap();
     let mut scripts = HashSet::new();
     let other = rpc.get_new_address(None, None).unwrap().assume_checked();
@@ -252,17 +351,7 @@ async fn test_long_chain() {
     let (mut node, mut client) = new_node(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (mut sender, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -285,36 +374,21 @@ async fn test_sql_reorg() {
     let rpc = rpc_result.unwrap();
     // Mine some blocks.
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.generate_to_address(10, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    mine_blocks(&rpc, &miner, 10, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
     let mut scripts = HashSet::new();
     let other = rpc.get_new_address(None, None).unwrap().assume_checked();
     scripts.insert(other.into());
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = rpc.get_block_count().unwrap();
-    rpc.invalidate_block(&best).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    invalidate_block(&rpc, &best).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Spin up the node on a cold start
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
@@ -340,26 +414,14 @@ async fn test_sql_reorg() {
     }
     client.shutdown().await.unwrap();
     // Mine more blocks
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the node does not have any corrupted headers
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -382,39 +444,23 @@ async fn test_two_deep_reorg() {
     let rpc = rpc_result.unwrap();
     // Mine some blocks.
     let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.generate_to_address(10, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    mine_blocks(&rpc, &miner, 10, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
-    tokio::time::sleep(Duration::from_secs(1)).await;
     let mut scripts = HashSet::new();
     let other = rpc.get_new_address(None, None).unwrap().assume_checked();
     scripts.insert(other.into());
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_height = rpc.get_block_count().unwrap();
     let old_best = best;
-    rpc.invalidate_block(&best).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    invalidate_block(&rpc, &best).await;
     let best = rpc.get_best_block_hash().unwrap();
-    rpc.invalidate_block(&best).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    rpc.generate_to_address(3, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    invalidate_block(&rpc, &best).await;
+    mine_blocks(&rpc, &miner, 3, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the reorganization is caught after a cold start
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
@@ -439,26 +485,14 @@ async fn test_two_deep_reorg() {
     }
     client.shutdown().await.unwrap();
     // Mine more blocks
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the node does not have any corrupted headers
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -492,26 +526,13 @@ async fn test_sql_stale_anchor() {
     let (mut node, mut client) = new_node_sql(scripts.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = rpc.get_block_count().unwrap();
-    rpc.invalidate_block(&best).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    invalidate_block(&rpc, &best).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Spin up the node on a cold start with a stale tip
     let (mut node, mut client) = new_node_anchor_sql(
@@ -553,24 +574,12 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Mine more blocks and reload from the checkpoint
     let cp = rpc.get_best_block_hash().unwrap();
     let old_height = rpc.get_block_count().unwrap();
-    rpc.generate_to_address(2, &miner).unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
     // Make sure the node does not have any corrupted headers
     let (mut node, mut client) = new_node_anchor_sql(
@@ -581,18 +590,7 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
-        }
-    }
+    sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
