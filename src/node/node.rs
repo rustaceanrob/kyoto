@@ -108,7 +108,7 @@ impl Node {
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
         // A structured way to talk to the client
-        let mut dialog = Dialog::new(ntx);
+        let dialog = Dialog::new(ntx);
         // Build the chain
         let loaded_chain = Chain::new(
             &network,
@@ -121,12 +121,8 @@ impl Node {
         )
         .await
         .map_err(NodeError::HeaderDatabase)?;
-        // Initialize the height of the chain
-        let best_known_height = loaded_chain.height();
+        // Initialize the chain with the headers we loaded
         let chain = Arc::new(Mutex::new(loaded_chain));
-        dialog
-            .send_dialog(format!("Starting sync from block {}", best_known_height))
-            .await;
         Ok((
             Self {
                 state,
@@ -410,7 +406,7 @@ impl Node {
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
-            locators: chain.locators(),
+            locators: chain.locators().await,
             stop_hash: None,
         };
         MainThreadMessage::GetHeaders(next_headers)
@@ -474,7 +470,7 @@ impl Node {
         }
         if !chain.is_synced() {
             let next_headers = GetHeaderConfig {
-                locators: chain.locators(),
+                locators: chain.locators().await,
                 stop_hash: None,
             };
             return Some(MainThreadMessage::GetHeaders(next_headers));
@@ -598,7 +594,7 @@ impl Node {
                 *state = NodeState::Behind;
                 let mut chain = self.chain.lock().await;
                 let next_headers = GetHeaderConfig {
-                    locators: chain.locators(),
+                    locators: chain.locators().await,
                     stop_hash: None,
                 };
                 if chain.height().le(&new_height) {

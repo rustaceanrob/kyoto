@@ -35,6 +35,7 @@ use crate::{
 };
 
 const MAX_REORG_DEPTH: u32 = 5_000;
+const REORG_LOOKBACK: u32 = 7;
 
 #[derive(Debug)]
 pub(crate) struct Chain {
@@ -189,11 +190,28 @@ impl Chain {
     }
 
     // The "locators" are the headers we inform our peers we know about
-    pub(crate) fn locators(&mut self) -> Vec<BlockHash> {
+    pub(crate) async fn locators(&mut self) -> Vec<BlockHash> {
+        // If a peer is sending us a fork at this point they are faulty.
         if !self.checkpoints_complete() {
             vec![self.tip()]
         } else {
-            self.header_chain.locators()
+            // We should try to catch any reorgs if we are on a fresh start.
+            // The database may have a header that is useful to the remote node
+            // that is not currently in memory.
+            if self.header_chain.inner_len() < REORG_LOOKBACK as usize {
+                let older_locator = self.height().saturating_sub(REORG_LOOKBACK);
+                let mut db_lock = self.db.lock().await;
+                let hash = db_lock.hash_at(older_locator).await;
+                if let Ok(Some(locator)) = hash {
+                    vec![locator]
+                } else {
+                    // We couldn't find a header deep enough to send over. Just proceed as usual
+                    self.header_chain.locators()
+                }
+            } else {
+                // We have enough headers in memory to catch a reorg.
+                self.header_chain.locators()
+            }
         }
     }
 

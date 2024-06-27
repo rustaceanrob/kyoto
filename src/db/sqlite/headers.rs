@@ -183,4 +183,19 @@ impl HeaderStore for SqliteHeaderDb {
             .map_err(|_| DatabaseError::Load)?;
         Ok(row)
     }
+
+    async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, DatabaseError> {
+        let write_lock = self.conn.lock().await;
+        let stmt = "SELECT block_hash FROM headers WHERE height = ?1";
+        let row: Option<String> = write_lock
+            .query_row(stmt, params![height], |row| row.get(0))
+            .map_err(|_| DatabaseError::Load)?;
+        match row {
+            Some(row) => match BlockHash::from_str(&row) {
+                Ok(hash) => Ok(Some(hash)),
+                Err(_) => Err(DatabaseError::Deserialization),
+            },
+            None => Ok(None),
+        }
+    }
 }

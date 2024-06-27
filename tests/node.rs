@@ -439,7 +439,7 @@ async fn test_two_deep_reorg() {
 
 // This test requires a clean Bitcoin Core regtest instance or unchange headers from Bitcoin Core since the last test.
 #[tokio::test]
-#[ignore = "broken"]
+#[ignore = "broken wallet init"]
 async fn test_sql_stale_anchor() {
     let rpc = bitcoincore_rpc::Client::new(
         HOST,
