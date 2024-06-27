@@ -122,6 +122,13 @@
   - [x] Expected work after height
   - [x] Properly handles fork
   - [x] `extend` handles forks, including down to the anchor
+- [ ] Bitcoin Core, Regtest
+  - [x] Normal sync
+  - [x] Valid transaction broadcast
+  - [x] Live fork
+  - [x] Fork with SQL
+  - [x] Fork with a stale anchor checkpoint start 
+  - [x] Depth two fork, SQL
 - [ ] CI
   - [x] MacOS, Windows, Linux
   - [x] 1.63, stable, beta, nightly
