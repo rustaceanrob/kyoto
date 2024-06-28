@@ -30,7 +30,7 @@ use crate::{
         peer_man::PeerManager,
         traits::{HeaderStore, PeerStore},
     },
-    filters::cfheader_chain::CFHeaderSyncResult,
+    filters::cfheader_chain::AppendAttempt,
     node::peer_map::PeerMap,
     TxBroadcastPolicy,
 };
@@ -500,8 +500,8 @@ impl Node {
         let mut chain = self.chain.lock().await;
         match chain.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
-                CFHeaderSyncResult::AddedToQueue => None,
-                CFHeaderSyncResult::ReadyForNext => {
+                AppendAttempt::AddedToQueue => None,
+                AppendAttempt::Extended => {
                     // We added a batch to the queue and still are not at the required height
                     if !chain.is_cf_headers_synced() {
                         Some(MainThreadMessage::GetFilterHeaders(
@@ -517,7 +517,7 @@ impl Node {
                         None
                     }
                 }
-                CFHeaderSyncResult::Dispute(_) => {
+                AppendAttempt::Conflict(_) => {
                     // TODO: Request the filter and block from the peer
                     self.dialog
                         .send_warning(
@@ -602,6 +602,7 @@ impl Node {
                     locators: chain.locators().await,
                     stop_hash: None,
                 };
+                chain.clear_compact_filter_queue();
                 if chain.height().le(&new_height) {
                     chain.set_best_known_height(new_height).await;
                 }
