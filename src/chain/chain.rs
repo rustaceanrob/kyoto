@@ -36,6 +36,7 @@ use crate::{
 
 const MAX_REORG_DEPTH: u32 = 5_000;
 const REORG_LOOKBACK: u32 = 7;
+const MAX_HEADER_SIZE: usize = 20_000;
 
 #[derive(Debug)]
 pub(crate) struct Chain {
@@ -127,26 +128,39 @@ impl Chain {
         self.header_chain.height()
     }
 
-    // This header chain contains a block hash
+    // This header chain contains a block hash in memory
     pub(crate) fn contains_hash(&self, blockhash: BlockHash) -> bool {
         self.header_chain.contains_hash(blockhash)
     }
 
-    // This header chain contains a block hash
+    // This header chain contains a block hash, potentially checking the disk
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        self.header_chain.height_of_hash(blockhash).await
+        match self.header_chain.height_of_hash(blockhash).await {
+            Some(height) => Some(height),
+            None => {
+                let mut lock = self.db.lock().await;
+                lock.height_of(&blockhash).await.unwrap_or(None)
+            }
+        }
     }
 
-    // This header chain contains a block hash
+    // This header chain contains a block hash in memory
     pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
         self.header_chain.header_at_height(height)
     }
 
     // The hash at the given height, potentially checking on disk
-    pub(crate) fn block_hash_at_height(&self, height: u32) -> Option<BlockHash> {
-        self.header_chain
+    pub(crate) async fn blockhash_at_height(&self, height: u32) -> Option<BlockHash> {
+        match self
             .header_at_height(height)
             .map(|header| header.block_hash())
+        {
+            Some(hash) => Some(hash),
+            None => {
+                let mut lock = self.db.lock().await;
+                lock.hash_at(height).await.unwrap_or(None)
+            }
+        }
     }
 
     // This header chain contains a block hash
@@ -252,6 +266,14 @@ impl Chain {
         }
     }
 
+    // If the number of headers in memory gets too large, move some of them to the disk
+    pub(crate) async fn manage_memory(&mut self) {
+        if self.header_chain.inner_len() > MAX_HEADER_SIZE {
+            self.flush_to_disk().await;
+            self.header_chain.move_up();
+        }
+    }
+
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
@@ -280,6 +302,7 @@ impl Chain {
             // Check if the fork has more work.
             self.evaluate_fork(&header_batch).await?;
         }
+        self.manage_memory().await;
         Ok(())
     }
 
@@ -331,10 +354,9 @@ impl Chain {
         // We need to check a hard-coded checkpoint
         if self.height().ge(&checkpoint.height) {
             if self
-                .header_chain
-                .header_at_height(checkpoint.height)
+                .blockhash_at_height(checkpoint.height)
+                .await
                 .expect("height is greater than the base checkpoint")
-                .block_hash()
                 .eq(&checkpoint.hash)
             {
                 self.dialog
@@ -509,7 +531,8 @@ impl Chain {
         for (index, (filter_header, filter_hash)) in batch.inner().into_iter().enumerate() {
             let block_hash = self
                 // This call may or may not retrieve the hash from disk
-                .block_hash_at_height(ref_height + index as u32 + 1)
+                .blockhash_at_height(ref_height + index as u32 + 1)
+                .await
                 .ok_or(CFHeaderSyncError::HeaderChainIndexOverflow)?;
             queue.push(QueuedCFHeader::new(block_hash, filter_header, filter_hash))
         }
@@ -536,7 +559,7 @@ impl Chain {
         // Did they send us the right amount of headers
         let expected_stop_header =
             // This call may or may not retrieve the hash from disk
-            self.block_hash_at_height(self.cf_header_chain.height() + batch.len() as u32);
+            self.blockhash_at_height(self.cf_header_chain.height() + batch.len() as u32).await;
         if let Some(stop_header) = expected_stop_header {
             if stop_header.ne(batch.stop_hash()) {
                 return Err(CFHeaderSyncError::StopHashMismatch);
@@ -550,8 +573,8 @@ impl Chain {
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) async fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
-            hash.block_hash()
+        let stop_hash = if let Some(hash) = self.blockhash_at_height(stop_hash_index).await {
+            hash
         } else {
             self.tip()
         };
@@ -617,8 +640,8 @@ impl Chain {
     // Next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.header_at_height(stop_hash_index) {
-            hash.block_hash()
+        let stop_hash = if let Some(hash) = self.blockhash_at_height(stop_hash_index).await {
+            hash
         } else {
             self.tip()
         };
