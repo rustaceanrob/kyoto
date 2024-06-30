@@ -55,6 +55,7 @@ type Queue = Option<Vec<QueuedCFHeader>>;
 #[derive(Debug)]
 pub(crate) struct CFHeaderChain {
     anchor_checkpoint: HeaderCheckpoint,
+    // We only really care about this relationship
     hash_chain: HashMap<BlockHash, FilterHash>,
     merged_queue: Queue,
     prev_stophash_request: Option<BlockHash>,
@@ -102,6 +103,7 @@ impl CFHeaderChain {
         self.attempt_merge().await
     }
 
+    // If enough peers have responded, insert those block hashes and filter hashes into a map.
     async fn attempt_merge(&mut self) -> AppendAttempt {
         let queue = self.merged_queue.as_ref().unwrap();
         if self.current_quorum.ge(&self.quorum_required) {
@@ -145,6 +147,14 @@ impl CFHeaderChain {
     pub(crate) fn clear_headers(&mut self) {
         self.prev_header = None;
         self.hash_chain.clear();
+    }
+
+    // Some blocks got reorganized, so we remove them as well as the previous header
+    pub(crate) fn remove(&mut self, hashes: &[BlockHash]) {
+        for hash in hashes {
+            self.hash_chain.remove(hash);
+        }
+        self.prev_header = None;
     }
 
     pub(crate) fn hash_at(&self, block: &BlockHash) -> Option<&FilterHash> {
