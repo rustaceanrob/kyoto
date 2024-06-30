@@ -548,24 +548,21 @@ impl Chain {
             }
         }
         // Did we request up to this stop hash. We should have caught if this was a repeated message.
-        if let Some(prev_stophash) = self.cf_header_chain.last_stop_hash_request() {
-            if prev_stophash.ne(batch.stop_hash()) {
-                return Err(CFHeaderSyncError::StopHashMismatch);
-            }
-        } else {
-            // If we never asked for a stophash before this was unsolitited
-            return Err(CFHeaderSyncError::UnexpectedCFHeaderMessage);
+        let prev_stophash = self
+            .cf_header_chain
+            .last_stop_hash_request()
+            .ok_or(CFHeaderSyncError::UnexpectedCFHeaderMessage)?;
+        if prev_stophash.ne(batch.stop_hash()) {
+            return Err(CFHeaderSyncError::StopHashMismatch);
         }
         // Did they send us the right amount of headers
-        let expected_stop_header =
+        let stop_hash =
             // This call may or may not retrieve the hash from disk
-            self.blockhash_at_height(self.cf_header_chain.height() + batch.len() as u32).await;
-        if let Some(stop_header) = expected_stop_header {
-            if stop_header.ne(batch.stop_hash()) {
-                return Err(CFHeaderSyncError::StopHashMismatch);
-            }
-        } else {
-            return Err(CFHeaderSyncError::HeaderChainIndexOverflow);
+            self.blockhash_at_height(self.cf_header_chain.height() + batch.len() as u32)
+            .await
+            .ok_or(CFHeaderSyncError::HeaderChainIndexOverflow)?;
+        if stop_hash.ne(batch.stop_hash()) {
+            return Err(CFHeaderSyncError::StopHashMismatch);
         }
         Ok(())
     }
@@ -573,11 +570,10 @@ impl Chain {
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) async fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let stop_hash_index = self.cf_header_chain.height() + CF_HEADER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.blockhash_at_height(stop_hash_index).await {
-            hash
-        } else {
-            self.tip()
-        };
+        let stop_hash = self
+            .blockhash_at_height(stop_hash_index)
+            .await
+            .unwrap_or(self.tip());
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         GetCFHeaders {
             filter_type: 0x00,
@@ -622,29 +618,28 @@ impl Chain {
                 .await;
         }
         self.filter_chain.put_hash(filter_message.block_hash).await;
-        if let Some(stop_hash) = self.filter_chain.last_stop_hash_request() {
-            if filter_message.block_hash.eq(stop_hash) {
-                if !self.is_filters_synced() {
-                    Ok(Some(self.next_filter_message().await))
-                } else {
-                    Ok(None)
-                }
+        let stop_hash = self
+            .filter_chain
+            .last_stop_hash_request()
+            .ok_or(CFilterSyncError::UnrequestedStophash)?;
+        if filter_message.block_hash.eq(&stop_hash) {
+            if !self.is_filters_synced() {
+                Ok(Some(self.next_filter_message().await))
             } else {
                 Ok(None)
             }
         } else {
-            Err(CFilterSyncError::UnrequestedStophash)
+            Ok(None)
         }
     }
 
     // Next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
         let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE + 1;
-        let stop_hash = if let Some(hash) = self.blockhash_at_height(stop_hash_index).await {
-            hash
-        } else {
-            self.tip()
-        };
+        let stop_hash = self
+            .blockhash_at_height(stop_hash_index)
+            .await
+            .unwrap_or(self.tip());
         self.dialog
             .chain_update(
                 self.height(),

@@ -33,7 +33,8 @@
 - [x] Persist to storage
   - [x] Determine if the block hash or height should be the primary key
   - [x] Speed up writes with pointers
-  - [x] Add "write volatile" to write over heights
+  - [x] Add method to write over heights in reorg
+  - [x] Move headers to DB when the `BTreeMap` is large
 - [x] Exponential backoff for locators
 
 #### Filters
@@ -135,9 +136,3 @@
   - [x] Format and clippy
   - [ ] Regtest sync with Bitcoin Core
   - [x] On PR
-
-#### Bindings
-
-- [ ] Add UniFFI to repository
-- [ ] Build UDL
-- [ ] Build for Python
