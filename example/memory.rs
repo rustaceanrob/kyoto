@@ -3,6 +3,7 @@
 
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::db::memory::peers::StatelessPeerStore;
+use kyoto::db::sqlite::headers::SqliteHeaderDb;
 use kyoto::node::messages::NodeMessage;
 use kyoto::BlockHash;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
@@ -32,6 +33,8 @@ async fn main() {
     let peer = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
     // Limited devices may not save any peers to disk
     let peer_store = StatelessPeerStore::new();
+    // To handle reorgs, it is still recommended to store block headers
+    let header_store = SqliteHeaderDb::new(bitcoin::Network::Signet, None).unwrap();
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
@@ -47,7 +50,7 @@ async fn main() {
         // We only maintain a list of 32 peers in memory
         .peer_db_size(32)
         // Build without the default databases
-        .build_with_databases(peer_store, ())
+        .build_with_databases(peer_store, header_store)
         .await;
     // Run the node
     tokio::task::spawn(async move { node.run().await });

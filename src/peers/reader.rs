@@ -111,19 +111,10 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         })),
         NetworkMessage::Verack => Some(PeerMessage::Verack),
         NetworkMessage::Addr(addresses) => {
-            let last_month = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs()
-                - ONE_MONTH;
             let addresses: Vec<Address> = addresses
                 .iter()
-                .filter(|f| {
-                    f.1.services.has(ServiceFlags::COMPACT_FILTERS)
-                        && f.1.services.has(ServiceFlags::WITNESS)
-                })
+                .filter(|f| f.1.services.has(ServiceFlags::COMPACT_FILTERS))
                 .filter(|f| f.1.socket_addr().is_ok())
-                .filter(|f| f.0 > last_month as u32)
                 .map(|(_, addr)| addr.clone())
                 .collect();
             Some(PeerMessage::Addr(addresses))
@@ -183,19 +174,10 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {
-            let last_month = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs()
-                - ONE_MONTH;
             let addresses: Vec<Address> = addresses
                 .iter()
-                .filter(|f| {
-                    f.services.has(ServiceFlags::COMPACT_FILTERS)
-                        && f.services.has(ServiceFlags::WITNESS)
-                })
+                .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))
                 .filter(|f| f.socket_addr().is_ok())
-                .filter(|f| f.time > last_month as u32)
                 .map(|addr| match addr.socket_addr().unwrap().ip() {
                     std::net::IpAddr::V4(ip) => Address {
                         services: addr.services,
