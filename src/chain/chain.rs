@@ -422,12 +422,16 @@ impl Chain {
                     .send_dialog("Valid reorganization found".into())
                     .await;
                 let reorged = self.header_chain.extend(&uncommon);
+                let removed_hashes = &reorged
+                    .iter()
+                    .map(|disconnect| disconnect.header.block_hash())
+                    .collect::<Vec<BlockHash>>();
+                self.clear_compact_filter_queue();
+                self.cf_header_chain.remove(removed_hashes);
+                self.filter_chain.remove(removed_hashes);
                 self.dialog
                     .send_data(NodeMessage::BlocksDisconnected(reorged))
                     .await;
-                self.clear_compact_filter_queue();
-                self.clear_filter_headers().await;
-                self.clear_filters().await;
                 self.flush_over_height(stem).await;
                 Ok(())
             } else {
