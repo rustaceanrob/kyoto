@@ -160,6 +160,62 @@ async fn test_reorg() {
 }
 
 // Steps to run this test.
+// 1. Run `scripts/regtest.sh`
+// 2. Run `cargo test test_reorg -- --nocapture`
+//
+// If the test fails: run `scripts/kill.sh`
+#[tokio::test]
+async fn test_mine_after_reorg() {
+    let rpc_result = initialize_client();
+    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
+    if let Err(_) = rpc_result {
+        println!("Bitcoin Core is not running. Skipping this test...");
+        return;
+    }
+    let rpc = rpc_result.unwrap();
+    // Mine some blocks
+    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
+    mine_blocks(&rpc, &miner, 10, 1).await;
+    let best = rpc.get_best_block_hash().unwrap();
+    // Build and run a node
+    let mut scripts = HashSet::new();
+    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    scripts.insert(other.into());
+    let (mut node, mut client) = new_node(scripts.clone()).await;
+    tokio::task::spawn(async move { node.run().await });
+    let (_, mut recv) = client.split();
+    sync_assert(&best, &mut recv).await;
+    // Reorganize the blocks
+    let old_best = best;
+    let old_height = rpc.get_block_count().unwrap();
+    invalidate_block(&rpc, &best).await;
+    mine_blocks(&rpc, &miner, 2, 1).await;
+    let best = rpc.get_best_block_hash().unwrap();
+    // Make sure the reorg was caught
+    while let Ok(message) = recv.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+                assert_eq!(blocks.len(), 1);
+                assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
+                assert_eq!(old_height as u32, blocks.first().unwrap().height);
+            }
+            kyoto::node::messages::NodeMessage::Synced(update) => {
+                assert_eq!(update.tip().hash, best);
+                break;
+            }
+            _ => {}
+        }
+    }
+    mine_blocks(&rpc, &miner, 2, 1).await;
+    let best = rpc.get_best_block_hash().unwrap();
+    sync_assert(&best, &mut recv).await;
+    client.shutdown().await.unwrap();
+    rpc.stop().unwrap();
+}
+
+// Steps to run this test.
 // 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
 // 2. Run `scripts/regtest.sh`
 // 3. Run `cargo test test_broadcast -- --nocapture`

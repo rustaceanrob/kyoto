@@ -202,9 +202,19 @@ impl Chain {
     }
 
     // Do we have best known height and is our height equal to it
-    pub(crate) fn is_synced(&self) -> bool {
+    // If our height is greater, we received partial inventory, and
+    // the header message contained the rest of the new blocks.
+    pub(crate) fn is_synced(&mut self) -> bool {
         if let Some(height) = self.best_known_height {
-            (self.height()).ge(&height)
+            let current = self.height();
+            if current > height {
+                self.best_known_height = Some(current);
+                true
+            } else if current.eq(&height) {
+                true
+            } else {
+                false
+            }
         } else {
             false
         }

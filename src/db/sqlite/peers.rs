@@ -102,3 +102,42 @@ impl PeerStore for SqlitePeerDb {
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use bitcoin::p2p::ServiceFlags;
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "no tmp file"]
+    async fn test_sql_peer_store() {
+        let mut peer_store = SqlitePeerDb::new(bitcoin::Network::Testnet, None).unwrap();
+        let ip_1 = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
+        let ip_2 = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
+        let ip_3 = IpAddr::V4(Ipv4Addr::new(3, 3, 3, 3));
+        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, false);
+        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, false, false);
+        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, false, false);
+        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, true, false);
+        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, true);
+        peer_store.update(peer_1, false).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
+        peer_store.update(peer_2, false).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
+        peer_store.update(peer_3, false).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
+        peer_store.update(try_peer_2, true).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
+        peer_store.update(ban_peer_1.clone(), true).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
+        let random = peer_store.random().await.unwrap();
+        assert_ne!(ban_peer_1.addr, random.addr);
+        let random = peer_store.random().await.unwrap();
+        assert_ne!(ban_peer_1.addr, random.addr);
+        let random = peer_store.random().await.unwrap();
+        assert_ne!(ban_peer_1.addr, random.addr);
+    }
+}
