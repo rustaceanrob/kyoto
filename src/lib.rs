@@ -16,6 +16,8 @@ pub mod node;
 mod peers;
 mod prelude;
 
+use std::net::IpAddr;
+
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::message_network::RejectReason;
 pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
@@ -96,4 +98,42 @@ pub enum TxBroadcastPolicy {
     AllPeers,
     /// Broadcast the transaction to a single random peer, optimal for user privacy.
     RandomPeer,
+}
+
+/// A peer on the Bitcoin P2P network
+#[derive(Debug, Clone)]
+pub struct TrustedPeer {
+    /// The IP address of the remote node to connect to.
+    pub ip: IpAddr,
+    /// The port to establish a TCP connection. If none is provided, the typical Bitcoin Core port is used as the default.
+    pub port: Option<u16>,
+}
+
+impl TrustedPeer {
+    /// Create a new trusted peer.
+    pub fn new(ip_addr: IpAddr, port: Option<u16>) -> Self {
+        Self { ip: ip_addr, port }
+    }
+
+    /// The IP address of the trusted peer.
+    pub fn ip(&self) -> IpAddr {
+        self.ip
+    }
+
+    /// A recommended port to connect to, if there is one.
+    pub fn port(&self) -> Option<u16> {
+        self.port
+    }
+}
+
+impl From<(IpAddr, Option<u16>)> for TrustedPeer {
+    fn from(value: (IpAddr, Option<u16>)) -> Self {
+        TrustedPeer::new(value.0, value.1)
+    }
+}
+
+impl From<TrustedPeer> for (IpAddr, Option<u16>) {
+    fn from(value: TrustedPeer) -> Self {
+        (value.ip(), value.port())
+    }
 }
