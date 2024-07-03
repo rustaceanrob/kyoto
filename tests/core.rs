@@ -39,10 +39,10 @@ fn initialize_client() -> Result<bitcoincore_rpc::Client, bitcoincore_rpc::Error
 }
 
 async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), PORT);
+    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host])
+        .add_peers(vec![host.into()])
         .add_scripts(addrs)
         .build_with_databases((), ())
         .await;
@@ -50,10 +50,10 @@ async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
 }
 
 async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), PORT);
+    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host])
+        .add_peers(vec![host.into()])
         .add_scripts(addrs)
         .build_node()
         .await;
@@ -64,10 +64,10 @@ async fn new_node_anchor_sql(
     addrs: HashSet<ScriptBuf>,
     checkpoint: HeaderCheckpoint,
 ) -> (Node, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), PORT);
+    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host])
+        .add_peers(vec![host.into()])
         .add_scripts(addrs)
         .anchor_checkpoint(checkpoint)
         .build_node()

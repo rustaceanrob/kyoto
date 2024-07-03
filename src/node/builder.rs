@@ -1,8 +1,10 @@
-use std::{collections::HashSet, net::IpAddr, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf};
 
 use bitcoin::{Network, ScriptBuf};
 
 use crate::db::error::DatabaseError;
+use crate::prelude::default_port_from_network;
+use crate::TrustedPeer;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
@@ -26,8 +28,20 @@ impl NodeBuilder {
     }
 
     /// Add preferred peers to try to connect to.
-    pub fn add_peers(mut self, whitelist: Vec<(IpAddr, u16)>) -> Self {
-        self.config.white_list = Some(whitelist);
+    pub fn add_peers(mut self, whitelist: Vec<TrustedPeer>) -> Self {
+        self.config.white_list = Some(
+            whitelist
+                .into_iter()
+                .map(|trusted| {
+                    (
+                        trusted.ip(),
+                        trusted
+                            .port()
+                            .unwrap_or(default_port_from_network(&self.network)),
+                    )
+                })
+                .collect(),
+        );
         self
     }
 
@@ -82,6 +96,7 @@ impl NodeBuilder {
             .unwrap()
     }
 
+    /// Consume the node builder by using custom database implementations, receiving a [`Node`] and [`Client`].
     pub async fn build_with_databases(
         &self,
         peer_store: impl PeerStore + Send + Sync + 'static,

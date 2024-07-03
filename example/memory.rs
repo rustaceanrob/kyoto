@@ -40,7 +40,7 @@ async fn main() {
     // Add node preferences and build the node/client
     let (mut node, mut client) = builder
         // Add the peer
-        .add_peers(vec![(peer, 38333)])
+        .add_peers(vec![(peer, None).into()])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
