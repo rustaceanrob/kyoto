@@ -115,6 +115,14 @@ impl TrustedPeer {
         Self { ip: ip_addr, port }
     }
 
+    /// Create a new trusted peer using the default port for the network.
+    pub fn from_ip(ip_addr: IpAddr) -> Self {
+        Self {
+            ip: ip_addr,
+            port: None,
+        }
+    }
+
     /// The IP address of the trusted peer.
     pub fn ip(&self) -> IpAddr {
         self.ip
