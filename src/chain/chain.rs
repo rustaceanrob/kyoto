@@ -53,58 +53,20 @@ pub(crate) struct Chain {
 }
 
 impl Chain {
-    pub(crate) async fn new(
+    pub(crate) fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
-        mut checkpoints: HeaderCheckpoints,
-        mut dialog: Dialog,
-        mut db: impl HeaderStore + Send + Sync + 'static,
+        checkpoints: HeaderCheckpoints,
+        dialog: Dialog,
+        db: impl HeaderStore + Send + Sync + 'static,
         quorum_required: usize,
-    ) -> Result<Self, HeaderPersistenceError> {
+    ) -> Self {
         let params = params_from_network(network);
-        let mut loaded_headers = db
-            .load(anchor.height)
-            .await
-            .map_err(HeaderPersistenceError::Database)?;
-        if loaded_headers.len().gt(&0) {
-            if loaded_headers
-                .values()
-                .take(1)
-                .copied()
-                .collect::<Vec<Header>>()
-                .first()
-                .unwrap()
-                .prev_blockhash
-                .ne(&anchor.hash)
-            {
-                dialog
-                    .send_warning("Checkpoint anchor mismatch".into())
-                    .await;
-                // The header chain did not align, so just start from the anchor
-                loaded_headers = BTreeMap::new();
-            } else if loaded_headers
-                .iter()
-                .zip(loaded_headers.iter().skip(1))
-                .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
-            {
-                dialog
-                    .send_warning("Blockhash pointer mismatch".into())
-                    .await;
-                return Err(HeaderPersistenceError::HeadersDoNotLink);
-            }
-            loaded_headers.iter().for_each(|header| {
-                if let Some(checkpoint) = checkpoints.next() {
-                    if header.1.block_hash().eq(&checkpoint.hash) {
-                        checkpoints.advance()
-                    }
-                }
-            })
-        };
-        let header_chain = HeaderChain::new(anchor, loaded_headers);
+        let header_chain = HeaderChain::new(anchor);
         let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
         let filter_chain = FilterChain::new(anchor);
-        Ok(Chain {
+        Chain {
             header_chain,
             checkpoints,
             params,
@@ -115,7 +77,7 @@ impl Chain {
             scripts,
             block_queue: BlockQueue::new(),
             dialog,
-        })
+        }
     }
 
     // Top of the chain
@@ -272,6 +234,53 @@ impl Chain {
                 .send_warning(format!("Error persisting to storage: {}", e))
                 .await;
         }
+    }
+
+    // Load in the headers
+    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
+        let loaded_headers = self
+            .db
+            .lock()
+            .await
+            .load_after(self.height())
+            .await
+            .map_err(HeaderPersistenceError::Database)?;
+        if loaded_headers.len().gt(&0) {
+            if loaded_headers
+                .values()
+                .take(1)
+                .copied()
+                .collect::<Vec<Header>>()
+                .first()
+                .unwrap()
+                .prev_blockhash
+                .ne(&self.tip())
+            {
+                self.dialog
+                    .send_warning("Unlinkable anchor. The headers stored in the database have no connection to this configured anchor.".into())
+                    .await;
+                // The header chain did not align, so just start from the anchor
+                return Err(HeaderPersistenceError::CannotLocateHistory);
+            } else if loaded_headers
+                .iter()
+                .zip(loaded_headers.iter().skip(1))
+                .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
+            {
+                self.dialog
+                    .send_warning("Blockhash pointer mismatch".into())
+                    .await;
+                return Err(HeaderPersistenceError::HeadersDoNotLink);
+            }
+            loaded_headers.iter().for_each(|header| {
+                if let Some(checkpoint) = self.checkpoints.next() {
+                    if header.1.block_hash().eq(&checkpoint.hash) {
+                        self.checkpoints.advance()
+                    }
+                }
+            })
+        };
+        self.header_chain.set_headers(loaded_headers);
+        Ok(())
     }
 
     // If the number of headers in memory gets too large, move some of them to the disk
@@ -460,12 +469,14 @@ impl Chain {
     // This call occurs if we sync to a block that is later reorganized out of the chain,
     // but we have restarted our node in between these events.
     async fn load_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        let mut db_lock = self.db.lock().await;
         let prev_hash = header_batch.first().prev_blockhash;
-        let maybe_height = db_lock
-            .height_of(&prev_hash)
-            .await
-            .map_err(|_| HeaderSyncError::DbError)?;
+        let maybe_height = {
+            let mut db_lock = self.db.lock().await;
+            db_lock
+                .height_of(&prev_hash)
+                .await
+                .map_err(|_| HeaderSyncError::DbError)?
+        };
         match maybe_height {
             Some(height) => {
                 // This is a very generous check to ensure a peer cannot get us to load an
@@ -473,22 +484,21 @@ impl Chain {
                 // we wouldn't accept a fork of a depth more than around 2,000 anyway.
                 // The only reorgs that have ever been recorded are of depth 1.
                 if self.height() - height > MAX_REORG_DEPTH {
-                    Err(HeaderSyncError::FloatingHeaders)
+                    return Err(HeaderSyncError::FloatingHeaders);
                 } else {
                     let older_anchor = HeaderCheckpoint::new(height, prev_hash);
-                    let loaded_headers = db_lock
-                        .load(older_anchor.height)
-                        .await
-                        .map_err(|_| HeaderSyncError::DbError)?;
-                    self.header_chain = HeaderChain::new(older_anchor, loaded_headers);
+                    self.header_chain = HeaderChain::new(older_anchor);
                     self.cf_header_chain =
                         CFHeaderChain::new(older_anchor, self.cf_header_chain.quorum_required());
                     self.filter_chain = FilterChain::new(older_anchor);
-                    Ok(())
                 }
             }
-            None => Err(HeaderSyncError::FloatingHeaders),
+            None => return Err(HeaderSyncError::FloatingHeaders),
         }
+        self.load_headers()
+            .await
+            .map_err(|_| HeaderSyncError::DbError)?;
+        Ok(())
     }
 
     // Sync the compact filter headers, possibly encountering conflicts
@@ -750,7 +760,7 @@ mod tests {
 
     use super::Chain;
 
-    async fn new_regtest(anchor: HeaderCheckpoint) -> Chain {
+    fn new_regtest(anchor: HeaderCheckpoint) -> Chain {
         let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
@@ -763,8 +773,6 @@ mod tests {
             (),
             1,
         )
-        .await
-        .unwrap()
     }
 
     #[tokio::test]
@@ -774,7 +782,7 @@ mod tests {
             BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen).await;
+        let mut chain = new_regtest(gen);
         let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
         let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
         let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
@@ -822,7 +830,7 @@ mod tests {
             BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen).await;
+        let mut chain = new_regtest(gen);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
@@ -850,7 +858,7 @@ mod tests {
             BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen).await;
+        let mut chain = new_regtest(gen);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
         let batch_1 = vec![block_1, block_2];

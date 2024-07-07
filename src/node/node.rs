@@ -81,7 +81,7 @@ pub struct Node {
 
 impl Node {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn new(
+    pub(crate) fn new(
         network: Network,
         white_list: Whitelist,
         scripts: HashSet<ScriptBuf>,
@@ -90,7 +90,7 @@ impl Node {
         target_peer_size: u32,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
-    ) -> Result<(Self, Client), NodeError> {
+    ) -> (Self, Client) {
         // Set up a communication channel between the node and client
         let (ntx, _) = broadcast::channel::<NodeMessage>(32);
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
@@ -118,12 +118,10 @@ impl Node {
             dialog.clone(),
             header_store,
             required_peers,
-        )
-        .await
-        .map_err(NodeError::HeaderDatabase)?;
+        );
         // Initialize the chain with the headers we loaded
         let chain = Arc::new(Mutex::new(loaded_chain));
-        Ok((
+        (
             Self {
                 state,
                 chain,
@@ -136,15 +134,15 @@ impl Node {
                 is_running: AtomicBool::new(false),
             },
             client,
-        ))
+        )
     }
 
-    pub(crate) async fn new_from_config(
+    pub(crate) fn new_from_config(
         config: &NodeConfig,
         network: Network,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
-    ) -> Result<(Self, Client), NodeError> {
+    ) -> (Self, Client) {
         Node::new(
             network,
             config.white_list.clone(),
@@ -155,7 +153,6 @@ impl Node {
             peer_store,
             header_store,
         )
-        .await
     }
 
     /// Has [`Node::run`] been called.
@@ -168,6 +165,7 @@ impl Node {
         self.dialog.send_dialog("Starting node".into()).await;
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.fetch_headers().await?;
         let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
         let mut node_map = PeerMap::new(mtx, self.network);
         let mut tx_broadcaster = Broadcaster::new();
@@ -632,6 +630,18 @@ impl Node {
                 ))
             }
         }
+    }
+
+    // When the application starts, fetch any headers we know about from the database.
+    async fn fetch_headers(&mut self) -> Result<(), NodeError> {
+        self.dialog
+            .send_dialog("Attempting to load headers from the database.".into())
+            .await;
+        let mut chain = self.chain.lock().await;
+        chain
+            .load_headers()
+            .await
+            .map_err(NodeError::HeaderDatabase)
     }
 
     // First we search the whitelist for peers that we trust. If we don't have any more whitelisted peers,

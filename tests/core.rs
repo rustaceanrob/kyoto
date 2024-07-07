@@ -44,8 +44,7 @@ async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(addrs)
-        .build_with_databases((), ())
-        .await;
+        .build_with_databases((), ());
     (node, client)
 }
 
@@ -55,8 +54,7 @@ async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(addrs)
-        .build_node()
-        .await;
+        .build_node();
     (node, client)
 }
 
@@ -70,8 +68,7 @@ async fn new_node_anchor_sql(
         .add_peers(vec![host.into()])
         .add_scripts(addrs)
         .anchor_checkpoint(checkpoint)
-        .build_node()
-        .await;
+        .build_node();
     (node, client)
 }
 

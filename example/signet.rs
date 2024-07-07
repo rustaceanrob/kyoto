@@ -44,8 +44,7 @@ async fn main() {
         // The number of connections we would like to maintain
         .num_required_peers(2)
         // Create the node and client
-        .build_node()
-        .await;
+        .build_node();
     // Check if the node is running. Another part of the program may be giving us the node.
     if !node.is_running() {
         tokio::task::spawn(async move { node.run().await });
@@ -77,8 +76,8 @@ async fn main() {
                     let recent = update.recent_history;
                     tracing::info!("Recent history:");
                     for (height, hash) in recent {
-                        tracing::info!("Synced chain up to block {}", height);
-                        tracing::info!("Chain tip: {}", hash.block_hash());
+                        tracing::info!("Height: {}", height);
+                        tracing::info!("Hash: {}", hash.block_hash());
                     }
                     break;
                 }

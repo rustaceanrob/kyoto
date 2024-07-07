@@ -9,7 +9,10 @@ use super::{error::DatabaseError, PersistedPeer};
 #[async_trait]
 pub trait HeaderStore {
     /// Load all headers with heights *strictly after* the specified anchor height.
-    async fn load(&mut self, anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError>;
+    async fn load_after(
+        &mut self,
+        anchor_height: u32,
+    ) -> Result<BTreeMap<u32, Header>, DatabaseError>;
 
     /// Write an indexed map of block headers to the database, ignoring if they already exist.
     async fn write<'a>(
@@ -34,7 +37,10 @@ pub trait HeaderStore {
 /// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
 #[async_trait]
 impl HeaderStore for () {
-    async fn load(&mut self, _anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError> {
+    async fn load_after(
+        &mut self,
+        _anchor_height: u32,
+    ) -> Result<BTreeMap<u32, Header>, DatabaseError> {
         Ok(BTreeMap::new())
     }
 
