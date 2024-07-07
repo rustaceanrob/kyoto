@@ -50,8 +50,7 @@ async fn main() {
         // We only maintain a list of 32 peers in memory
         .peer_db_size(32)
         // Build without the default databases
-        .build_with_databases(peer_store, header_store)
-        .await;
+        .build_with_databases(peer_store, header_store);
     // Run the node
     tokio::task::spawn(async move { node.run().await });
     // Split the client into components that send messages and listen to messages.

@@ -35,6 +35,9 @@ pub enum HeaderPersistenceError {
     /// Some predefined checkpoint does not match.
     #[error("The headers loaded do not match a known checkpoint.")]
     MismatchedCheckpoints,
+    /// A user tried to retrieve headers too far in the past for what is in their database.
+    #[error("The configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain.")]
+    CannotLocateHistory,
     /// A database error.
     #[error("The headers could not be loaded from sqlite.")]
     Database(DatabaseError),

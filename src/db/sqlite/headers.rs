@@ -52,7 +52,10 @@ impl SqliteHeaderDb {
 
 #[async_trait]
 impl HeaderStore for SqliteHeaderDb {
-    async fn load(&mut self, anchor_height: u32) -> Result<BTreeMap<u32, Header>, DatabaseError> {
+    async fn load_after(
+        &mut self,
+        anchor_height: u32,
+    ) -> Result<BTreeMap<u32, Header>, DatabaseError> {
         let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;

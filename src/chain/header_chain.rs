@@ -19,11 +19,18 @@ pub(crate) struct HeaderChain {
 }
 
 impl HeaderChain {
-    pub(crate) fn new(checkpoint: HeaderCheckpoint, headers: Headers) -> Self {
+    pub(crate) fn new(checkpoint: HeaderCheckpoint) -> Self {
         Self {
             anchor_checkpoint: checkpoint,
-            headers,
+            headers: BTreeMap::new(),
         }
+    }
+
+    // Set the headers to those loaded from a database.
+    // Done separately, such that all asynchronous work is done
+    // when the node is running.
+    pub(crate) fn set_headers(&mut self, headers: Headers) {
+        self.headers = headers;
     }
 
     // Top of the chain
@@ -251,16 +258,11 @@ mod tests {
 
     #[test]
     fn test_empty_chain() {
-        let chain = HeaderChain::new(
-            HeaderCheckpoint::new(
-                190_000,
-                BlockHash::from_str(
-                    "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
-                )
+        let chain = HeaderChain::new(HeaderCheckpoint::new(
+            190_000,
+            BlockHash::from_str("0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2")
                 .unwrap(),
-            ),
-            BTreeMap::new(),
-        );
+        ));
         assert_eq!(chain.chainwork(), Work::from_be_bytes([0; 32]));
         assert_eq!(
             chain.chainwork_after_height(189_999),
@@ -289,16 +291,11 @@ mod tests {
         let block_190_003: Header = deserialize(&hex::decode("0000002042c5fa907f5d28affaa72b430f2732052d7a19f203be794fea39153e7e0000009c8705706dce105bbaf42a9a692d3bdcca1d7e34399e8cc7684700da439bf144291810669d41011ed0241501").unwrap()).unwrap();
         let batch_1 = vec![block_190_001];
         let batch_2 = vec![block_190_002, block_190_003];
-        let mut chain = HeaderChain::new(
-            HeaderCheckpoint::new(
-                190_000,
-                BlockHash::from_str(
-                    "0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2",
-                )
+        let mut chain = HeaderChain::new(HeaderCheckpoint::new(
+            190_000,
+            BlockHash::from_str("0000013a6143b7360b7ba3834316b3265ee9072dde440bd45f99c01c42abaef2")
                 .unwrap(),
-            ),
-            BTreeMap::new(),
-        );
+        ));
         let reorg = chain.extend(&batch_1);
         assert!(reorg.is_empty());
         assert_eq!(chain.height(), 190_001);
@@ -332,16 +329,11 @@ mod tests {
         let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
         let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
         let fork = vec![new_block_10, block_11];
-        let mut chain = HeaderChain::new(
-            HeaderCheckpoint::new(
-                7,
-                BlockHash::from_str(
-                    "62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16",
-                )
+        let mut chain = HeaderChain::new(HeaderCheckpoint::new(
+            7,
+            BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
                 .unwrap(),
-            ),
-            BTreeMap::new(),
-        );
+        ));
         let reorg = chain.extend(&batch_1);
         assert!(reorg.is_empty());
         assert_eq!(chain.height(), 10);
@@ -377,16 +369,11 @@ mod tests {
         let new_block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea349c6240c5d0521966771808950f796c9c04088bc9551a828b64f1cf06831705dfbc835e66ffff7f2000000000").unwrap()).unwrap();
         let new_block_4: Header = deserialize(&hex::decode("00000020d2a1c6ba2be393f405fe2f4574565f9ee38ac68d264872fcd82b030970d0232ce882eb47c3dd138587120f1ad97dd0e73d1e30b79559ad516cb131f83dcb87e9bc835e66ffff7f2002000000").unwrap()).unwrap();
         let fork = vec![new_block_3, new_block_4];
-        let mut chain = HeaderChain::new(
-            HeaderCheckpoint::new(
-                0,
-                BlockHash::from_str(
-                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
-                )
+        let mut chain = HeaderChain::new(HeaderCheckpoint::new(
+            0,
+            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
-            ),
-            BTreeMap::new(),
-        );
+        ));
         chain.extend(&batch_1);
         let reorged = chain.extend(&fork);
         assert_eq!(reorged.len(), 2);
@@ -411,16 +398,11 @@ mod tests {
         let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
         let block_4: Header = deserialize(&hex::decode("000000204877fed370af64c0a1f7a76f6944e1127aad965b1865f99ecfdf8fa72ae23377f51921d01ff1131bd589500a8ca142884297ceeb1aa762ad727249e9a23f2cb023865e66ffff7f2000000000").unwrap()).unwrap();
         let batch_2 = vec![block_3, block_4];
-        let mut chain = HeaderChain::new(
-            HeaderCheckpoint::new(
-                0,
-                BlockHash::from_str(
-                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
-                )
+        let mut chain = HeaderChain::new(HeaderCheckpoint::new(
+            0,
+            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
-            ),
-            BTreeMap::new(),
-        );
+        ));
         chain.extend(&batch_1);
         let reorged = chain.extend(&fork);
         assert_eq!(reorged.len(), 2);
