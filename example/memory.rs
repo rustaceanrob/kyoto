@@ -38,7 +38,7 @@ async fn main() {
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
-    let (mut node, mut client) = builder
+    let (mut node, client) = builder
         // Add the peer
         .add_peers(vec![(peer, None).into()])
         // The Bitcoin scripts to monitor
@@ -56,7 +56,7 @@ async fn main() {
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
-    let (mut sender, mut receiver) = client.split();
+    let (sender, mut receiver) = client.split();
     // Continually listen for events until the node is synced to its peers.
     loop {
         if let Ok(message) = receiver.recv().await {

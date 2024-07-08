@@ -27,7 +27,7 @@ impl Client {
     /// For a majority of cases, some parts of your program will respond to node events, and other parts of the program
     /// will send events to the node. This method returns a [`ClientSender`] to issue commands to the node, and a
     /// [`Receiver`] to continually respond to events issued from the node.
-    pub fn split(&mut self) -> (ClientSender, Receiver<NodeMessage>) {
+    pub fn split(&self) -> (ClientSender, Receiver<NodeMessage>) {
         (self.sender(), self.receiver())
     }
 
@@ -43,12 +43,12 @@ impl Client {
     /// receivers have gotten the message.
     /// You should only call this twice if two separate portions of your application need to process
     /// data differently. For example, a Lightning Network node implementation.
-    pub fn receiver(&mut self) -> Receiver<NodeMessage> {
+    pub fn receiver(&self) -> Receiver<NodeMessage> {
         self.nrx.subscribe()
     }
 
     /// Tell the node to stop running.
-    pub async fn shutdown(&mut self) -> Result<(), ClientError> {
+    pub async fn shutdown(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Shutdown)
             .await
@@ -134,7 +134,7 @@ impl ClientSender {
     }
 
     /// Tell the node to shut down.
-    pub async fn shutdown(&mut self) -> Result<(), ClientError> {
+    pub async fn shutdown(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Shutdown)
             .await
@@ -142,7 +142,7 @@ impl ClientSender {
     }
 
     /// Broadcast a new transaction to the network.
-    pub async fn broadcast_tx(&mut self, tx: TxBroadcast) -> Result<(), ClientError> {
+    pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Broadcast(tx))
             .await
@@ -150,7 +150,7 @@ impl ClientSender {
     }
 
     /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
-    pub async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
+    pub async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::AddScripts(scripts))
             .await
@@ -158,7 +158,7 @@ impl ClientSender {
     }
 
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
-    pub async fn rescan(&mut self) -> Result<(), ClientError> {
+    pub async fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Rescan)
             .await
