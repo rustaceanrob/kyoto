@@ -73,8 +73,8 @@ impl SlashSixteen for IpAddr {
 
 pub(crate) fn params_from_network(network: &Network) -> Params {
     match network {
-        Network::Bitcoin => panic!("unimplemented network"),
-        Network::Testnet => Params::new(*network),
+        Network::Bitcoin => Params::new(*network),
+        Network::Testnet => panic!("unimplemented network"),
         Network::Signet => Params::new(*network),
         Network::Regtest => Params::new(*network),
         _ => unreachable!(),
