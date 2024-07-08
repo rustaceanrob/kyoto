@@ -24,7 +24,7 @@ async fn main() {
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
-    let (mut node, mut client) = builder
+    let (mut node, client) = builder
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
@@ -41,7 +41,7 @@ async fn main() {
     tokio::task::spawn(async move { node.run().await });
     tracing::info!("Running the node and waiting for a sync message. Please wait a minute!");
     // Split the client into components that send messages and listen to messages
-    let (mut sender, mut receiver) = client.split();
+    let (sender, mut receiver) = client.split();
     // Sync with the single script added
     loop {
         if let Ok(message) = receiver.recv().await {

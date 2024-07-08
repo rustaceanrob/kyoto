@@ -57,11 +57,11 @@ pub enum NodeState {
     Behind,
     /// We may start downloading compact block filter headers.
     HeadersSynced,
-    // We may start scanning compact block filters
+    /// We may start scanning compact block filters
     FilterHeadersSynced,
-    // We may start asking for blocks with matches
+    /// We may start asking for blocks with matches
     FiltersSynced,
-    // We found all known transactions to the wallet
+    /// We found all known transactions to the wallet
     TransactionsSynced,
 }
 
@@ -439,8 +439,7 @@ impl Node {
             {
                 self.dialog
                     .send_warning(format!(
-                        "Encountered error adding peer to the database: {}",
-                        e
+                        "Encountered error adding peer to the database: {e}. The most likely cause is due to an unrecognized service flag."
                     ))
                     .await;
             }
@@ -630,6 +629,9 @@ impl Node {
             NodeState::HeadersSynced => None,
             _ => {
                 chain.clear_filters().await;
+                self.dialog
+                    .send_data(NodeMessage::StateChange(NodeState::FilterHeadersSynced))
+                    .await;
                 *state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(
                     chain.next_filter_message().await,
