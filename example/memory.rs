@@ -63,6 +63,7 @@ async fn main() {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{}", d),
                 NodeMessage::Warning(e) => tracing::warn!("{}", e),
+                NodeMessage::StateChange(_) => (),
                 NodeMessage::Transaction(t) => drop(t),
                 NodeMessage::Block(b) => drop(b),
                 NodeMessage::BlocksDisconnected(r) => {

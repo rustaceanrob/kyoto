@@ -53,13 +53,13 @@ type Whitelist = Option<Vec<(IpAddr, u16)>>;
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
 pub enum NodeState {
-    // We need to sync headers to the known tip
+    /// We are behind on block headers according to our peers.
     Behind,
-    // We need to start getting filter headers
+    /// We may start downloading compact block filter headers.
     HeadersSynced,
-    // We need to get the CP filters
+    // We may start scanning compact block filters
     FilterHeadersSynced,
-    // We can start asking for blocks with matches
+    // We may start asking for blocks with matches
     FiltersSynced,
     // We found all known transactions to the wallet
     TransactionsSynced,
@@ -330,10 +330,10 @@ impl Node {
             NodeState::Behind => {
                 let mut header_chain = self.chain.lock().await;
                 if header_chain.is_synced() {
-                    self.dialog
-                        .send_dialog("Headers synced. Auditing our chain with peers".into())
-                        .await;
                     header_chain.flush_to_disk().await;
+                    self.dialog
+                        .send_data(NodeMessage::StateChange(NodeState::HeadersSynced))
+                        .await;
                     *state = NodeState::HeadersSynced;
                 }
             }
@@ -341,7 +341,7 @@ impl Node {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_cf_headers_synced() {
                     self.dialog
-                        .send_dialog("CF Headers synced. Downloading block filters.".into())
+                        .send_data(NodeMessage::StateChange(NodeState::FilterHeadersSynced))
                         .await;
                     *state = NodeState::FilterHeadersSynced;
                 }
@@ -350,7 +350,7 @@ impl Node {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_filters_synced() {
                     self.dialog
-                        .send_dialog("Filters synced. Checking blocks for new inclusions.".into())
+                        .send_data(NodeMessage::StateChange(NodeState::FiltersSynced))
                         .await;
                     *state = NodeState::FiltersSynced;
                 }
@@ -363,6 +363,9 @@ impl Node {
                         HeaderCheckpoint::new(header_chain.height(), header_chain.tip()),
                         header_chain.last_ten(),
                     );
+                    self.dialog
+                        .send_data(NodeMessage::StateChange(NodeState::TransactionsSynced))
+                        .await;
                     let _ = self.dialog.send_data(NodeMessage::Synced(update)).await;
                 }
             }
@@ -594,6 +597,9 @@ impl Node {
         match *state {
             NodeState::Behind => None,
             _ => {
+                self.dialog
+                    .send_data(NodeMessage::StateChange(NodeState::Behind))
+                    .await;
                 *state = NodeState::Behind;
                 let mut chain = self.chain.lock().await;
                 let next_headers = GetHeaderConfig {

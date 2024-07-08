@@ -7,13 +7,17 @@ use crate::{
     TxBroadcast,
 };
 
+use super::node::NodeState;
+
 /// Messages receivable by a running node.
 #[derive(Debug, Clone)]
 pub enum NodeMessage {
-    /// A human readable dialog of what the node is currently doing
+    /// Human readable dialog of what the node is currently doing
     Dialog(String),
-    /// A human readable warning that may effect the function of the node
+    /// A warning that may effect the function of the node
     Warning(String),
+    /// The current state of the node in the syncing process
+    StateChange(NodeState),
     /// A relevant transaction based on the user provided scripts
     Transaction(IndexedTransaction),
     /// A relevant [`crate::Block`] based on the user provided scripts
