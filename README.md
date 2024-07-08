@@ -16,11 +16,12 @@ The following snippet demonstrates how to build a Kyoto node. See the docs for m
 
 ```rust
 use kyoto::node::NodeBuilder;
+use kyoto::TrustedPeer;
 let builder = NodeBuilder::new(bitcoin::Network::Signet);
 // Add node preferences and build the node/client
 let (mut node, mut client) = builder
     // Add the peers
-    .add_peers(vec![(peer, 38333), (peer_2, 38333)])
+    .add_peers(vec![TrustedPeer::from_ip(peer_1), TrustedPeer::from_ip(peer_1)])
     // The Bitcoin scripts to monitor
     .add_scripts(addresses)
     // Only scan blocks strictly after an anchor checkpoint
@@ -33,7 +34,6 @@ let (mut node, mut client) = builder
     .num_required_peers(2)
     // Create the node and client
     .build_node()
-    .await;
 ```
 
 ## Scope
