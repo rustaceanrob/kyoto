@@ -104,21 +104,23 @@ impl Peer {
             }
             select! {
                 // The peer sent us a message
-                peer_message = rx.recv() => {
-                    match peer_message {
-                        Some(message) => {
-                            match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
-                                Ok(()) => continue,
-                                Err(e) => {
-                                    match e {
-                                        // We were told by the reader thread to disconnect from this peer
-                                        PeerError::DisconnectCommand => return Ok(()),
-                                        _ => continue,
-                                    }
-                                },
-                            }
-                        },
-                        None => continue,
+                peer_message = tokio::time::timeout(Duration::from_secs(CONNECTION_TIMEOUT), rx.recv())=> {
+                    if let Ok(peer_message) = peer_message {
+                        match peer_message {
+                            Some(message) => {
+                                match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
+                                    Ok(()) => continue,
+                                    Err(e) => {
+                                        match e {
+                                            // We were told by the reader thread to disconnect from this peer
+                                            PeerError::DisconnectCommand => return Ok(()),
+                                            _ => continue,
+                                        }
+                                    },
+                                }
+                            },
+                            None => continue,
+                        }
                     }
                 }
                 // The main thread sent us a message
