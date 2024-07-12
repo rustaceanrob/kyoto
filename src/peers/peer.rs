@@ -15,9 +15,13 @@ use crate::{
     peers::outbound_messages::V1OutboundMessage,
 };
 
-use super::{counter::MessageCounter, reader::Reader, traits::MessageGenerator};
+use super::{
+    counter::{MessageCounter, MessageTimer},
+    reader::Reader,
+    traits::MessageGenerator,
+};
 
-const CONNECTION_TIMEOUT: u64 = 3;
+const CONNECTION_TIMEOUT: u64 = 2;
 
 pub(crate) struct Peer {
     nonce: u32,
@@ -27,6 +31,7 @@ pub(crate) struct Peer {
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
     message_counter: MessageCounter,
+    message_timer: MessageTimer,
 }
 
 impl Peer {
@@ -39,6 +44,7 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
     ) -> Self {
         let message_counter = MessageCounter::new();
+        let message_timer = MessageTimer::new();
         Self {
             nonce,
             ip_addr,
@@ -47,6 +53,7 @@ impl Peer {
             main_thread_recv,
             network,
             message_counter,
+            message_timer,
         }
     }
 
@@ -90,6 +97,9 @@ impl Peer {
                 return Ok(());
             }
             if self.message_counter.unsolicited() {
+                return Ok(());
+            }
+            if self.message_timer.unresponsive() {
                 return Ok(());
             }
             select! {
@@ -171,6 +181,7 @@ impl Peer {
             }
             PeerMessage::Headers(headers) => {
                 self.message_counter.got_header();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -182,6 +193,7 @@ impl Peer {
             }
             PeerMessage::FilterHeaders(cf_headers) => {
                 self.message_counter.got_filter_header();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -193,6 +205,7 @@ impl Peer {
             }
             PeerMessage::Filter(filter) => {
                 self.message_counter.got_filter();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -204,6 +217,7 @@ impl Peer {
             }
             PeerMessage::Block(block) => {
                 self.message_counter.got_block();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -278,6 +292,7 @@ impl Peer {
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
+                self.message_timer.track();
                 let message = message_generator.get_headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
@@ -286,6 +301,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 self.message_counter.sent_filter_header();
+                self.message_timer.track();
                 let message = message_generator.cf_headers(config);
                 writer
                     .write_all(&message)
@@ -294,6 +310,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
+                self.message_timer.track();
                 let message = message_generator.filters(config);
                 writer
                     .write_all(&message)
@@ -302,6 +319,7 @@ impl Peer {
             }
             MainThreadMessage::GetBlock(message) => {
                 self.message_counter.sent_block();
+                self.message_timer.track();
                 let message = message_generator.block(message);
                 writer
                     .write_all(&message)

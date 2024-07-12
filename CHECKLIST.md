@@ -84,8 +84,8 @@
 - [ ] Set up "timer"
   - [x] Check for DOS
   - [x] Message counter
-  - [ ] `Ping` if peer has not been heard from
-- [ ] `Disconnect` peers with high latency
+  - [ ] `Ping` if peer has not been heard from (Probably better to just disconnect)
+- [x] `Disconnect` peers with high latency (If we send a critical message and a peer doesn't respond in 5 seconds, disconnect)
 - [ ] Add BIP-324 with V1 fallback
 
 #### Transaction Broadcaster
@@ -105,7 +105,7 @@
 - [ ] Chain
   - [x] Usual extend
   - [x] Fork with less work
-  - [ ] Orphaned fork
+  - [x] Orphaned fork
   - [x] Fork with equal work
   - [x] Fork with more work
 - [ ] CF header chain
@@ -128,7 +128,7 @@
   - [x] Valid transaction broadcast
   - [x] Live fork
   - [x] Fork with SQL
-  - [x] Fork with a stale anchor checkpoint start 
+  - [x] Fork with a stale anchor checkpoint start
   - [x] Depth two fork, SQL
 - [ ] CI
   - [x] MacOS, Windows, Linux
