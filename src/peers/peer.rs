@@ -15,9 +15,13 @@ use crate::{
     peers::outbound_messages::V1OutboundMessage,
 };
 
-use super::{counter::MessageCounter, reader::Reader, traits::MessageGenerator};
+use super::{
+    counter::{MessageCounter, MessageTimer},
+    reader::Reader,
+    traits::MessageGenerator,
+};
 
-const CONNECTION_TIMEOUT: u64 = 3;
+const CONNECTION_TIMEOUT: u64 = 2;
 
 pub(crate) struct Peer {
     nonce: u32,
@@ -27,6 +31,7 @@ pub(crate) struct Peer {
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
     message_counter: MessageCounter,
+    message_timer: MessageTimer,
 }
 
 impl Peer {
@@ -39,6 +44,7 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
     ) -> Self {
         let message_counter = MessageCounter::new();
+        let message_timer = MessageTimer::new();
         Self {
             nonce,
             ip_addr,
@@ -47,6 +53,7 @@ impl Peer {
             main_thread_recv,
             network,
             message_counter,
+            message_timer,
         }
     }
 
@@ -92,23 +99,28 @@ impl Peer {
             if self.message_counter.unsolicited() {
                 return Ok(());
             }
+            if self.message_timer.unresponsive() {
+                return Ok(());
+            }
             select! {
                 // The peer sent us a message
-                peer_message = rx.recv() => {
-                    match peer_message {
-                        Some(message) => {
-                            match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
-                                Ok(()) => continue,
-                                Err(e) => {
-                                    match e {
-                                        // We were told by the reader thread to disconnect from this peer
-                                        PeerError::DisconnectCommand => return Ok(()),
-                                        _ => continue,
-                                    }
-                                },
-                            }
-                        },
-                        None => continue,
+                peer_message = tokio::time::timeout(Duration::from_secs(CONNECTION_TIMEOUT), rx.recv())=> {
+                    if let Ok(peer_message) = peer_message {
+                        match peer_message {
+                            Some(message) => {
+                                match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
+                                    Ok(()) => continue,
+                                    Err(e) => {
+                                        match e {
+                                            // We were told by the reader thread to disconnect from this peer
+                                            PeerError::DisconnectCommand => return Ok(()),
+                                            _ => continue,
+                                        }
+                                    },
+                                }
+                            },
+                            None => continue,
+                        }
                     }
                 }
                 // The main thread sent us a message
@@ -171,6 +183,7 @@ impl Peer {
             }
             PeerMessage::Headers(headers) => {
                 self.message_counter.got_header();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -182,6 +195,7 @@ impl Peer {
             }
             PeerMessage::FilterHeaders(cf_headers) => {
                 self.message_counter.got_filter_header();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -193,6 +207,7 @@ impl Peer {
             }
             PeerMessage::Filter(filter) => {
                 self.message_counter.got_filter();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -204,6 +219,7 @@ impl Peer {
             }
             PeerMessage::Block(block) => {
                 self.message_counter.got_block();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -278,6 +294,7 @@ impl Peer {
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
+                self.message_timer.track();
                 let message = message_generator.get_headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
@@ -286,6 +303,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 self.message_counter.sent_filter_header();
+                self.message_timer.track();
                 let message = message_generator.cf_headers(config);
                 writer
                     .write_all(&message)
@@ -294,6 +312,7 @@ impl Peer {
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
+                self.message_timer.track();
                 let message = message_generator.filters(config);
                 writer
                     .write_all(&message)
@@ -302,6 +321,7 @@ impl Peer {
             }
             MainThreadMessage::GetBlock(message) => {
                 self.message_counter.sent_block();
+                self.message_timer.track();
                 let message = message_generator.block(message);
                 writer
                     .write_all(&message)

@@ -1,3 +1,7 @@
+use tokio::time::Instant;
+
+const FIVE_SEC: u64 = 5;
+
 // Very simple denial of service protection so a peer cannot spam us with unsolicited messages.
 #[derive(Debug, Clone)]
 pub(crate) struct MessageCounter {
@@ -90,5 +94,57 @@ impl MessageCounter {
             || self.addrs < 0
             || self.block < 0
             || self.tx < 0
+    }
+}
+
+//
+#[derive(Debug, Clone)]
+pub(crate) struct MessageTimer {
+    tracked_time: Option<Instant>,
+}
+
+impl MessageTimer {
+    pub(crate) fn new() -> Self {
+        Self { tracked_time: None }
+    }
+
+    pub(crate) fn track(&mut self) {
+        self.tracked_time = Some(Instant::now())
+    }
+
+    pub(crate) fn untrack(&mut self) {
+        self.tracked_time = None;
+    }
+
+    pub(crate) fn unresponsive(&self) -> bool {
+        match self.tracked_time {
+            Some(time) => Instant::now().duration_since(time).as_secs() > FIVE_SEC,
+            None => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time;
+
+    use super::MessageTimer;
+
+    #[tokio::test]
+    async fn test_timer_works() {
+        let mut timer = MessageTimer::new();
+        assert!(!timer.unresponsive());
+        timer.track();
+        assert!(!timer.unresponsive());
+        timer.untrack();
+        assert!(!timer.unresponsive());
+        timer.untrack();
+        assert!(!timer.unresponsive());
+        timer.track();
+        assert!(!timer.unresponsive());
+        time::sleep(Duration::from_secs(6)).await;
+        assert!(timer.unresponsive());
     }
 }
