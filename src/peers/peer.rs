@@ -83,6 +83,7 @@ impl Peer {
             .write_all(&version_message)
             .await
             .map_err(|_| PeerError::BufferWrite)?;
+        self.message_timer.track();
         let (reader, mut writer) = stream.into_split();
         let (tx, mut rx) = mpsc::channel(32);
         let mut peer_reader = Reader::new(reader, tx, self.network);
@@ -104,7 +105,7 @@ impl Peer {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(Duration::from_secs(CONNECTION_TIMEOUT), rx.recv())=> {
+                peer_message = tokio::time::timeout(Duration::from_secs(CONNECTION_TIMEOUT), rx.recv()) => {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
@@ -157,6 +158,7 @@ impl Peer {
         match message {
             PeerMessage::Version(version) => {
                 self.message_counter.got_version();
+                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -288,14 +290,14 @@ impl Peer {
             MainThreadMessage::GetAddr => {
                 self.message_counter.sent_addrs();
                 writer
-                    .write_all(&message_generator.get_addr())
+                    .write_all(&message_generator.addr())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
                 self.message_timer.track();
-                let message = message_generator.get_headers(config.locators, config.stop_hash);
+                let message = message_generator.headers(config.locators, config.stop_hash);
                 writer
                     .write_all(&message)
                     .await

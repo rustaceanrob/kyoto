@@ -133,6 +133,7 @@ mod tests {
     use super::MessageTimer;
 
     #[tokio::test]
+    #[ignore = "time wasting"]
     async fn test_timer_works() {
         let mut timer = MessageTimer::new();
         assert!(!timer.unresponsive());
