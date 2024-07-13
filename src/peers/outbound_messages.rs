@@ -64,16 +64,12 @@ impl MessageGenerator for V1OutboundMessage {
         serialize(&data)
     }
 
-    fn get_addr(&mut self) -> Vec<u8> {
+    fn addr(&mut self) -> Vec<u8> {
         let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetAddr);
         serialize(&data)
     }
 
-    fn get_headers(
-        &mut self,
-        locator_hashes: Vec<BlockHash>,
-        stop_hash: Option<BlockHash>,
-    ) -> Vec<u8> {
+    fn headers(&mut self, locator_hashes: Vec<BlockHash>, stop_hash: Option<BlockHash>) -> Vec<u8> {
         let msg =
             GetHeadersMessage::new(locator_hashes, stop_hash.unwrap_or(BlockHash::all_zeros()));
         let data =

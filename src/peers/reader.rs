@@ -1,6 +1,3 @@
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-
 use bitcoin::consensus::deserialize;
 use bitcoin::consensus::deserialize_partial;
 use bitcoin::consensus::Decodable;
@@ -24,14 +21,13 @@ use crate::node::messages::RejectPayload;
 
 const ONE_MONTH: u64 = 2_500_000;
 const ONE_MINUTE: u64 = 60;
-// The peer must have sent at least 10 messages to trigger DOS
-const MINIMUM_DOS_THRESHOLD: u64 = 10;
-// We allow up to 5000 messages per second
-const RATE_LIMIT: u64 = 5000;
+const MAX_MESSAGE_BYTES: u32 = 1024 * 1024 * 32;
+// From Bitcoin Core PR #29575
+const MAX_ADDR: usize = 1_000;
+const MAX_INV: usize = 50_000;
+const MAX_HEADERS: usize = 2_000;
 
 pub(crate) struct Reader {
-    num_messages: u64,
-    start_time: u64,
     stream: OwnedReadHalf,
     tx: Sender<PeerMessage>,
     network: Network,
@@ -39,13 +35,7 @@ pub(crate) struct Reader {
 
 impl Reader {
     pub fn new(stream: OwnedReadHalf, tx: Sender<PeerMessage>, network: Network) -> Self {
-        let start_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_secs();
         Self {
-            num_messages: 0,
-            start_time,
             stream,
             tx,
             network,
@@ -54,7 +44,7 @@ impl Reader {
 
     pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {
         loop {
-            // v1 headers are 24 bytes
+            // V1 headers are 24 bytes
             let mut message_buf = vec![0_u8; 24];
             let _ = self
                 .stream
@@ -69,20 +59,8 @@ impl Reader {
                 return Err(PeerReadError::Deserialization);
             }
             // Message is too long
-            if header.length > (1024 * 1024 * 32) as u32 {
+            if header.length > MAX_MESSAGE_BYTES {
                 return Err(PeerReadError::Deserialization);
-            }
-            // DOS protection
-            self.num_messages += 1;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs();
-            let duration = now - self.start_time;
-            if self.num_messages > MINIMUM_DOS_THRESHOLD
-                && self.num_messages.checked_div(duration).unwrap_or(0) > RATE_LIMIT
-            {
-                return Err(PeerReadError::TooManyMessages);
             }
             let mut contents_buf = vec![0_u8; header.length as usize];
             let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
@@ -111,6 +89,9 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         })),
         NetworkMessage::Verack => Some(PeerMessage::Verack),
         NetworkMessage::Addr(addresses) => {
+            if addresses.len() > MAX_ADDR {
+                return Some(PeerMessage::Disconnect);
+            }
             let addresses: Vec<Address> = addresses
                 .iter()
                 .filter(|f| f.1.services.has(ServiceFlags::COMPACT_FILTERS))
@@ -120,6 +101,9 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
             Some(PeerMessage::Addr(addresses))
         }
         NetworkMessage::Inv(inventory) => {
+            if inventory.len() > MAX_INV {
+                return Some(PeerMessage::Disconnect);
+            }
             let mut hashes = Vec::new();
             for i in inventory {
                 match i {
@@ -142,7 +126,12 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::MemPool => None,
         NetworkMessage::Tx(_) => None,
         NetworkMessage::Block(block) => Some(PeerMessage::Block(block.clone())),
-        NetworkMessage::Headers(headers) => Some(PeerMessage::Headers(headers.clone())),
+        NetworkMessage::Headers(headers) => {
+            if headers.len() > MAX_HEADERS {
+                return Some(PeerMessage::Disconnect);
+            }
+            Some(PeerMessage::Headers(headers.clone()))
+        }
         NetworkMessage::SendHeaders => None,
         NetworkMessage::GetAddr => None,
         NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(*nonce)),
@@ -174,6 +163,9 @@ fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
         NetworkMessage::FeeFilter(_) => None,
         NetworkMessage::WtxidRelay => None,
         NetworkMessage::AddrV2(addresses) => {
+            if addresses.len() > MAX_ADDR {
+                return Some(PeerMessage::Disconnect);
+            }
             let addresses: Vec<Address> = addresses
                 .iter()
                 .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))

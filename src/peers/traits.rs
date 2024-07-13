@@ -10,13 +10,9 @@ pub(crate) trait MessageGenerator {
 
     fn verack(&mut self) -> Vec<u8>;
 
-    fn get_addr(&mut self) -> Vec<u8>;
+    fn addr(&mut self) -> Vec<u8>;
 
-    fn get_headers(
-        &mut self,
-        locator_hashes: Vec<BlockHash>,
-        stop_hash: Option<BlockHash>,
-    ) -> Vec<u8>;
+    fn headers(&mut self, locator_hashes: Vec<BlockHash>, stop_hash: Option<BlockHash>) -> Vec<u8>;
 
     fn cf_headers(&mut self, message: GetCFHeaders) -> Vec<u8>;
 
