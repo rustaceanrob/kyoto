@@ -1,5 +1,18 @@
 This document outlines some miscellaneous information about the project and some recommendations for implementation. The goal for Kyoto is to run on mobile devices with a low-enough memory footprint to allow users to interact with Lightning Network applications as well. To that end, some assumptions and design goals were made to cater to low-resource devices. Neutrino and LND are the current standard of a server-style, SPV Lightning Node implementation, so Kyoto is generally compliment and not a substitution.
 
+# Scope
+
+### Functional Goals
+
+- [x] Provide an archival index for blocks and transactions related to a set of `scriptPubKey`, presumably because the user is interested in transactions with these scripts involved.
+- [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Once BIP-324 is integrated, communication over the P2P network will also be encrypted.
+- [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network.
+- [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
+
+### Out of Scope
+
+- Any wallet functionality beyond indexing transactions. This includes balances, transaction construction, etc. Bitcoin wallets are complex for a number of reasons, and additional functionality within this scope would detract from other improvements.
+
 # Recommendations
 
 While Kyoto is configurable, there are tradeoffs to each configuration, and some may be better than others. The main advantage to using a light client is increased privacy, but the hope is Kyoto may even lead to a better user experience than standard server-client setups.
