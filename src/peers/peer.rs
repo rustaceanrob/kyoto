@@ -158,7 +158,6 @@ impl Peer {
         match message {
             PeerMessage::Version(version) => {
                 self.message_counter.got_version();
-                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -243,6 +242,7 @@ impl Peer {
             }
             PeerMessage::Verack => {
                 self.message_counter.got_verack();
+                self.message_timer.untrack();
                 Ok(())
             }
             PeerMessage::Ping(nonce) => {
