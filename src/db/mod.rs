@@ -6,7 +6,6 @@ use bitcoin::p2p::ServiceFlags;
 pub mod error;
 /// In-memory persistence trait implementations for light-weight nodes running on constrained or semi-trusted setups.
 pub mod memory;
-pub(crate) mod peer_man;
 /// Persistence traits defined with SQL Lite to store data between sessions.
 #[cfg(feature = "database")]
 pub mod sqlite;
@@ -37,5 +36,11 @@ impl PersistedPeer {
             tried,
             banned,
         }
+    }
+}
+
+impl From<PersistedPeer> for (IpAddr, u16) {
+    fn from(value: PersistedPeer) -> Self {
+        (value.addr, value.port)
     }
 }

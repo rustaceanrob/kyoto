@@ -12,12 +12,12 @@ impl Dialog {
         Self { ntx }
     }
 
-    pub(crate) async fn send_dialog(&mut self, dialog: String) {
+    pub(crate) async fn send_dialog(&self, dialog: String) {
         let _ = self.ntx.send(NodeMessage::Dialog(dialog));
     }
 
     pub(crate) async fn chain_update(
-        &mut self,
+        &self,
         num_headers: u32,
         num_cf_headers: u32,
         num_filters: u32,
@@ -30,11 +30,11 @@ impl Dialog {
         let _ = self.ntx.send(NodeMessage::Dialog(message));
     }
 
-    pub(crate) async fn send_warning(&mut self, warning: String) {
+    pub(crate) async fn send_warning(&self, warning: String) {
         let _ = self.ntx.send(NodeMessage::Warning(warning));
     }
 
-    pub(crate) async fn send_data(&mut self, message: NodeMessage) {
+    pub(crate) async fn send_data(&self, message: NodeMessage) {
         let _ = self.ntx.send(message);
     }
 }

@@ -58,28 +58,26 @@ async fn main() {
     // specific tasks.
     let (sender, mut receiver) = client.split();
     // Continually listen for events until the node is synced to its peers.
-    loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{}", d),
-                NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::StateChange(_) => (),
-                NodeMessage::Transaction(t) => drop(t),
-                NodeMessage::Block(b) => drop(b),
-                NodeMessage::BlocksDisconnected(r) => {
-                    let _ = r;
-                }
-                NodeMessage::TxSent(t) => {
-                    tracing::info!("Transaction sent. TXID: {t}");
-                }
-                NodeMessage::TxBroadcastFailure(t) => {
-                    tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
-                }
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip().height,);
-                    tracing::info!("Chain tip: {}", update.tip().hash.to_string(),);
-                    break;
-                }
+    while let Ok(message) = receiver.recv().await {
+        match message {
+            NodeMessage::Dialog(d) => tracing::info!("{}", d),
+            NodeMessage::Warning(e) => tracing::warn!("{}", e),
+            NodeMessage::StateChange(_) => (),
+            NodeMessage::Transaction(t) => drop(t),
+            NodeMessage::Block(b) => drop(b),
+            NodeMessage::BlocksDisconnected(r) => {
+                let _ = r;
+            }
+            NodeMessage::TxSent(t) => {
+                tracing::info!("Transaction sent. TXID: {t}");
+            }
+            NodeMessage::TxBroadcastFailure(t) => {
+                tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
+            }
+            NodeMessage::Synced(update) => {
+                tracing::info!("Synced chain up to block {}", update.tip().height,);
+                tracing::info!("Chain tip: {}", update.tip().hash.to_string(),);
+                break;
             }
         }
     }

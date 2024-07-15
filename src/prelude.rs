@@ -53,12 +53,12 @@ impl Median<u32> for Vec<u32> {
     }
 }
 
-pub trait SlashSixteen {
-    fn slash_sixteen(&mut self) -> String;
+pub trait Netgroup {
+    fn netgroup(&mut self) -> String;
 }
 
-impl SlashSixteen for IpAddr {
-    fn slash_sixteen(&mut self) -> String {
+impl Netgroup for IpAddr {
+    fn netgroup(&mut self) -> String {
         if self.is_ipv4() {
             self.to_string()
                 .split('.')
