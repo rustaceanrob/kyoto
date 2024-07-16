@@ -75,7 +75,7 @@ impl HeaderStore for () {
 #[async_trait]
 pub trait PeerStore {
     /// Add a peer to the database, defining if it should be replaced or not.
-    async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError>;
+    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError>;
 
     /// Get any peer from the database, selected at random. If no peers exist, an error is thrown.
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError>;
@@ -86,7 +86,7 @@ pub trait PeerStore {
 
 #[async_trait]
 impl PeerStore for () {
-    async fn update(&mut self, _peer: PersistedPeer, _replace: bool) -> Result<(), DatabaseError> {
+    async fn update(&mut self, _peer: PersistedPeer) -> Result<(), DatabaseError> {
         Ok(())
     }
 

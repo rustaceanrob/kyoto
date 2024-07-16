@@ -176,7 +176,7 @@ impl Node {
             self.dispatch().await?;
             // If there are blocks in the queue, we should request them of a random peer
             self.get_blocks().await;
-            // If we have a transaction to broadcast and we are connected to peers, we should broadcast it
+            // If we have a transaction to broadcast and we are connected to peers, we should broadcast them
             self.broadcast_transactions().await;
             // Either handle a message from a remote peer or from our client
             select! {
