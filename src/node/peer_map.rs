@@ -16,7 +16,7 @@ use tokio::{
 };
 
 use crate::{
-    db::{error::PeerManagerError, traits::PeerStore, PersistedPeer},
+    db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
     peers::peer::{Peer, PeerError},
     prelude::{Median, Netgroup},
 };
@@ -27,8 +27,10 @@ use super::{
     error::NodeError,
 };
 
+// Preferred peers to connect to based on the user configuration
 type Whitelist = Option<Vec<(IpAddr, u16)>>;
 
+// A peer that is or was connected to the node
 #[derive(Debug)]
 pub(crate) struct ManagedPeer {
     net_time: i64,
@@ -38,6 +40,7 @@ pub(crate) struct ManagedPeer {
     handle: JoinHandle<Result<(), PeerError>>,
 }
 
+// The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
 pub(crate) struct PeerMap {
     num_peers: u32,
@@ -75,11 +78,13 @@ impl PeerMap {
         }
     }
 
+    // Remove any finished connections
     pub async fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished());
         self.heights.retain(|peer, _| self.map.contains_key(peer));
     }
 
+    // The number of peers with live connections
     pub fn live(&mut self) -> usize {
         self.map
             .values()
@@ -87,6 +92,7 @@ impl PeerMap {
             .count()
     }
 
+    // The number of peers that serve compact block filters
     pub fn num_cpf_peers(&mut self) -> usize {
         self.map
             .values()
@@ -101,6 +107,7 @@ impl PeerMap {
             .count()
     }
 
+    // Get the median time adjustment for the currently connected peers
     pub fn median_time_adjustment(&self) -> i64 {
         if self.map.values().len() > 0 {
             let mut time_offsets: Vec<i64> = self.map.values().map(|peer| peer.net_time).collect();
@@ -109,6 +116,7 @@ impl PeerMap {
         0
     }
 
+    // Set the time offset of a connected peer
     pub fn set_offset(&mut self, peer: u32, time: i64) {
         if let Some(peer) = self.map.get_mut(&peer) {
             let now = SystemTime::now()
@@ -119,6 +127,7 @@ impl PeerMap {
         }
     }
 
+    // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, ip: IpAddr, port: u16) {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
@@ -140,32 +149,38 @@ impl PeerMap {
         );
     }
 
+    // Set the services of a peer
     pub fn set_services(&mut self, nonce: u32, flags: ServiceFlags) {
         if let Some(peer) = self.map.get_mut(&nonce) {
             peer.service_flags = Some(flags)
         }
     }
 
+    // Set the height of a peer upon receiving the version message
     pub fn set_height(&mut self, nonce: u32, height: u32) {
         self.heights.insert(nonce, height);
     }
 
+    // Add one to the height of a peer when receiving inventory
     pub fn add_one_height(&mut self, nonce: u32) {
         if let Some(height) = self.heights.get(&nonce) {
             self.heights.insert(nonce, height + 1);
         }
     }
 
+    // The best height of all known or connected peers
     pub fn best_height(&self) -> Option<&u32> {
         self.heights.values().max()
     }
 
+    // Send a message to the specified peer
     pub async fn send_message(&mut self, nonce: u32, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
         }
     }
 
+    // Broadcast to all connected peers
     pub async fn broadcast(&mut self, message: MainThreadMessage) {
         let active = self.map.values().filter(|peer| !peer.handle.is_finished());
         for peer in active {
@@ -173,6 +188,7 @@ impl PeerMap {
         }
     }
 
+    // Send to a random peer
     pub async fn send_random(&mut self, message: MainThreadMessage) {
         let mut rng = StdRng::from_entropy();
         if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
@@ -180,6 +196,8 @@ impl PeerMap {
         }
     }
 
+    // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
+    // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<(IpAddr, u16), NodeError> {
         if let Some(whitelist) = &mut self.whitelist {
             if let Some((ip, port)) = whitelist.pop() {
@@ -240,10 +258,7 @@ impl PeerMap {
         let mut db = self.db.lock().await;
         for peer in peers {
             if let Err(e) = db
-                .update(
-                    PersistedPeer::new(peer.0, peer.1, peer.2, false, false),
-                    false,
-                )
+                .update(PersistedPeer::new(peer.0, peer.1, peer.2, PeerStatus::New))
                 .await
             {
                 self.dialog
@@ -272,16 +287,12 @@ impl PeerMap {
         // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock
-                .update(
-                    PersistedPeer::new(
-                        peer,
-                        default_port_from_network(&self.network),
-                        ServiceFlags::NONE,
-                        false,
-                        false,
-                    ),
-                    true,
-                )
+                .update(PersistedPeer::new(
+                    peer,
+                    default_port_from_network(&self.network),
+                    ServiceFlags::NONE,
+                    PeerStatus::New,
+                ))
                 .await
                 .map_err(PeerManagerError::Database)?;
         }

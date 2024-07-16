@@ -354,6 +354,6 @@ pub enum PeerError {
     ThreadChannel,
     #[error("The main thread advised this peer to disconnect.")]
     DisconnectCommand,
-    #[error("The ereading thread encountered an error.")]
+    #[error("The reading thread encountered an error.")]
     Reader,
 }

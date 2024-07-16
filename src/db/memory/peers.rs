@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::IpAddr};
 use async_trait::async_trait;
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 
-use crate::db::{error::DatabaseError, traits::PeerStore, PersistedPeer};
+use crate::db::{error::DatabaseError, traits::PeerStore, PeerStatus, PersistedPeer};
 
 /// A simple peer store that does not save state in between sessions.
 /// If DNS is not enabled, a node will require at least one peer to connect to.
@@ -22,24 +22,28 @@ impl StatelessPeerStore {
 
 #[async_trait]
 impl PeerStore for StatelessPeerStore {
-    async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError> {
+    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
         // Don't add back peers we already connected to this session.
-        if peer.tried {
-            return Ok(());
+        match peer.status {
+            PeerStatus::New => {
+                self.list.entry(peer.addr).or_insert(peer);
+                return Ok(());
+            }
+            PeerStatus::Tried => return Ok(()),
+            PeerStatus::Ban => {
+                self.list.insert(peer.addr, peer);
+                return Ok(());
+            }
         }
-        if replace {
-            // We are banning a peer and want to keep track of who we don't get along with
-            self.list.insert(peer.addr, peer);
-        } else {
-            self.list.entry(peer.addr).or_insert(peer);
-        }
-        Ok(())
     }
 
     async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
         let mut rng = StdRng::from_entropy();
         let random_peer = {
-            let iter = self.list.iter_mut().filter(|(_, peer)| !peer.banned);
+            let iter = self
+                .list
+                .iter_mut()
+                .filter(|(_, peer)| peer.status != PeerStatus::Ban);
             iter.choose(&mut rng).map(|(key, _)| *key)
         };
         match random_peer {
@@ -49,7 +53,11 @@ impl PeerStore for StatelessPeerStore {
     }
 
     async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
-        Ok(self.list.iter().filter(|(_, peer)| !peer.banned).count() as u32)
+        Ok(self
+            .list
+            .iter()
+            .filter(|(_, peer)| peer.status != PeerStatus::Ban)
+            .count() as u32)
     }
 }
 
@@ -73,20 +81,20 @@ mod tests {
         let ip_1 = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
         let ip_2 = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
         let ip_3 = IpAddr::V4(Ipv4Addr::new(3, 3, 3, 3));
-        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, false);
-        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, false, false);
-        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, false, false);
-        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, true, false);
-        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, true);
-        peer_store.update(peer_1, false).await.unwrap();
+        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, PeerStatus::New);
+        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::Tried);
+        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::Ban);
+        peer_store.update(peer_1).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
-        peer_store.update(peer_2, false).await.unwrap();
+        peer_store.update(peer_2).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
-        peer_store.update(peer_3, false).await.unwrap();
+        peer_store.update(peer_3).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
-        peer_store.update(try_peer_2, true).await.unwrap();
+        peer_store.update(try_peer_2).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
-        peer_store.update(ban_peer_1, true).await.unwrap();
+        peer_store.update(ban_peer_1).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
         let _ = peer_store.random().await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);

@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::db::error::DatabaseError;
 use crate::db::traits::PeerStore;
-use crate::db::PersistedPeer;
+use crate::db::{PeerStatus, PersistedPeer};
 
 const PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
     ip_addr TEXT PRIMARY KEY,
@@ -48,12 +48,16 @@ impl SqlitePeerDb {
 
 #[async_trait]
 impl PeerStore for SqlitePeerDb {
-    async fn update(&mut self, peer: PersistedPeer, replace: bool) -> Result<(), DatabaseError> {
+    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
         let lock = self.conn.lock().await;
-        let stmt = if !replace {
-            "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)"
-        } else {
-            "INSERT OR REPLACE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)"
+        let stmt = match peer.status {
+            PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
+            _ => "INSERT OR REPLACE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
+        };
+        let (tried, banned) = match peer.status {
+            PeerStatus::New => (false, false),
+            PeerStatus::Tried => (true, false),
+            PeerStatus::Ban => (true, true),
         };
         lock.execute(
             stmt,
@@ -61,8 +65,8 @@ impl PeerStore for SqlitePeerDb {
                 peer.addr.to_string(),
                 peer.port,
                 peer.services.to_u64(),
-                peer.tried,
-                peer.banned,
+                tried,
+                banned,
             ],
         )
         .map_err(|_| DatabaseError::Write)?;
@@ -80,12 +84,16 @@ impl PeerStore for SqlitePeerDb {
             let port: u16 = row.get(1).map_err(|_| DatabaseError::Load)?;
             let service_flags: u64 = row.get(2).map_err(|_| DatabaseError::Load)?;
             let tried: bool = row.get(3).map_err(|_| DatabaseError::Load)?;
-            let banned: bool = row.get(4).map_err(|_| DatabaseError::Load)?;
+            let status = if tried {
+                PeerStatus::Tried
+            } else {
+                PeerStatus::New
+            };
             let ip = ip_addr
                 .parse::<IpAddr>()
                 .map_err(|_| DatabaseError::Deserialization)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
-            return Ok(PersistedPeer::new(ip, port, services, tried, banned));
+            return Ok(PersistedPeer::new(ip, port, services, status));
         } else {
             return Err(DatabaseError::Load);
         }
@@ -118,20 +126,20 @@ mod tests {
         let ip_1 = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
         let ip_2 = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
         let ip_3 = IpAddr::V4(Ipv4Addr::new(3, 3, 3, 3));
-        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, false);
-        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, false, false);
-        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, false, false);
-        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, true, false);
-        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, false, true);
-        peer_store.update(peer_1, false).await.unwrap();
+        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, PeerStatus::New);
+        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::Tried);
+        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::Ban);
+        peer_store.update(peer_1).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
-        peer_store.update(peer_2, false).await.unwrap();
+        peer_store.update(peer_2).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
-        peer_store.update(peer_3, false).await.unwrap();
+        peer_store.update(peer_3).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
-        peer_store.update(try_peer_2, true).await.unwrap();
+        peer_store.update(try_peer_2).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 3);
-        peer_store.update(ban_peer_1.clone(), true).await.unwrap();
+        peer_store.update(ban_peer_1.clone()).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 2);
         let random = peer_store.random().await.unwrap();
         assert_ne!(ban_peer_1.addr, random.addr);

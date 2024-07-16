@@ -21,20 +21,17 @@ pub struct PersistedPeer {
     pub port: u16,
     /// The services this peer may offer.
     pub services: ServiceFlags,
-    /// Have we tried this peer before.
-    pub tried: bool,
-    /// Did we ban this peer for faulty behavior.
-    pub banned: bool,
+    /// A new, tried, or banned status.
+    pub status: PeerStatus,
 }
 
 impl PersistedPeer {
-    pub fn new(addr: IpAddr, port: u16, services: ServiceFlags, tried: bool, banned: bool) -> Self {
+    pub fn new(addr: IpAddr, port: u16, services: ServiceFlags, status: PeerStatus) -> Self {
         Self {
             addr,
             port,
             services,
-            tried,
-            banned,
+            status,
         }
     }
 }
@@ -43,4 +40,15 @@ impl From<PersistedPeer> for (IpAddr, u16) {
     fn from(value: PersistedPeer) -> Self {
         (value.addr, value.port)
     }
+}
+
+/// The status of a peer in the database.
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum PeerStatus {
+    /// A newly found peer from DNS or the peer-to-peer network.
+    New,
+    /// The node successfully connected to this peer.
+    Tried,
+    /// A connected peer responded with faulty or malicious behavior.
+    Ban,
 }
