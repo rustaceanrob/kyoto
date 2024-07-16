@@ -21,6 +21,13 @@ use std::net::IpAddr;
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::message_network::RejectReason;
 pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
+/// Build a light client and node.
+pub use node::builder::NodeBuilder;
+/// A structured way to send messages to a running node.
+pub use node::client::{Client, ClientSender};
+/// A Bitcoin light client according to BIP 157/158.
+pub use node::node::Node;
+pub use tokio::sync::broadcast::Receiver;
 
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]
