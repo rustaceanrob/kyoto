@@ -74,3 +74,7 @@ Kyoto expects users to adopt some form of persistence between sessions when it c
 ### Filters
 
 Block filters for a full block may be 300-400 bytes, and may be needless overhead if scripts are revealed "into the future" for the underlying wallet. Full filters are checked for matches as they are downloaded, but are discarded thereafter. As a result, if the user adds scripts that are believe to be included in blocks _in the past_, Kyoto will have to redownload the filters. But if the wallet has up to date information, a revealing a new script is guaranteed to have not been used. This memory tradeoff was deemed worthwhile, as it is expected rescanning will only occur for recovery scenarios.
+
+### Structure
+
+![Layout](https://github.com/user-attachments/assets/21280bb4-aa88-4e11-9223-aed35a885e99)
