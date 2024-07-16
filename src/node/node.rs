@@ -343,30 +343,31 @@ impl Node {
         }
         let mut peer_map = self.peer_map.lock().await;
         if peer_map.live().ge(&self.required_peers) {
-            let transaction = broadcaster.next().unwrap();
-            let txid = transaction.tx.compute_txid();
-            match transaction.broadcast_policy {
-                TxBroadcastPolicy::AllPeers => {
-                    self.dialog
-                        .send_dialog(format!(
-                            "Sending transaction to {} connected peers.",
-                            peer_map.live()
-                        ))
-                        .await;
-                    peer_map
-                        .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
-                        .await;
+            for transaction in broadcaster.queue() {
+                let txid = transaction.tx.compute_txid();
+                match transaction.broadcast_policy {
+                    TxBroadcastPolicy::AllPeers => {
+                        self.dialog
+                            .send_dialog(format!(
+                                "Sending transaction to {} connected peers.",
+                                peer_map.live()
+                            ))
+                            .await;
+                        peer_map
+                            .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
+                            .await;
+                    }
+                    TxBroadcastPolicy::RandomPeer => {
+                        self.dialog
+                            .send_dialog("Sending transaction to a random peer.".into())
+                            .await;
+                        peer_map
+                            .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
+                            .await;
+                    }
                 }
-                TxBroadcastPolicy::RandomPeer => {
-                    self.dialog
-                        .send_dialog("Sending transaction to a random peer.".into())
-                        .await;
-                    peer_map
-                        .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
-                        .await;
-                }
+                self.dialog.send_data(NodeMessage::TxSent(txid)).await;
             }
-            self.dialog.send_data(NodeMessage::TxSent(txid)).await;
         }
     }
 

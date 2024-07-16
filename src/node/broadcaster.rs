@@ -18,6 +18,12 @@ impl Broadcaster {
         self.queue.is_empty()
     }
 
+    pub(crate) fn queue(&mut self) -> Vec<TxBroadcast> {
+        let ret = self.queue.clone();
+        self.queue = Vec::new();
+        ret
+    }
+
     pub(crate) fn next(&mut self) -> Option<TxBroadcast> {
         self.queue.pop()
     }
