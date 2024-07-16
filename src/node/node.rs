@@ -25,11 +25,7 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
-    db::{
-        error::{DatabaseError, PeerManagerError},
-        peer_man::PeerManager,
-        traits::{HeaderStore, PeerStore},
-    },
+    db::traits::{HeaderStore, PeerStore},
     filters::cfheader_chain::AppendAttempt,
     node::peer_map::PeerMap,
     TxBroadcastPolicy,
@@ -70,12 +66,13 @@ pub enum NodeState {
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain>>,
-    peer_man: Arc<Mutex<PeerManager>>,
+    peer_map: Arc<Mutex<PeerMap>>,
+    tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: usize,
-    white_list: Whitelist,
     network: Network,
     dialog: Dialog,
     client_recv: Receiver<ClientMessage>,
+    peer_recv: Receiver<PeerThreadMessage>,
     is_running: AtomicBool,
 }
 
@@ -95,22 +92,28 @@ impl Node {
         let (ntx, _) = broadcast::channel::<NodeMessage>(32);
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
         let client = Client::new(ntx.clone(), ctx);
+        // A structured way to talk to the client
+        let dialog = Dialog::new(ntx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
-        // Configure the address manager
-        let peer_man = Arc::new(Mutex::new(PeerManager::new(
+        // Configure the peer manager
+        let (mtx, mrx) = mpsc::channel::<PeerThreadMessage>(32);
+        let peer_map = Arc::new(Mutex::new(PeerMap::new(
+            mtx,
+            network,
             peer_store,
-            &network,
+            white_list,
+            dialog.clone(),
             target_peer_size,
         )));
+        // Set up the transaction broadcaster
+        let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
         // Prepare the header checkpoints for the chain source
         let mut checkpoints = HeaderCheckpoints::new(&network);
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
         checkpoints.prune_up_to(checkpoint);
-        // A structured way to talk to the client
-        let dialog = Dialog::new(ntx);
         // Build the chain
-        let loaded_chain = Chain::new(
+        let chain = Chain::new(
             &network,
             scripts,
             checkpoint,
@@ -119,18 +122,18 @@ impl Node {
             header_store,
             required_peers,
         );
-        // Initialize the chain with the headers we loaded
-        let chain = Arc::new(Mutex::new(loaded_chain));
+        let chain = Arc::new(Mutex::new(chain));
         (
             Self {
                 state,
                 chain,
-                peer_man,
+                peer_map,
+                tx_broadcaster,
                 required_peers,
-                white_list,
                 network,
                 dialog,
                 client_recv: crx,
+                peer_recv: mrx,
                 is_running: AtomicBool::new(false),
             },
             client,
@@ -166,78 +169,34 @@ impl Node {
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.fetch_headers().await?;
-        let (mtx, mut mrx) = mpsc::channel::<PeerThreadMessage>(32);
-        let mut node_map = PeerMap::new(mtx, self.network);
-        let mut tx_broadcaster = Broadcaster::new();
         loop {
-            // Try to advance the state of the node and remove old connections
+            // Try to advance the state of the node
             self.advance_state().await;
-            node_map.clean().await;
-            // Find more peers when lower than the desired threshold.
-            if node_map.live() < self.next_required_peers().await {
-                self.dialog
-                    .send_dialog(format!(
-                        "Required peers: {}, connected peers: {}",
-                        self.required_peers,
-                        node_map.live()
-                    ))
-                    .await;
-                self.dialog
-                    .send_dialog("Not connected to enough peers, finding one...".into())
-                    .await;
-                let ip = self.next_peer().await?;
-                node_map.dispatch(ip.0, ip.1).await
-            }
+            // Connect to more peers if we need them and remove old connections
+            self.dispatch().await?;
             // If there are blocks in the queue, we should request them of a random peer
-            if let Some(block_request) = self.pop_block_queue().await {
-                self.dialog
-                    .send_dialog("Sending block request to a random peer".into())
-                    .await;
-                node_map.send_random(block_request).await;
-            }
+            self.get_blocks().await;
             // If we have a transaction to broadcast and we are connected to peers, we should broadcast it
-            if node_map.live().ge(&self.required_peers) && !tx_broadcaster.is_empty() {
-                let transaction = tx_broadcaster.next().unwrap();
-                let txid = transaction.tx.compute_txid();
-                match transaction.broadcast_policy {
-                    TxBroadcastPolicy::AllPeers => {
-                        self.dialog
-                            .send_dialog(format!(
-                                "Sending transaction to {} connected peers.",
-                                node_map.live()
-                            ))
-                            .await;
-                        node_map
-                            .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await;
-                    }
-                    TxBroadcastPolicy::RandomPeer => {
-                        self.dialog
-                            .send_dialog("Sending transaction to a random peer.".into())
-                            .await;
-                        node_map
-                            .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await;
-                    }
-                }
-                self.dialog.send_data(NodeMessage::TxSent(txid)).await;
-            }
+            self.broadcast_transactions().await;
             // Either handle a message from a remote peer or from our client
             select! {
-                peer = tokio::time::timeout(Duration::from_secs(1), mrx.recv()) => {
+                peer = tokio::time::timeout(Duration::from_secs(1), self.peer_recv.recv()) => {
                     match peer {
                         Ok(Some(peer_thread)) => {
                             match peer_thread.message {
                                 PeerMessage::Version(version) => {
-                                    node_map.set_offset(peer_thread.nonce, version.timestamp);
-                                    node_map.set_services(peer_thread.nonce, version.service_flags);
-                                    node_map.set_height(peer_thread.nonce, version.height as u32);
-                                    let best = *node_map.best_height().unwrap_or(&0);
+                                    let best = {
+                                        let mut peer_map = self.peer_map.lock().await;
+                                        peer_map.set_offset(peer_thread.nonce, version.timestamp);
+                                        peer_map.set_services(peer_thread.nonce, version.service_flags);
+                                        peer_map.set_height(peer_thread.nonce, version.height as u32);
+                                        *peer_map.best_height().unwrap_or(&0)
+                                    };
                                     let response = self.handle_version(version, best).await;
                                     if self.need_peers().await? {
-                                        node_map.send_message(peer_thread.nonce, MainThreadMessage::GetAddr).await;
+                                        self.send_message(peer_thread.nonce, MainThreadMessage::GetAddr).await;
                                     }
-                                    node_map.send_message(peer_thread.nonce, response).await;
+                                    self.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
                                         .await;
                                 }
@@ -247,7 +206,7 @@ impl Node {
                                         .await;
                                     match self.handle_headers(headers).await {
                                         Some(response) => {
-                                            node_map.send_message(peer_thread.nonce, response).await;
+                                            self.send_message(peer_thread.nonce, response).await;
                                         }
                                         None => continue,
                                     }
@@ -256,8 +215,7 @@ impl Node {
                                     self.dialog.send_dialog(format!("[Peer {}]: filter headers", peer_thread.nonce)).await;
                                     match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
                                         Some(response) => {
-                                            // match depending on disconnect
-                                            node_map.broadcast(response).await;
+                                            self.broadcast(response).await;
                                         }
                                         None => continue,
                                     }
@@ -265,29 +223,32 @@ impl Node {
                                 PeerMessage::Filter(filter) => {
                                     match self.handle_filter(peer_thread.nonce, filter).await {
                                         Some(response) => {
-                                            node_map.send_message(peer_thread.nonce, response).await;
+                                            self.send_message(peer_thread.nonce, response).await;
                                         }
                                         None => continue,
                                     }
                                 }
                                 PeerMessage::Block(block) => match self.handle_block(block).await {
                                     Some(response) => {
-                                        node_map.broadcast(response).await;
+                                        self.send_message(peer_thread.nonce, response).await;
                                     }
                                     None => continue,
                                 },
                                 PeerMessage::NewBlocks(blocks) => {
                                     self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
                                         .await;
-                                    for block in blocks {
-                                        node_map.add_one_height(peer_thread.nonce);
-                                        self.dialog.send_dialog(format!("New block: {}", block))
-                                            .await;
-                                    }
-                                    let best = *node_map.best_height().unwrap_or(&0);
+                                    let best = {
+                                        let mut peer_map = self.peer_map.lock().await;
+                                        for block in blocks {
+                                            peer_map.add_one_height(peer_thread.nonce);
+                                            self.dialog.send_dialog(format!("New block: {}", block))
+                                                .await;
+                                        }
+                                        *peer_map.best_height().unwrap_or(&0)
+                                    };
                                     match self.handle_inventory_blocks(best).await {
                                         Some(response) => {
-                                            node_map.broadcast(response).await;
+                                            self.broadcast(response).await;
                                         }
                                         None => continue,
                                     }
@@ -298,7 +259,7 @@ impl Node {
                                     self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
                                 }
                                 PeerMessage::Disconnect => {
-                                    node_map.clean().await;
+                                    self.peer_map.lock().await.clean().await;
                                 }
                                 _ => continue,
                             }
@@ -310,11 +271,11 @@ impl Node {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
-                            ClientMessage::Broadcast(transaction) => tx_broadcaster.add(transaction),
+                            ClientMessage::Broadcast(transaction) => self.tx_broadcaster.lock().await.add(transaction),
                             ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan().await {
-                                    node_map.broadcast(response).await;
+                                    self.broadcast(response).await;
                                 }
                             },
                         }
@@ -324,6 +285,92 @@ impl Node {
         }
     }
 
+    // Send a message to a specified peer
+    async fn send_message(&self, nonce: u32, message: MainThreadMessage) {
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.send_message(nonce, message).await;
+    }
+
+    // Broadcast a messsage to all connected peers
+    async fn broadcast(&self, message: MainThreadMessage) {
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.broadcast(message).await;
+    }
+
+    // Send a message to a random peer
+    async fn send_random(&self, message: MainThreadMessage) {
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.send_random(message).await;
+    }
+
+    // Connect to a new peer if we are not connected to enough
+    async fn dispatch(&mut self) -> Result<(), NodeError> {
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.clean().await;
+        // Find more peers when lower than the desired threshold.
+        if peer_map.live() < self.next_required_peers().await {
+            self.dialog
+                .send_dialog(format!(
+                    "Required peers: {}, connected peers: {}",
+                    self.required_peers,
+                    peer_map.live()
+                ))
+                .await;
+            self.dialog
+                .send_dialog("Not connected to enough peers, finding one...".into())
+                .await;
+            let ip = peer_map.next_peer().await?;
+            peer_map.dispatch(ip.0, ip.1).await;
+        }
+        Ok(())
+    }
+
+    // If there are blocks in the queue, we should request them of a random peer
+    async fn get_blocks(&mut self) {
+        if let Some(block_request) = self.pop_block_queue().await {
+            self.dialog
+                .send_dialog("Sending block request to a random peer".into())
+                .await;
+            self.send_random(block_request).await;
+        }
+    }
+
+    // Broadcast transactions according to the configured policy
+    async fn broadcast_transactions(&mut self) {
+        let mut broadcaster = self.tx_broadcaster.lock().await;
+        if broadcaster.is_empty() {
+            return;
+        }
+        let mut peer_map = self.peer_map.lock().await;
+        if peer_map.live().ge(&self.required_peers) {
+            let transaction = broadcaster.next().unwrap();
+            let txid = transaction.tx.compute_txid();
+            match transaction.broadcast_policy {
+                TxBroadcastPolicy::AllPeers => {
+                    self.dialog
+                        .send_dialog(format!(
+                            "Sending transaction to {} connected peers.",
+                            peer_map.live()
+                        ))
+                        .await;
+                    peer_map
+                        .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
+                        .await;
+                }
+                TxBroadcastPolicy::RandomPeer => {
+                    self.dialog
+                        .send_dialog("Sending transaction to a random peer.".into())
+                        .await;
+                    peer_map
+                        .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
+                        .await;
+                }
+            }
+            self.dialog.send_data(NodeMessage::TxSent(txid)).await;
+        }
+    }
+
+    // Try to continue with the syncing process
     async fn advance_state(&mut self) {
         let mut state = self.state.write().await;
         match *state {
@@ -418,6 +465,7 @@ impl Node {
         MainThreadMessage::GetHeaders(next_headers)
     }
 
+    // Handle new addresses gossiped over the p2p network
     async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
         self.dialog
             .send_dialog(format!(
@@ -425,25 +473,20 @@ impl Node {
                 new_peers.len()
             ))
             .await;
-        let mut lock = self.peer_man.lock().await;
-        for addr in new_peers {
-            if let Err(e) = lock
-                .add_new_peer(
+        let peers = new_peers
+            .into_iter()
+            .map(|addr| {
+                (
                     addr.socket_addr()
                         .expect("IP should have been screened")
                         .ip(),
-                    Some(addr.port),
-                    Some(addr.services),
+                    addr.port,
+                    addr.services,
                 )
-                .await
-            {
-                self.dialog
-                    .send_warning(format!(
-                        "Encountered error adding peer to the database: {e}. The most likely cause is due to an unrecognized service flag."
-                    ))
-                    .await;
-            }
-        }
+            })
+            .collect();
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.add_gossiped_peers(peers).await;
     }
 
     // We always send headers to our peers, so our next message depends on our state
@@ -539,6 +582,7 @@ impl Node {
         }
     }
 
+    // Handle a new compact block filter
     async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter).await {
@@ -555,6 +599,7 @@ impl Node {
         }
     }
 
+    // Scan a block for transactions.
     async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.scan_block(&block).await {
@@ -652,69 +697,8 @@ impl Node {
             .map_err(NodeError::HeaderDatabase)
     }
 
-    // First we search the whitelist for peers that we trust. If we don't have any more whitelisted peers,
-    // we try to get a new peer from the peer manager. If that fails and our database is empty, we try DNS.
-    // Otherwise, the node throws an error.
-    async fn next_peer(&mut self) -> Result<(IpAddr, u16), NodeError> {
-        if let Some(whitelist) = &mut self.white_list {
-            if let Some((ip, port)) = whitelist.pop() {
-                return {
-                    self.dialog
-                        .send_dialog(format!("Using a peer from the white list: {}", ip))
-                        .await;
-                    Ok((ip, port))
-                };
-            }
-        }
-        let mut peer_manager = self.peer_man.lock().await;
-        match peer_manager.next_peer().await {
-            Ok((ip, port)) => {
-                self.dialog
-                    .send_dialog(format!("Found an existing peer in the database: {}", ip))
-                    .await;
-                Ok((ip, port))
-            }
-            Err(_) => {
-                let current_count = peer_manager
-                    .peer_count()
-                    .await
-                    .map_err(NodeError::PeerDatabase)?;
-                if current_count < 1 {
-                    self.dialog
-                        .send_warning("There are no peers in the database".into())
-                        .await;
-                    #[cfg(feature = "dns")]
-                    self.dialog
-                        .send_dialog("Using DNS to find new peers".into())
-                        .await;
-                    #[cfg(feature = "dns")]
-                    peer_manager
-                        .bootstrap()
-                        .await
-                        .map_err(NodeError::PeerDatabase)?;
-
-                    let next_peer = peer_manager
-                        .next_peer()
-                        .await
-                        .map_err(NodeError::PeerDatabase)?;
-                    return Ok((next_peer.0, next_peer.1));
-                }
-                self.dialog
-                    .send_warning("An error occured while finding a new peer".into())
-                    .await;
-                Err(NodeError::PeerDatabase(PeerManagerError::Database(
-                    DatabaseError::Load,
-                )))
-            }
-        }
-    }
-
+    // Do we have a low amount of peers in the database
     async fn need_peers(&mut self) -> Result<bool, NodeError> {
-        self.peer_man
-            .lock()
-            .await
-            .need_peers()
-            .await
-            .map_err(NodeError::PeerDatabase)
+        self.peer_map.lock().await.need_peers().await
     }
 }
