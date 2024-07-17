@@ -50,10 +50,12 @@ mod tests {
         assert!(tx.is_some());
         assert!(queue.is_empty());
         queue.add(tx_1);
-        queue.add(tx_2);
+        queue.add(tx_2.clone());
         assert!(!queue.is_empty());
         let txs = queue.queue();
         assert_eq!(txs.len(), 2);
         assert!(queue.is_empty());
+        queue.add(tx_2);
+        assert!(!queue.is_empty());
     }
 }
