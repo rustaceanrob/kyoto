@@ -1,22 +1,17 @@
-use bitcoin::consensus::deserialize;
-use bitcoin::consensus::deserialize_partial;
-use bitcoin::consensus::Decodable;
+use bitcoin::consensus::{deserialize, deserialize_partial, Decodable};
 use bitcoin::io::BufRead;
-use bitcoin::p2p::message::NetworkMessage;
-use bitcoin::p2p::message::RawNetworkMessage;
-use bitcoin::p2p::message_blockdata::Inventory;
-use bitcoin::p2p::Address;
-use bitcoin::p2p::Magic;
-use bitcoin::p2p::ServiceFlags;
-use bitcoin::Network;
-use bitcoin::Txid;
+use bitcoin::p2p::{
+    message::{NetworkMessage, RawNetworkMessage},
+    message_blockdata::Inventory,
+    Address, Magic, ServiceFlags,
+};
+use bitcoin::{Network, Txid};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc::Sender;
 
-use crate::node::channel_messages::PeerMessage;
-use crate::node::channel_messages::RemoteVersion;
+use crate::node::channel_messages::{PeerMessage, RemoteVersion};
 use crate::node::messages::RejectPayload;
 
 const ONE_MONTH: u64 = 2_500_000;
