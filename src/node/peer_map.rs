@@ -36,6 +36,7 @@ type Whitelist = Option<Vec<(IpAddr, u16)>>;
 pub(crate) struct ManagedPeer {
     net_time: i64,
     ip_addr: IpAddr,
+    port: u16,
     service_flags: Option<ServiceFlags>,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
@@ -133,7 +134,15 @@ impl PeerMap {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
-        let mut peer = Peer::new(peer_num, ip, port, self.network, self.mtx.clone(), prx);
+        let mut peer = Peer::new(
+            peer_num,
+            ip,
+            port,
+            self.network,
+            self.mtx.clone(),
+            prx,
+            self.dialog.clone(),
+        );
         let handle = tokio::spawn(async move { peer.connect().await });
         self.dialog
             .send_dialog(format!("Connecting to {}:{}", ip, port))
@@ -143,6 +152,7 @@ impl PeerMap {
             ManagedPeer {
                 service_flags: None,
                 ip_addr: ip,
+                port,
                 net_time: 0,
                 ptx,
                 handle,

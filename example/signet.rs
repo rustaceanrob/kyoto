@@ -57,9 +57,9 @@ async fn main() {
     loop {
         if let Ok(message) = receiver.recv().await {
             match message {
-                NodeMessage::Dialog(d) => tracing::info!("{}", d),
-                NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::StateChange(s) => tracing::info!("Node progress: {:?}", s),
+                NodeMessage::Dialog(d) => tracing::info!("{d}"),
+                NodeMessage::Warning(e) => tracing::warn!("{e}"),
+                NodeMessage::StateChange(s) => tracing::info!("{s}"),
                 NodeMessage::Transaction(t) => drop(t),
                 NodeMessage::Block(b) => drop(b),
                 NodeMessage::BlocksDisconnected(r) => {

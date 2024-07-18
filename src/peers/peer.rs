@@ -11,7 +11,11 @@ use tokio::{
 };
 
 use crate::{
-    node::channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
+    node::{
+        channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
+        dialog::Dialog,
+        messages::Warning,
+    },
     peers::outbound_messages::V1OutboundMessage,
 };
 
@@ -32,6 +36,7 @@ pub(crate) struct Peer {
     network: Network,
     message_counter: MessageCounter,
     message_timer: MessageTimer,
+    dialog: Dialog,
 }
 
 impl Peer {
@@ -42,6 +47,7 @@ impl Peer {
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
+        dialog: Dialog,
     ) -> Self {
         let message_counter = MessageCounter::new();
         let message_timer = MessageTimer::new();
@@ -54,6 +60,7 @@ impl Peer {
             network,
             message_counter,
             message_timer,
+            dialog,
         }
     }
 
@@ -68,6 +75,7 @@ impl Peer {
         if let Ok(tcp) = timeout {
             stream = tcp;
         } else {
+            self.dialog.send_warning(Warning::PeerTimedOut).await;
             let _ = self
                 .main_thread_sender
                 .send(PeerThreadMessage {
@@ -98,9 +106,11 @@ impl Peer {
                 return Ok(());
             }
             if self.message_counter.unsolicited() {
+                self.dialog.send_warning(Warning::UnsolicitedMessage).await;
                 return Ok(());
             }
             if self.message_timer.unresponsive() {
+                self.dialog.send_warning(Warning::PeerTimedOut).await;
                 return Ok(());
             }
             select! {
@@ -183,7 +193,6 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Headers(headers) => {
-                self.message_counter.got_header();
                 self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -208,7 +217,6 @@ impl Peer {
             }
             PeerMessage::Filter(filter) => {
                 self.message_counter.got_filter();
-                self.message_timer.untrack();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -295,7 +303,6 @@ impl Peer {
                     .map_err(|_| PeerError::BufferWrite)?;
             }
             MainThreadMessage::GetHeaders(config) => {
-                self.message_counter.sent_header();
                 self.message_timer.track();
                 let message = message_generator.headers(config.locators, config.stop_hash);
                 writer
@@ -314,7 +321,6 @@ impl Peer {
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
-                self.message_timer.track();
                 let message = message_generator.filters(config);
                 writer
                     .write_all(&message)
