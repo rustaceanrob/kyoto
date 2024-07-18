@@ -709,3 +709,27 @@ impl Node {
         self.peer_map.lock().await.need_peers().await
     }
 }
+
+impl std::fmt::Display for NodeState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeState::Behind => {
+                write!(f, "The node does not have all known block headers stored.")
+            }
+            NodeState::HeadersSynced => {
+                write!(f, "The node will start syncing compact filter headers.")
+            }
+            NodeState::FilterHeadersSynced => {
+                write!(f, "The node will start syncing compact block filters.")
+            }
+            NodeState::FiltersSynced => write!(
+                f,
+                "The node will start downloading blocks with relevant transactions."
+            ),
+            NodeState::TransactionsSynced => write!(
+                f,
+                "The node is believed to be fully synced to the highest block in the chain."
+            ),
+        }
+    }
+}

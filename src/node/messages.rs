@@ -94,6 +94,10 @@ pub enum ClientMessage {
 pub enum Warning {
     /// The node is looking for connections to peers.
     NotEnoughConnections,
+    /// A connection to a peer timed out.
+    PeerTimedOut,
+    /// A peer sent us a peer-to-peer message the node did not request.
+    UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
     UnlinkableAnchor,
     /// The headers in the database do not link together.
@@ -126,13 +130,18 @@ impl std::fmt::Display for Warning {
             }
             Warning::EvaluatingFork => write!(f, "The peer sent us a potential fork."),
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
-            Warning::UnexpectedSyncError(s) => write!(
-                f,
-                "An unexpected error occurred processing a peer-to-peer message: {}",
-                s
-            ),
+            Warning::UnexpectedSyncError(s) => write!(f, "Error handling a P2P message: {}", s),
             Warning::CorruptedHeaders => {
                 write!(f, "The headers in the database do not link together.")
+            }
+            Warning::PeerTimedOut => {
+                write!(f, "A connection to a peer timed out.")
+            }
+            Warning::UnsolicitedMessage => {
+                write!(
+                    f,
+                    "A peer sent us a peer-to-peer message the node did not request."
+                )
             }
         }
     }
