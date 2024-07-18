@@ -29,7 +29,10 @@ use crate::{
         filter_chain::FilterChain,
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
-    node::{dialog::Dialog, messages::NodeMessage},
+    node::{
+        dialog::Dialog,
+        messages::{NodeMessage, Warning},
+    },
     prelude::{params_from_network, MEDIAN_TIME_PAST},
     IndexedBlock,
 };
@@ -216,7 +219,9 @@ impl Chain {
             .await
         {
             self.dialog
-                .send_warning(format!("Error persisting to storage: {}", e))
+                .send_warning(Warning::FailedPersistance(format!(
+                    "Could not save headers to disk: {e}"
+                )))
                 .await;
         }
     }
@@ -231,7 +236,9 @@ impl Chain {
             .await
         {
             self.dialog
-                .send_warning(format!("Error persisting to storage: {}", e))
+                .send_warning(Warning::FailedPersistance(format!(
+                    "Could not save headers to disk: {e}"
+                )))
                 .await;
         }
     }
@@ -256,9 +263,7 @@ impl Chain {
                 .prev_blockhash
                 .ne(&self.tip())
             {
-                self.dialog
-                    .send_warning("Unlinkable anchor. The headers stored in the database have no connection to this configured anchor.".into())
-                    .await;
+                self.dialog.send_warning(Warning::UnlinkableAnchor).await;
                 // The header chain did not align, so just start from the anchor
                 return Err(HeaderPersistenceError::CannotLocateHistory);
             } else if loaded_headers
@@ -266,9 +271,7 @@ impl Chain {
                 .zip(loaded_headers.iter().skip(1))
                 .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
             {
-                self.dialog
-                    .send_warning("Blockhash pointer mismatch".into())
-                    .await;
+                self.dialog.send_warning(Warning::CorruptedHeaders).await;
                 return Err(HeaderPersistenceError::HeadersDoNotLink);
             }
             loaded_headers.iter().for_each(|header| {
@@ -393,7 +396,7 @@ impl Chain {
             } else {
                 self.dialog
                     .send_warning(
-                        "Peer is sending us malicious headers, restarting header sync.".into(),
+                        Warning::UnexpectedSyncError("Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into())
                     )
                     .await;
                 return Err(HeaderSyncError::InvalidCheckpoint);
@@ -409,9 +412,7 @@ impl Chain {
     // we only accept it if there is more work provided. otherwise, we disconnect the peer sending
     // us this fork
     async fn evaluate_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        self.dialog
-            .send_warning("Evaluting a potential fork...".into())
-            .await;
+        self.dialog.send_warning(Warning::EvaluatingFork).await;
         // We only care about the headers these two chains do not have in common
         let uncommon: Vec<Header> = header_batch
             .inner()
@@ -453,9 +454,9 @@ impl Chain {
                 Ok(())
             } else {
                 self.dialog
-                    .send_warning(
+                    .send_warning(Warning::UnexpectedSyncError(
                         "Peer sent us a fork with less work than the current chain".into(),
-                    )
+                    ))
                     .await;
                 Err(HeaderSyncError::LessWorkFork)
             }

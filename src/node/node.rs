@@ -41,7 +41,7 @@ use super::{
     config::NodeConfig,
     dialog::Dialog,
     error::NodeError,
-    messages::{ClientMessage, NodeMessage, SyncUpdate},
+    messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
 };
 
 type Whitelist = Option<Vec<(IpAddr, u16)>>;
@@ -255,7 +255,7 @@ impl Node {
                                 }
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
-                                        .send_warning(format!("Peer {} rejected transaction with ID {}", peer_thread.nonce, payload.txid)).await;
+                                        .send_warning(Warning::TransactionRejected).await;
                                     self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
                                 }
                                 PeerMessage::Disconnect => {
@@ -317,7 +317,7 @@ impl Node {
                 ))
                 .await;
             self.dialog
-                .send_dialog("Not connected to enough peers, finding one...".into())
+                .send_warning(Warning::NotEnoughConnections)
                 .await;
             let ip = peer_map.next_peer().await?;
             peer_map.dispatch(ip.0, ip.1).await;
@@ -446,9 +446,9 @@ impl Node {
                     || !version_message.service_flags.has(ServiceFlags::NETWORK)
                 {
                     self.dialog
-                        .send_warning(
+                        .send_warning(Warning::UnexpectedSyncError(
                             "Connected peer does not serve compact filters or blocks".into(),
-                        )
+                        ))
                         .await;
                     return MainThreadMessage::Disconnect;
                 }
@@ -511,7 +511,10 @@ impl Node {
                 }
                 _ => {
                     self.dialog
-                        .send_warning(format!("Unexpected header syncing error: {}", e))
+                        .send_warning(Warning::UnexpectedSyncError(format!(
+                            "Unexpected header syncing error: {}",
+                            e
+                        )))
                         .await;
                     return Some(MainThreadMessage::Disconnect);
                 }
@@ -564,19 +567,19 @@ impl Node {
                 AppendAttempt::Conflict(_) => {
                     // TODO: Request the filter and block from the peer
                     self.dialog
-                        .send_warning(
+                        .send_warning(Warning::UnexpectedSyncError(
                             "Found a conflict while peers are sending filter headers".into(),
-                        )
+                        ))
                         .await;
                     Some(MainThreadMessage::Disconnect)
                 }
             },
             Err(e) => {
                 self.dialog
-                    .send_warning(format!(
+                    .send_warning(Warning::UnexpectedSyncError(format!(
                         "Compact filter header syncing encountered an error: {}",
                         e
-                    ))
+                    )))
                     .await;
                 Some(MainThreadMessage::Disconnect)
             }
@@ -590,10 +593,10 @@ impl Node {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
             Err(e) => {
                 self.dialog
-                    .send_warning(format!(
+                    .send_warning(Warning::UnexpectedSyncError(format!(
                         "Compact filter syncing encountered an error: {}",
                         e
-                    ))
+                    )))
                     .await;
                 Some(MainThreadMessage::Disconnect)
             }
@@ -605,7 +608,10 @@ impl Node {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.scan_block(&block).await {
             self.dialog
-                .send_warning(format!("Unexpected block scanning error: {}", e))
+                .send_warning(Warning::UnexpectedSyncError(format!(
+                    "Unexpected block scanning error: {}",
+                    e
+                )))
                 .await;
             return Some(MainThreadMessage::Disconnect);
         }
