@@ -25,6 +25,7 @@ use super::{
     channel_messages::{MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
     error::NodeError,
+    messages::Warning,
 };
 
 // Preferred peers to connect to based on the user configuration
@@ -215,9 +216,7 @@ impl PeerMap {
                 .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?
         };
         if current_count < 1 {
-            self.dialog
-                .send_warning("There are no peers in the database.".into())
-                .await;
+            self.dialog.send_warning(Warning::EmptyPeerDatabase).await;
             #[cfg(feature = "dns")]
             self.bootstrap().await.map_err(NodeError::PeerDatabase)?;
         }
@@ -262,10 +261,10 @@ impl PeerMap {
                 .await
             {
                 self.dialog
-                    .send_warning(format!(
+                    .send_warning(Warning::FailedPersistance(format!(
                         "Encountered an error adding {}:{} flags: {} ... {e}",
                         peer.0, peer.1, peer.2
-                    ))
+                    )))
                     .await;
             }
         }

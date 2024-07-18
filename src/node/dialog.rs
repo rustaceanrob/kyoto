@@ -1,6 +1,6 @@
 use tokio::sync::broadcast::Sender;
 
-use super::messages::NodeMessage;
+use super::messages::{NodeMessage, Warning};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Dialog {
@@ -30,7 +30,7 @@ impl Dialog {
         let _ = self.ntx.send(NodeMessage::Dialog(message));
     }
 
-    pub(crate) async fn send_warning(&self, warning: String) {
+    pub(crate) async fn send_warning(&self, warning: Warning) {
         let _ = self.ntx.send(NodeMessage::Warning(warning));
     }
 

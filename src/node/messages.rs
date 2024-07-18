@@ -15,7 +15,7 @@ pub enum NodeMessage {
     /// Human readable dialog of what the node is currently doing
     Dialog(String),
     /// A warning that may effect the function of the node
-    Warning(String),
+    Warning(Warning),
     /// The current state of the node in the syncing process
     StateChange(NodeState),
     /// A relevant transaction based on the user provided scripts
@@ -27,6 +27,8 @@ pub enum NodeMessage {
     /// Blocks were reorganized out of the chain
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A transaction was sent to one or more connected peers.
+    /// This does not guarentee the transaction will be relayed or accepted by the peers,
+    /// only that the message was sent over the wire.
     TxSent(Txid),
     /// A problem occured sending a transaction.
     TxBroadcastFailure(RejectPayload),
@@ -85,4 +87,53 @@ pub enum ClientMessage {
     AddScripts(HashSet<ScriptBuf>),
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
     Rescan,
+}
+
+/// Warnings a node may issue while running.
+#[derive(Debug, Clone)]
+pub enum Warning {
+    /// The node is looking for connections to peers.
+    NotEnoughConnections,
+    /// The provided anchor is deeper than the database history.
+    UnlinkableAnchor,
+    /// The headers in the database do not link together.
+    CorruptedHeaders,
+    /// A transaction got rejected.
+    TransactionRejected,
+    /// A database failed to persist some data.
+    FailedPersistance(String),
+    /// The peer sent us a potential fork
+    EvaluatingFork,
+    /// The peer database has no values.
+    EmptyPeerDatabase,
+    /// An unexpected error occured processing a peer-to-peer message.
+    UnexpectedSyncError(String),
+}
+
+impl std::fmt::Display for Warning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Warning::NotEnoughConnections => {
+                write!(f, "The node is looking for connections to peers.")
+            }
+            Warning::UnlinkableAnchor => write!(
+                f,
+                "The provided anchor is deeper than the database history."
+            ),
+            Warning::TransactionRejected => write!(f, "A transaction got rejected."),
+            Warning::FailedPersistance(s) => {
+                write!(f, "A database failed to persist some data: {}", s)
+            }
+            Warning::EvaluatingFork => write!(f, "The peer sent us a potential fork."),
+            Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
+            Warning::UnexpectedSyncError(s) => write!(
+                f,
+                "An unexpected error occurred processing a peer-to-peer message: {}",
+                s
+            ),
+            Warning::CorruptedHeaders => {
+                write!(f, "The headers in the database do not link together.")
+            }
+        }
+    }
 }
