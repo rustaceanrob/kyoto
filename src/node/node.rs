@@ -192,7 +192,7 @@ impl Node {
                                         peer_map.set_height(peer_thread.nonce, version.height as u32);
                                         *peer_map.best_height().unwrap_or(&0)
                                     };
-                                    let response = self.handle_version(version, best).await;
+                                    let response = self.handle_version(&peer_thread.nonce, version, best).await;
                                     if self.need_peers().await? {
                                         self.send_message(peer_thread.nonce, MainThreadMessage::GetAddr).await;
                                     }
@@ -433,6 +433,7 @@ impl Node {
     // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
         &mut self,
+        nonce: &u32,
         version_message: RemoteVersion,
         best_height: u32,
     ) -> MainThreadMessage {
@@ -454,6 +455,8 @@ impl Node {
                 }
             }
         }
+        let mut peer_map = self.peer_map.lock().await;
+        peer_map.tried(nonce).await;
         let mut chain = self.chain.lock().await;
         if chain.height().le(&best_height) {
             chain.set_best_known_height(best_height).await;

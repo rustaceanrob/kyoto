@@ -280,6 +280,54 @@ impl PeerMap {
         }
     }
 
+    pub async fn tried(&mut self, nonce: &u32) {
+        if let Some(peer) = self.map.get(nonce) {
+            let mut db = self.db.lock().await;
+            if let Err(e) = db
+                .update(PersistedPeer::new(
+                    peer.ip_addr,
+                    peer.port,
+                    peer.service_flags.unwrap_or(ServiceFlags::NONE),
+                    PeerStatus::Tried,
+                ))
+                .await
+            {
+                self.dialog
+                    .send_warning(Warning::FailedPersistance(format!(
+                        "Encountered an error adding {}:{} flags: {} ... {e}",
+                        peer.ip_addr,
+                        peer.port,
+                        peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                    )))
+                    .await;
+            }
+        }
+    }
+
+    pub async fn ban(&mut self, nonce: &u32) {
+        if let Some(peer) = self.map.get(nonce) {
+            let mut db = self.db.lock().await;
+            if let Err(e) = db
+                .update(PersistedPeer::new(
+                    peer.ip_addr,
+                    peer.port,
+                    peer.service_flags.unwrap_or(ServiceFlags::NONE),
+                    PeerStatus::Ban,
+                ))
+                .await
+            {
+                self.dialog
+                    .send_warning(Warning::FailedPersistance(format!(
+                        "Encountered an error adding {}:{} flags: {} ... {e}",
+                        peer.ip_addr,
+                        peer.port,
+                        peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                    )))
+                    .await;
+            }
+        }
+    }
+
     #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
         use crate::{peers::dns::Dns, prelude::default_port_from_network};
