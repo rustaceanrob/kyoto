@@ -118,7 +118,7 @@ impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Warning::NotEnoughConnections => {
-                write!(f, "The node is looking for connections to peers.")
+                write!(f, "Looking for connections to peers.")
             }
             Warning::UnlinkableAnchor => write!(
                 f,
@@ -128,7 +128,7 @@ impl std::fmt::Display for Warning {
             Warning::FailedPersistance(s) => {
                 write!(f, "A database failed to persist some data: {}", s)
             }
-            Warning::EvaluatingFork => write!(f, "The peer sent us a potential fork."),
+            Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
             Warning::UnexpectedSyncError(s) => write!(f, "Error handling a P2P message: {}", s),
             Warning::CorruptedHeaders => {

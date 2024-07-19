@@ -259,7 +259,7 @@ impl Node {
                                     self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
                                 }
                                 PeerMessage::Disconnect => {
-                                    self.peer_map.lock().await.clean().await;
+                                    continue
                                 }
                                 _ => continue,
                             }
@@ -717,22 +717,16 @@ impl std::fmt::Display for NodeState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeState::Behind => {
-                write!(f, "The node does not have all known block headers stored.")
+                write!(f, "Requesting block headers.")
             }
             NodeState::HeadersSynced => {
-                write!(f, "The node will start syncing compact filter headers.")
+                write!(f, "Requesting compact filter headers.")
             }
             NodeState::FilterHeadersSynced => {
-                write!(f, "The node will start syncing compact block filters.")
+                write!(f, "Requesting compact block filters.")
             }
-            NodeState::FiltersSynced => write!(
-                f,
-                "The node will start downloading blocks with relevant transactions."
-            ),
-            NodeState::TransactionsSynced => write!(
-                f,
-                "The node is believed to be fully synced to the highest block in the chain."
-            ),
+            NodeState::FiltersSynced => write!(f, "Downloading blocks with relevant transactions."),
+            NodeState::TransactionsSynced => write!(f, "Fully synced to the highest block."),
         }
     }
 }
