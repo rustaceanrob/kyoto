@@ -306,7 +306,6 @@ dependencies = [
  "bitcoincore-rpc",
  "dns-lookup",
  "hex",
- "rand",
  "rusqlite",
  "thiserror",
  "tokio",
