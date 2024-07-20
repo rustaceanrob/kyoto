@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bitcoin::{p2p::ServiceFlags, Network};
+use bitcoin::{key::rand, p2p::ServiceFlags, Network};
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
     sync::{

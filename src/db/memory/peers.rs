@@ -1,6 +1,7 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
+use bitcoin::key::rand::{self, seq::IteratorRandom};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::db::{error::DatabaseError, traits::PeerStore, FutureResult, PeerStatus, PersistedPeer};
 
