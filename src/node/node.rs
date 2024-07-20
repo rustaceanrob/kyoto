@@ -447,9 +447,10 @@ impl Node {
                     || !version_message.service_flags.has(ServiceFlags::NETWORK)
                 {
                     self.dialog
-                        .send_warning(Warning::UnexpectedSyncError(
-                            "Connected peer does not serve compact filters or blocks".into(),
-                        ))
+                        .send_warning(Warning::UnexpectedSyncError {
+                            warning: "Connected peer does not serve compact filters or blocks"
+                                .into(),
+                        })
                         .await;
                     return MainThreadMessage::Disconnect;
                 }
@@ -514,10 +515,9 @@ impl Node {
                 }
                 _ => {
                     self.dialog
-                        .send_warning(Warning::UnexpectedSyncError(format!(
-                            "Unexpected header syncing error: {}",
-                            e
-                        )))
+                        .send_warning(Warning::UnexpectedSyncError {
+                            warning: format!("Unexpected header syncing error: {}", e),
+                        })
                         .await;
                     return Some(MainThreadMessage::Disconnect);
                 }
@@ -570,19 +570,22 @@ impl Node {
                 AppendAttempt::Conflict(_) => {
                     // TODO: Request the filter and block from the peer
                     self.dialog
-                        .send_warning(Warning::UnexpectedSyncError(
-                            "Found a conflict while peers are sending filter headers".into(),
-                        ))
+                        .send_warning(Warning::UnexpectedSyncError {
+                            warning: "Found a conflict while peers are sending filter headers"
+                                .into(),
+                        })
                         .await;
                     Some(MainThreadMessage::Disconnect)
                 }
             },
             Err(e) => {
                 self.dialog
-                    .send_warning(Warning::UnexpectedSyncError(format!(
-                        "Compact filter header syncing encountered an error: {}",
-                        e
-                    )))
+                    .send_warning(Warning::UnexpectedSyncError {
+                        warning: format!(
+                            "Compact filter header syncing encountered an error: {}",
+                            e
+                        ),
+                    })
                     .await;
                 Some(MainThreadMessage::Disconnect)
             }
@@ -596,10 +599,9 @@ impl Node {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
             Err(e) => {
                 self.dialog
-                    .send_warning(Warning::UnexpectedSyncError(format!(
-                        "Compact filter syncing encountered an error: {}",
-                        e
-                    )))
+                    .send_warning(Warning::UnexpectedSyncError {
+                        warning: format!("Compact filter syncing encountered an error: {}", e),
+                    })
                     .await;
                 Some(MainThreadMessage::Disconnect)
             }
@@ -611,10 +613,9 @@ impl Node {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.scan_block(&block).await {
             self.dialog
-                .send_warning(Warning::UnexpectedSyncError(format!(
-                    "Unexpected block scanning error: {}",
-                    e
-                )))
+                .send_warning(Warning::UnexpectedSyncError {
+                    warning: format!("Unexpected block scanning error: {}", e),
+                })
                 .await;
             return Some(MainThreadMessage::Disconnect);
         }
