@@ -105,13 +105,13 @@ pub enum Warning {
     /// A transaction got rejected.
     TransactionRejected,
     /// A database failed to persist some data.
-    FailedPersistance(String),
+    FailedPersistance { warning: String },
     /// The peer sent us a potential fork
     EvaluatingFork,
     /// The peer database has no values.
     EmptyPeerDatabase,
     /// An unexpected error occured processing a peer-to-peer message.
-    UnexpectedSyncError(String),
+    UnexpectedSyncError { warning: String },
 }
 
 impl std::fmt::Display for Warning {
@@ -125,12 +125,14 @@ impl std::fmt::Display for Warning {
                 "The provided anchor is deeper than the database history."
             ),
             Warning::TransactionRejected => write!(f, "A transaction got rejected."),
-            Warning::FailedPersistance(s) => {
-                write!(f, "A database failed to persist some data: {}", s)
+            Warning::FailedPersistance { warning } => {
+                write!(f, "A database failed to persist some data: {}", warning)
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
-            Warning::UnexpectedSyncError(s) => write!(f, "Error handling a P2P message: {}", s),
+            Warning::UnexpectedSyncError { warning } => {
+                write!(f, "Error handling a P2P message: {}", warning)
+            }
             Warning::CorruptedHeaders => {
                 write!(f, "The headers in the database do not link together.")
             }

@@ -219,9 +219,9 @@ impl Chain {
             .await
         {
             self.dialog
-                .send_warning(Warning::FailedPersistance(format!(
-                    "Could not save headers to disk: {e}"
-                )))
+                .send_warning(Warning::FailedPersistance {
+                    warning: format!("Could not save headers to disk: {e}"),
+                })
                 .await;
         }
     }
@@ -236,9 +236,9 @@ impl Chain {
             .await
         {
             self.dialog
-                .send_warning(Warning::FailedPersistance(format!(
-                    "Could not save headers to disk: {e}"
-                )))
+                .send_warning(Warning::FailedPersistance {
+                    warning: format!("Could not save headers to disk: {e}"),
+                })
                 .await;
         }
     }
@@ -396,7 +396,7 @@ impl Chain {
             } else {
                 self.dialog
                     .send_warning(
-                        Warning::UnexpectedSyncError("Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into())
+                        Warning::UnexpectedSyncError { warning: "Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into() }
                     )
                     .await;
                 return Err(HeaderSyncError::InvalidCheckpoint);
@@ -454,9 +454,9 @@ impl Chain {
                 Ok(())
             } else {
                 self.dialog
-                    .send_warning(Warning::UnexpectedSyncError(
-                        "Peer sent us a fork with less work than the current chain".into(),
-                    ))
+                    .send_warning(Warning::UnexpectedSyncError {
+                        warning: "Peer sent us a fork with less work than the current chain".into(),
+                    })
                     .await;
                 Err(HeaderSyncError::LessWorkFork)
             }

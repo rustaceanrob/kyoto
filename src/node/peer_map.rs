@@ -271,10 +271,12 @@ impl PeerMap {
                 .await
             {
                 self.dialog
-                    .send_warning(Warning::FailedPersistance(format!(
-                        "Encountered an error adding {}:{} flags: {} ... {e}",
-                        peer.0, peer.1, peer.2
-                    )))
+                    .send_warning(Warning::FailedPersistance {
+                        warning: format!(
+                            "Encountered an error adding {}:{} flags: {} ... {e}",
+                            peer.0, peer.1, peer.2
+                        ),
+                    })
                     .await;
             }
         }
@@ -293,12 +295,14 @@ impl PeerMap {
                 .await
             {
                 self.dialog
-                    .send_warning(Warning::FailedPersistance(format!(
-                        "Encountered an error adding {}:{} flags: {} ... {e}",
-                        peer.ip_addr,
-                        peer.port,
-                        peer.service_flags.unwrap_or(ServiceFlags::NONE)
-                    )))
+                    .send_warning(Warning::FailedPersistance {
+                        warning: format!(
+                            "Encountered an error adding {}:{} flags: {} ... {e}",
+                            peer.ip_addr,
+                            peer.port,
+                            peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                        ),
+                    })
                     .await;
             }
         }
@@ -317,12 +321,14 @@ impl PeerMap {
                 .await
             {
                 self.dialog
-                    .send_warning(Warning::FailedPersistance(format!(
-                        "Encountered an error adding {}:{} flags: {} ... {e}",
-                        peer.ip_addr,
-                        peer.port,
-                        peer.service_flags.unwrap_or(ServiceFlags::NONE)
-                    )))
+                    .send_warning(Warning::FailedPersistance {
+                        warning: format!(
+                            "Encountered an error adding {}:{} flags: {} ... {e}",
+                            peer.ip_addr,
+                            peer.port,
+                            peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                        ),
+                    })
                     .await;
             }
         }
