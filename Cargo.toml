@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license-file = "LICENSE"
 description = "A Bitcoin light-client according to the BIP-157/BIP-158 specifications"
-repository = "https://github.com/rustaceanrob/bip324"
+repository = "https://github.com/rustaceanrob/kyoto"
 readme = "README.md"
 resolver = "2"
 # members = ["example", "src"]
@@ -12,7 +12,6 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = "0.1.0"
 bitcoin_hashes = "0.14.0"
 bitcoin = { version = "0.32.0", features = [
     "std",

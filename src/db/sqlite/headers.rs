@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use bitcoin::block::{Header, Version};
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
@@ -12,6 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::db::error::DatabaseError;
 use crate::db::traits::HeaderStore;
+use crate::db::FutureResult;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,
@@ -48,10 +48,7 @@ impl SqliteHeaderDb {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
-}
 
-#[async_trait]
-impl HeaderStore for SqliteHeaderDb {
     async fn load_after(
         &mut self,
         anchor_height: u32,
@@ -200,5 +197,40 @@ impl HeaderStore for SqliteHeaderDb {
             },
             None => Ok(None),
         }
+    }
+}
+
+impl HeaderStore for SqliteHeaderDb {
+    fn load_after(
+        &mut self,
+        anchor_height: u32,
+    ) -> FutureResult<BTreeMap<u32, Header>, DatabaseError> {
+        Box::pin(self.load_after(anchor_height))
+    }
+
+    fn write<'a>(
+        &'a mut self,
+        header_chain: &'a BTreeMap<u32, Header>,
+    ) -> FutureResult<'a, (), DatabaseError> {
+        Box::pin(self.write(header_chain))
+    }
+
+    fn write_over<'a>(
+        &'a mut self,
+        header_chain: &'a BTreeMap<u32, Header>,
+        height: u32,
+    ) -> FutureResult<'a, (), DatabaseError> {
+        Box::pin(self.write_over(header_chain, height))
+    }
+
+    fn height_of<'a>(
+        &'a mut self,
+        hash: &'a BlockHash,
+    ) -> FutureResult<'a, Option<u32>, DatabaseError> {
+        Box::pin(self.height_of(hash))
+    }
+
+    fn hash_at(&mut self, height: u32) -> FutureResult<Option<BlockHash>, DatabaseError> {
+        Box::pin(self.hash_at(height))
     }
 }

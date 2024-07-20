@@ -1,9 +1,8 @@
 use std::{collections::HashMap, net::IpAddr};
 
-use async_trait::async_trait;
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 
-use crate::db::{error::DatabaseError, traits::PeerStore, PeerStatus, PersistedPeer};
+use crate::db::{error::DatabaseError, traits::PeerStore, FutureResult, PeerStatus, PersistedPeer};
 
 /// A simple peer store that does not save state in between sessions.
 /// If DNS is not enabled, a node will require at least one peer to connect to.
@@ -18,21 +17,18 @@ impl StatelessPeerStore {
             list: HashMap::new(),
         }
     }
-}
 
-#[async_trait]
-impl PeerStore for StatelessPeerStore {
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
         // Don't add back peers we already connected to this session.
         match peer.status {
             PeerStatus::New => {
                 self.list.entry(peer.addr).or_insert(peer);
-                return Ok(());
+                Ok(())
             }
-            PeerStatus::Tried => return Ok(()),
+            PeerStatus::Tried => Ok(()),
             PeerStatus::Ban => {
                 self.list.insert(peer.addr, peer);
-                return Ok(());
+                Ok(())
             }
         }
     }
@@ -58,6 +54,20 @@ impl PeerStore for StatelessPeerStore {
             .iter()
             .filter(|(_, peer)| peer.status != PeerStatus::Ban)
             .count() as u32)
+    }
+}
+
+impl PeerStore for StatelessPeerStore {
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+        Box::pin(self.update(peer))
+    }
+
+    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+        Box::pin(self.random())
+    }
+
+    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+        Box::pin(self.num_unbanned())
     }
 }
 

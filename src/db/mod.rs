@@ -1,3 +1,5 @@
+use core::future::Future;
+use core::pin::Pin;
 use std::net::IpAddr;
 
 use bitcoin::p2p::ServiceFlags;
@@ -11,6 +13,8 @@ pub mod memory;
 pub mod sqlite;
 /// Traits that define the header and peer databases.
 pub mod traits;
+
+pub(crate) type FutureResult<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
 
 /// A peer that will be saved to the [`traits::PeerStore`].
 #[derive(Debug, Clone, PartialEq)]
