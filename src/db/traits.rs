@@ -1,101 +1,123 @@
 use std::collections::BTreeMap;
 
-use async_trait::async_trait;
 use bitcoin::{block::Header, BlockHash};
 
-use super::{error::DatabaseError, PersistedPeer};
+use super::{error::DatabaseError, FutureResult, PersistedPeer};
 
 /// Methods required to persist the chain of block headers.
-#[async_trait]
 pub trait HeaderStore {
     /// Load all headers with heights *strictly after* the specified anchor height.
-    async fn load_after(
+    fn load_after(
         &mut self,
         anchor_height: u32,
-    ) -> Result<BTreeMap<u32, Header>, DatabaseError>;
+    ) -> FutureResult<BTreeMap<u32, Header>, DatabaseError>;
 
     /// Write an indexed map of block headers to the database, ignoring if they already exist.
-    async fn write<'a>(
-        &mut self,
+    fn write<'a>(
+        &'a mut self,
         header_chain: &'a BTreeMap<u32, Header>,
-    ) -> Result<(), DatabaseError>;
+    ) -> FutureResult<'a, (), DatabaseError>;
 
     /// Write the headers to the database, replacing headers over the specified height.
-    async fn write_over<'a>(
-        &mut self,
+    fn write_over<'a>(
+        &'a mut self,
         header_chain: &'a BTreeMap<u32, Header>,
         height: u32,
-    ) -> Result<(), DatabaseError>;
+    ) -> FutureResult<'a, (), DatabaseError>;
 
     /// Return the height of a block hash in the database, if it exists.
-    async fn height_of<'a>(&mut self, hash: &'a BlockHash) -> Result<Option<u32>, DatabaseError>;
+    fn height_of<'a>(
+        &'a mut self,
+        hash: &'a BlockHash,
+    ) -> FutureResult<'a, Option<u32>, DatabaseError>;
 
     /// Return the hash at the height in the database, if it exists.
-    async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, DatabaseError>;
+    fn hash_at(&mut self, height: u32) -> FutureResult<Option<BlockHash>, DatabaseError>;
 }
 
 /// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
-#[async_trait]
 impl HeaderStore for () {
-    async fn load_after(
+    fn load_after(
         &mut self,
         _anchor_height: u32,
-    ) -> Result<BTreeMap<u32, Header>, DatabaseError> {
-        Ok(BTreeMap::new())
+    ) -> FutureResult<BTreeMap<u32, Header>, DatabaseError> {
+        async fn do_load_after() -> Result<BTreeMap<u32, Header>, DatabaseError> {
+            Ok(BTreeMap::new())
+        }
+        Box::pin(do_load_after())
     }
 
-    async fn write<'a>(
-        &mut self,
+    fn write<'a>(
+        &'a mut self,
         _header_chain: &'a BTreeMap<u32, Header>,
-    ) -> Result<(), DatabaseError> {
-        Ok(())
+    ) -> FutureResult<'a, (), DatabaseError> {
+        async fn do_write() -> Result<(), DatabaseError> {
+            Ok(())
+        }
+        Box::pin(do_write())
     }
 
-    async fn write_over<'a>(
-        &mut self,
+    fn write_over<'a>(
+        &'a mut self,
         _header_chain: &'a BTreeMap<u32, Header>,
         _height: u32,
-    ) -> Result<(), DatabaseError> {
-        Ok(())
+    ) -> FutureResult<'a, (), DatabaseError> {
+        async fn do_write_over() -> Result<(), DatabaseError> {
+            Ok(())
+        }
+        Box::pin(do_write_over())
     }
 
-    async fn height_of<'a>(
-        &mut self,
+    fn height_of<'a>(
+        &'a mut self,
         _block_hash: &'a BlockHash,
-    ) -> Result<Option<u32>, DatabaseError> {
-        Ok(None)
+    ) -> FutureResult<'a, Option<u32>, DatabaseError> {
+        async fn do_height_of() -> Result<Option<u32>, DatabaseError> {
+            Ok(None)
+        }
+        Box::pin(do_height_of())
     }
 
-    async fn hash_at(&mut self, _height: u32) -> Result<Option<BlockHash>, DatabaseError> {
-        Ok(None)
+    fn hash_at(&mut self, _height: u32) -> FutureResult<Option<BlockHash>, DatabaseError> {
+        async fn do_hast_at() -> Result<Option<BlockHash>, DatabaseError> {
+            Ok(None)
+        }
+        Box::pin(do_hast_at())
     }
 }
 
 /// Methods that define a list of peers on the Bitcoin P2P network.
-#[async_trait]
 pub trait PeerStore {
     /// Add a peer to the database, defining if it should be replaced or not.
-    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError>;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError>;
 
     /// Get any peer from the database, selected at random. If no peers exist, an error is thrown.
-    async fn random(&mut self) -> Result<PersistedPeer, DatabaseError>;
+    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError>;
 
     /// The number of peers in the database that are not marked as banned.
-    async fn num_unbanned(&mut self) -> Result<u32, DatabaseError>;
+    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError>;
 }
 
-#[async_trait]
 impl PeerStore for () {
-    async fn update(&mut self, _peer: PersistedPeer) -> Result<(), DatabaseError> {
-        Ok(())
+    fn update(&mut self, _peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+        async fn do_update() -> Result<(), DatabaseError> {
+            Ok(())
+        }
+        Box::pin(do_update())
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
-        Err(DatabaseError::Load)
+    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+        async fn do_random() -> Result<PersistedPeer, DatabaseError> {
+            Err(DatabaseError::Load)
+        }
+        Box::pin(do_random())
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
-        Ok(0)
+    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+        async fn do_num_unbanned() -> Result<u32, DatabaseError> {
+            Ok(0)
+        }
+        Box::pin(do_num_unbanned())
     }
 }
 

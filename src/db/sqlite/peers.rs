@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
 use rusqlite::params;
@@ -11,7 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::db::error::DatabaseError;
 use crate::db::traits::PeerStore;
-use crate::db::{PeerStatus, PersistedPeer};
+use crate::db::{FutureResult, PeerStatus, PersistedPeer};
 
 const PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
     ip_addr TEXT PRIMARY KEY,
@@ -44,10 +43,7 @@ impl SqlitePeerDb {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
-}
 
-#[async_trait]
-impl PeerStore for SqlitePeerDb {
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
@@ -93,9 +89,9 @@ impl PeerStore for SqlitePeerDb {
                 .parse::<IpAddr>()
                 .map_err(|_| DatabaseError::Deserialization)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
-            return Ok(PersistedPeer::new(ip, port, services, status));
+            Ok(PersistedPeer::new(ip, port, services, status))
         } else {
-            return Err(DatabaseError::Load);
+            Err(DatabaseError::Load)
         }
     }
 
@@ -108,6 +104,20 @@ impl PeerStore for SqlitePeerDb {
             .query_row([], |row| row.get(0))
             .map_err(|_| DatabaseError::Deserialization)?;
         Ok(count)
+    }
+}
+
+impl PeerStore for SqlitePeerDb {
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+        Box::pin(self.update(peer))
+    }
+
+    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+        Box::pin(self.random())
+    }
+
+    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+        Box::pin(self.num_unbanned())
     }
 }
 
