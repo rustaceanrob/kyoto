@@ -1,7 +1,8 @@
 extern crate alloc;
 use bitcoin::Network;
 use std::net::IpAddr;
-use thiserror::Error;
+
+use crate::impl_sourceless_error;
 
 const MIN_PEERS: usize = 10;
 // Mitigate DNS cache poisoning.
@@ -64,13 +65,20 @@ impl Dns {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub(crate) enum DnsBootstrapError {
-    #[error("the async resolver could not be constructed")]
-    ResolverError,
-    #[error("most dns seeding failed")]
     NotEnoughPeersError,
 }
+
+impl core::fmt::Display for DnsBootstrapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DnsBootstrapError::NotEnoughPeersError => write!(f, "most dns seeding failed"),
+        }
+    }
+}
+
+impl_sourceless_error!(DnsBootstrapError);
 
 #[cfg(test)]
 mod test {

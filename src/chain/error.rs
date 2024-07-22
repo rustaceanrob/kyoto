@@ -1,50 +1,102 @@
-use thiserror::Error;
+use crate::{db::error::DatabaseError, impl_sourceless_error};
+use core::fmt::Display;
 
-use crate::db::error::DatabaseError;
-
-#[derive(Error, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum HeaderSyncError {
-    #[error("Empty headers message.")]
     EmptyMessage,
-    #[error("The headers received do not connect.")]
     HeadersNotConnected,
-    #[error("One or more headers does not match its own PoW target.")]
     InvalidHeaderWork,
-    #[error("One or more headers does not have a valid block time.")]
     InvalidHeaderTimes,
-    #[error("The sync peer sent us a discontinuous chain.")]
     PreCheckpointFork,
-    #[error("A checkpoint in the chain did not match.")]
     InvalidCheckpoint,
-    #[error("A computed difficulty adjustment did not match.")]
     MiscalculatedDifficulty,
-    #[error("The peer sent us a chain that does not connect to any header of ours.")]
     FloatingHeaders,
-    #[error("A peer sent us a fork with less work than our chain.")]
     LessWorkFork,
-    #[error("The database could not load a fork.")]
     DbError,
 }
 
+impl Display for HeaderSyncError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HeaderSyncError::EmptyMessage => write!(f, "empty headers message."),
+            HeaderSyncError::HeadersNotConnected => {
+                write!(f, "the headers received do not connect.")
+            }
+            HeaderSyncError::InvalidHeaderWork => {
+                write!(f, "one or more headers does not match its own PoW target.")
+            }
+            HeaderSyncError::InvalidHeaderTimes => {
+                write!(f, "one or more headers does not have a valid block time.")
+            }
+            HeaderSyncError::PreCheckpointFork => {
+                write!(f, "the sync peer sent us a discontinuous chain.")
+            }
+            HeaderSyncError::InvalidCheckpoint => {
+                write!(f, "a checkpoint in the chain did not match.")
+            }
+            HeaderSyncError::MiscalculatedDifficulty => {
+                write!(f, "a computed difficulty adjustment did not match.")
+            }
+            HeaderSyncError::FloatingHeaders => write!(
+                f,
+                "the peer sent us a chain that does not connect to any header of ours."
+            ),
+            HeaderSyncError::LessWorkFork => {
+                write!(f, "a peer sent us a fork with less work than our chain.")
+            }
+            HeaderSyncError::DbError => write!(f, "the database could not load a fork."),
+        }
+    }
+}
+
+impl_sourceless_error!(HeaderSyncError);
+
 /// Errors with the block header representation that prevent the node from operating.
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum HeaderPersistenceError {
     /// The block headers do not point to each other in a list.
-    #[error("The headers loaded from persistence do not link together.")]
     HeadersDoNotLink,
     /// Some predefined checkpoint does not match.
-    #[error("The headers loaded do not match a known checkpoint.")]
     MismatchedCheckpoints,
     /// A user tried to retrieve headers too far in the past for what is in their database.
-    #[error("The configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain.")]
     CannotLocateHistory,
     /// A database error.
-    #[error("The headers could not be loaded from sqlite.")]
     Database(DatabaseError),
 }
 
-#[derive(Error, Debug)]
+impl core::fmt::Display for HeaderPersistenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
+            HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
+            HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
+            HeaderPersistenceError::Database(e) => write!(f, "the headers could not be loaded from sqlite. {e}"),
+        }
+    }
+}
+
+impl std::error::Error for HeaderPersistenceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            HeaderPersistenceError::Database(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum BlockScanError {
-    #[error("The block sent to us does not have a known hash.")]
     NoBlockHash,
 }
+
+impl Display for BlockScanError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            BlockScanError::NoBlockHash => {
+                write!(f, "the block sent to us does not have a known hash.")
+            }
+        }
+    }
+}
+
+impl_sourceless_error!(BlockScanError);

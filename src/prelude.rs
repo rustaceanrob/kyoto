@@ -4,6 +4,18 @@ use bitcoin::{params::Params, Network};
 
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
 pub const MEDIAN_TIME_PAST: usize = 11;
+
+#[macro_export]
+macro_rules! impl_sourceless_error {
+    ($e:ident) => {
+        impl std::error::Error for $e {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                None
+            }
+        }
+    };
+}
+
 pub trait Median<T> {
     fn median(&mut self) -> Option<T>;
 }

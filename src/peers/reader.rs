@@ -6,11 +6,11 @@ use bitcoin::p2p::{
     Address, Magic, ServiceFlags,
 };
 use bitcoin::{Network, Txid};
-use thiserror::Error;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc::Sender;
 
+use crate::impl_sourceless_error;
 use crate::node::channel_messages::{PeerMessage, RemoteVersion};
 use crate::node::messages::RejectPayload;
 
@@ -210,16 +210,27 @@ impl Decodable for V1Header {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum PeerReadError {
-    #[error("Reading bytes off the stream failed.")]
     ReadBuffer,
-    #[error("The message could not be properly deserialized.")]
     Deserialization,
-    #[error("DOS protection.")]
     TooManyMessages,
-    #[error("Peer timeout.")]
     PeerTimeout,
-    #[error("Sending over the channel failed.")]
     MpscChannel,
 }
+
+impl core::fmt::Display for PeerReadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PeerReadError::ReadBuffer => write!(f, "reading bytes off the stream failed."),
+            PeerReadError::Deserialization => {
+                write!(f, "the message could not be properly deserialized.")
+            }
+            PeerReadError::TooManyMessages => write!(f, "DOS protection."),
+            PeerReadError::PeerTimeout => write!(f, "peer timeout."),
+            PeerReadError::MpscChannel => write!(f, "sending over the channel failed."),
+        }
+    }
+}
+
+impl_sourceless_error!(PeerReadError);
