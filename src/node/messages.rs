@@ -114,8 +114,8 @@ pub enum Warning {
     UnexpectedSyncError { warning: String },
 }
 
-impl std::fmt::Display for Warning {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Warning {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Warning::NotEnoughConnections => {
                 write!(f, "Looking for connections to peers.")

@@ -2,7 +2,6 @@ extern crate tokio;
 use std::{net::IpAddr, time::Duration};
 
 use bitcoin::Network;
-use thiserror::Error;
 use tokio::{
     io::AsyncWriteExt,
     net::{tcp::OwnedWriteHalf, TcpStream},
@@ -11,6 +10,7 @@ use tokio::{
 };
 
 use crate::{
+    impl_sourceless_error,
     node::{
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
@@ -350,16 +350,32 @@ impl Peer {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum PeerError {
-    #[error("The peer's TCP port was closed or we could not connect.")]
     TcpConnectionFailed,
-    #[error("A message could not be written to the peer.")]
     BufferWrite,
-    #[error("Experienced an error sending a message over the channel.")]
     ThreadChannel,
-    #[error("The main thread advised this peer to disconnect.")]
     DisconnectCommand,
-    #[error("The reading thread encountered an error.")]
     Reader,
 }
+
+impl core::fmt::Display for PeerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PeerError::TcpConnectionFailed => {
+                write!(f, "the peer's TCP port was closed or we could not connect.")
+            }
+            PeerError::BufferWrite => write!(f, "a message could not be written to the peer."),
+            PeerError::ThreadChannel => write!(
+                f,
+                "experienced an error sending a message over the channel."
+            ),
+            PeerError::DisconnectCommand => {
+                write!(f, "the main thread advised this peer to disconnect.")
+            }
+            PeerError::Reader => write!(f, "the reading thread encountered an error."),
+        }
+    }
+}
+
+impl_sourceless_error!(PeerError);

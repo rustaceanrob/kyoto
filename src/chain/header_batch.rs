@@ -1,7 +1,9 @@
 use bitcoin::block::Header;
-use thiserror::Error;
 
-use crate::prelude::{Median, MEDIAN_TIME_PAST};
+use crate::{
+    impl_sourceless_error,
+    prelude::{Median, MEDIAN_TIME_PAST},
+};
 
 pub(crate) struct HeadersBatch {
     batch: Vec<Header>,
@@ -71,8 +73,19 @@ impl HeadersBatch {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub(crate) enum HeadersBatchError {
-    #[error("no headers were found in the initialization vector")]
     EmptyVec,
 }
+
+impl core::fmt::Display for HeadersBatchError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HeadersBatchError::EmptyVec => {
+                write!(f, "no headers were found in the initialization vector.")
+            }
+        }
+    }
+}
+
+impl_sourceless_error!(HeadersBatchError);
