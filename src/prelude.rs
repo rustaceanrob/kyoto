@@ -102,3 +102,13 @@ pub(crate) fn default_port_from_network(network: &Network) -> u16 {
         _ => unreachable!(),
     }
 }
+
+pub(crate) fn encode_qname(domain: &str) -> Vec<u8> {
+    let mut qname = Vec::new();
+    for label in domain.split('.') {
+        qname.push(label.len() as u8);
+        qname.extend(label.as_bytes());
+    }
+    qname.push(0x00);
+    qname
+}

@@ -17,7 +17,8 @@ use tokio::{
 
 use crate::{
     db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
-    peers::peer::{Peer, PeerError},
+    peers::error::PeerError,
+    peers::peer::Peer,
     prelude::{Median, Netgroup},
 };
 
@@ -337,16 +338,17 @@ impl PeerMap {
     #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
         use crate::{peers::dns::Dns, prelude::default_port_from_network};
-        use rand::prelude::SliceRandom;
         self.dialog
             .send_dialog("Bootstraping peers with DNS".into())
             .await;
         let mut db_lock = self.db.lock().await;
-        let mut new_peers = Dns::bootstrap(self.network)
+        let new_peers = Dns::new(self.network)
+            .bootstrap()
             .await
             .map_err(|_| PeerManagerError::Dns)?;
-        let mut rng = StdRng::from_entropy();
-        new_peers.shuffle(&mut rng);
+        self.dialog
+            .send_dialog(format!("Adding {} sourced from DNS", new_peers.len()))
+            .await;
         // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock
