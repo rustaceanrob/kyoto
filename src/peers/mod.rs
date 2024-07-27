@@ -1,6 +1,7 @@
 pub(crate) mod counter;
 #[cfg(feature = "dns")]
 pub(crate) mod dns;
+pub(crate) mod error;
 pub(crate) mod outbound_messages;
 pub(crate) mod peer;
 pub(crate) mod reader;
