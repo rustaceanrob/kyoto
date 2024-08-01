@@ -28,7 +28,7 @@ bitcoin = { version = "0.32.0", features = [
     "serde",
     "rand-std",
 ], default-features = false }
-tokio = { version = "1", default-features = false, features = [
+tokio = { version = "1.37", default-features = false, features = [
     "rt-multi-thread",
     "sync",
     "time",
@@ -45,25 +45,4 @@ rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
 
 # Swift example
 
-- Called when the application starts
-
-```swift
-let spv = buildLightClient(wallet: wallet,
-    peers: peers,
-    connections: 1,
-    recoveryHeight: 170_000,
-    dataDir: path,
-    logger: messageHandler)
-let node = spv.node
-let client = spv.client
-runNode(node: node)
-Task {
-    while true {
-        let update = await client.update()
-        if update != nil {
-            try! wallet.applyUpdate(update: update!)
-            balance = wallet.balance().total.toSat()
-        }
-    }
-}
-```
+<!-- end_slide -->
