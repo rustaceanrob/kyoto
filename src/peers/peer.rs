@@ -3,8 +3,8 @@ use std::{net::IpAddr, time::Duration};
 
 use bitcoin::Network;
 use tokio::{
-    io::AsyncWriteExt,
-    net::{tcp::OwnedWriteHalf, TcpStream},
+    io::{AsyncWrite, AsyncWriteExt},
+    net::TcpStream,
     select,
     sync::mpsc::{self, Receiver, Sender},
 };
@@ -71,6 +71,7 @@ impl Peer {
         )
         .await
         .map_err(|_| PeerError::TcpConnectionFailed)?;
+        // Replace with generalization
         let mut stream: TcpStream;
         if let Ok(tcp) = timeout {
             stream = tcp;
@@ -86,11 +87,8 @@ impl Peer {
             return Err(PeerError::TcpConnectionFailed);
         }
         let mut outbound_messages = V1OutboundMessage::new(self.network);
-        let version_message = outbound_messages.version_message(None);
-        stream
-            .write_all(&version_message)
-            .await
-            .map_err(|_| PeerError::BufferWrite)?;
+        let message = outbound_messages.version_message(None);
+        self.write_bytes(&mut stream, message).await?;
         self.message_timer.track();
         let (reader, mut writer) = stream.into_split();
         let (tx, mut rx) = mpsc::channel(32);
@@ -156,14 +154,15 @@ impl Peer {
         }
     }
 
-    async fn handle_peer_message<M>(
+    async fn handle_peer_message<M, W>(
         &mut self,
         message: PeerMessage,
-        writer: &mut OwnedWriteHalf,
+        writer: &mut W,
         message_generator: &mut M,
     ) -> Result<(), PeerError>
     where
         M: MessageGenerator,
+        W: AsyncWrite + Send + Sync + Unpin,
     {
         match message {
             PeerMessage::Version(version) => {
@@ -175,10 +174,12 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
+                // FIXME: Write this after confirming the peer has CBF.
                 writer
                     .write_all(&message_generator.verack())
                     .await
                     .map_err(|_| PeerError::BufferWrite)?;
+                writer.flush().await.map_err(|_| PeerError::BufferWrite)?;
                 Ok(())
             }
             PeerMessage::Addr(addrs) => {
@@ -254,10 +255,8 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Ping(nonce) => {
-                writer
-                    .write_all(&message_generator.pong(nonce))
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                let message = message_generator.pong(nonce);
+                self.write_bytes(writer, message).await?;
                 Ok(())
             }
             PeerMessage::Pong(_) => Ok(()),
@@ -285,67 +284,63 @@ impl Peer {
         }
     }
 
-    async fn main_thread_request<M>(
+    async fn main_thread_request<M, W>(
         &mut self,
         request: MainThreadMessage,
-        writer: &mut OwnedWriteHalf,
+        writer: &mut W,
         message_generator: &mut M,
     ) -> Result<(), PeerError>
     where
         M: MessageGenerator,
+        W: AsyncWrite + Send + Sync + Unpin,
     {
         match request {
             MainThreadMessage::GetAddr => {
                 self.message_counter.sent_addrs();
-                writer
-                    .write_all(&message_generator.addr())
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                let message = message_generator.addr();
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_timer.track();
                 let message = message_generator.headers(config.locators, config.stop_hash);
-                writer
-                    .write_all(&message)
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 self.message_counter.sent_filter_header();
                 self.message_timer.track();
                 let message = message_generator.cf_headers(config);
-                writer
-                    .write_all(&message)
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
                 let message = message_generator.filters(config);
-                writer
-                    .write_all(&message)
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetBlock(message) => {
                 self.message_counter.sent_block();
                 self.message_timer.track();
                 let message = message_generator.block(message);
-                writer
-                    .write_all(&message)
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::BroadcastTx(transaction) => {
                 self.message_counter.sent_tx();
                 let message = message_generator.transaction(transaction);
-                writer
-                    .write_all(&message)
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
+                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),
         }
+        Ok(())
+    }
+
+    async fn write_bytes<W>(&mut self, writer: &mut W, message: Vec<u8>) -> Result<(), PeerError>
+    where
+        W: AsyncWrite + Send + Sync + Unpin,
+    {
+        writer
+            .write_all(&message)
+            .await
+            .map_err(|_| PeerError::BufferWrite)?;
+        writer.flush().await.map_err(|_| PeerError::BufferWrite)?;
         Ok(())
     }
 }
