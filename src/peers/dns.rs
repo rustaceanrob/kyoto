@@ -134,6 +134,9 @@ impl DNSQuery {
         sock.send(&self.message)
             .await
             .map_err(|_| DNSQueryError::Udp)?;
+        sock.send(&self.message)
+            .await
+            .map_err(|_| DNSQueryError::Udp)?;
         let mut response_buf = [0u8; 512];
         let (amt, _src) = sock
             .recv_from(&mut response_buf)

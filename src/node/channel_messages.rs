@@ -18,7 +18,7 @@ pub(crate) enum MainThreadMessage {
     GetBlock(GetBlockConfig),
     Disconnect,
     BroadcastTx(Transaction),
-    // more messages
+    Verack,
 }
 
 #[derive(Debug, Clone)]

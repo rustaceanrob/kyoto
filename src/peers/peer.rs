@@ -174,12 +174,6 @@ impl Peer {
                     })
                     .await
                     .map_err(|_| PeerError::ThreadChannel)?;
-                // FIXME: Write this after confirming the peer has CBF.
-                writer
-                    .write_all(&message_generator.verack())
-                    .await
-                    .map_err(|_| PeerError::BufferWrite)?;
-                writer.flush().await.map_err(|_| PeerError::BufferWrite)?;
                 Ok(())
             }
             PeerMessage::Addr(addrs) => {
@@ -325,6 +319,10 @@ impl Peer {
             MainThreadMessage::BroadcastTx(transaction) => {
                 self.message_counter.sent_tx();
                 let message = message_generator.transaction(transaction);
+                self.write_bytes(writer, message).await?;
+            }
+            MainThreadMessage::Verack => {
+                let message = message_generator.verack();
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),
