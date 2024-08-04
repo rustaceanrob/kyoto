@@ -6,8 +6,7 @@ use bitcoin::p2p::{
     Address, Magic, ServiceFlags,
 };
 use bitcoin::{Network, Txid};
-use tokio::io::AsyncReadExt;
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Sender;
 
 use crate::node::channel_messages::{PeerMessage, RemoteVersion};
@@ -23,14 +22,23 @@ const MAX_ADDR: usize = 1_000;
 const MAX_INV: usize = 50_000;
 const MAX_HEADERS: usize = 2_000;
 
-pub(crate) struct Reader {
-    stream: OwnedReadHalf,
+pub(crate) struct Reader<R>
+where
+    R: AsyncRead + Send + Sync + Unpin,
+{
+    stream: R,
     tx: Sender<PeerMessage>,
     network: Network,
 }
 
-impl Reader {
-    pub fn new(stream: OwnedReadHalf, tx: Sender<PeerMessage>, network: Network) -> Self {
+impl<R> Reader<R>
+where
+    R: AsyncRead + Send + Sync + Unpin,
+{
+    pub fn new(stream: R, tx: Sender<PeerMessage>, network: Network) -> Self
+    where
+        R: AsyncRead + Send + Sync + Unpin,
+    {
         Self {
             stream,
             tx,

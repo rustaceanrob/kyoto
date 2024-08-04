@@ -152,3 +152,17 @@ impl From<TrustedPeer> for (IpAddr, Option<u16>) {
         (value.ip(), value.port())
     }
 }
+
+/// How to connect to peers on the peer-to-peer network
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum ConnectionType {
+    /// Version one peer-to-peer connections
+    ClearNet,
+}
+
+impl Default for ConnectionType {
+    fn default() -> Self {
+        ConnectionType::ClearNet
+    }
+}
