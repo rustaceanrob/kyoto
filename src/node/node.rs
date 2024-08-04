@@ -462,6 +462,9 @@ impl Node {
         if chain.height().le(&best_height) {
             chain.set_best_known_height(best_height).await;
         }
+        peer_map
+            .send_message(*nonce, MainThreadMessage::Verack)
+            .await;
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
             locators: chain.locators().await,
