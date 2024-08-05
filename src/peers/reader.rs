@@ -12,7 +12,7 @@ use bitcoin::{Network, Txid};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Sender;
 
-use crate::node::channel_messages::{CombinedAddr, PeerMessage, RemoteVersion};
+use crate::node::channel_messages::{CombinedAddr, PeerMessage};
 use crate::node::messages::RejectPayload;
 
 use super::error::PeerReadError;
@@ -88,11 +88,7 @@ where
 
     fn parse_message(&self, message: &NetworkMessage) -> Option<PeerMessage> {
         match message {
-            NetworkMessage::Version(version) => Some(PeerMessage::Version(RemoteVersion {
-                service_flags: version.services,
-                timestamp: version.timestamp,
-                height: version.start_height,
-            })),
+            NetworkMessage::Version(version) => Some(PeerMessage::Version(version.clone())),
             NetworkMessage::Verack => Some(PeerMessage::Verack),
             NetworkMessage::Addr(addresses) => {
                 if addresses.len() > MAX_ADDR {

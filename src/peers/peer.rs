@@ -299,6 +299,11 @@ impl Peer {
                 let message = message_generator.addr();
                 self.write_bytes(writer, message).await?;
             }
+            MainThreadMessage::GetAddrV2 => {
+                self.message_counter.sent_addrs();
+                let message = message_generator.addrv2();
+                self.write_bytes(writer, message).await?;
+            }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_timer.track();
                 let message = message_generator.headers(config.locators, config.stop_hash);

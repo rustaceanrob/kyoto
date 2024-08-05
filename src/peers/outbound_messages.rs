@@ -51,7 +51,7 @@ impl MessageGenerator for V1OutboundMessage {
             receiver: from_and_recv.clone(),
             sender: from_and_recv,
             nonce: 1,
-            user_agent: "kyoto".to_string(),
+            user_agent: "Kyoto Light Client / 0.1.0 / rust-bitcoin 0.32".to_string(),
             start_height: 0,
             relay: false,
         };
@@ -66,6 +66,11 @@ impl MessageGenerator for V1OutboundMessage {
 
     fn addr(&mut self) -> Vec<u8> {
         let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetAddr);
+        serialize(&data)
+    }
+
+    fn addrv2(&mut self) -> Vec<u8> {
+        let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::SendAddrV2);
         serialize(&data)
     }
 
