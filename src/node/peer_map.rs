@@ -146,8 +146,6 @@ impl PeerMap {
         self.num_peers = peer_num;
         let mut peer = Peer::new(
             peer_num,
-            ip.clone(),
-            port,
             self.network,
             self.mtx.clone(),
             prx,
@@ -157,11 +155,11 @@ impl PeerMap {
         if !connector.can_connect(&ip) {
             return Err(PeerError::UnreachableSocketAddr);
         }
-        let (reader, writer) = connector.connect(ip.clone(), port).await?;
-        let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.dialog
             .send_dialog(format!("Connecting to {:?}:{}", ip, port))
             .await;
+        let (reader, writer) = connector.connect(ip.clone(), port).await?;
+        let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.map.insert(
             peer_num,
             ManagedPeer {

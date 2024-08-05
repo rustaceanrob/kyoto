@@ -1,7 +1,7 @@
 extern crate tokio;
 use std::time::Duration;
 
-use bitcoin::{p2p::address::AddrV2, Network};
+use bitcoin::Network;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
@@ -28,8 +28,6 @@ const CONNECTION_TIMEOUT: u64 = 2;
 
 pub(crate) struct Peer {
     nonce: u32,
-    ip_addr: AddrV2,
-    port: u16,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
@@ -41,8 +39,6 @@ pub(crate) struct Peer {
 impl Peer {
     pub fn new(
         nonce: u32,
-        ip_addr: AddrV2,
-        port: u16,
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
@@ -52,8 +48,6 @@ impl Peer {
         let message_timer = MessageTimer::new();
         Self {
             nonce,
-            ip_addr,
-            port,
             main_thread_sender,
             main_thread_recv,
             network,
