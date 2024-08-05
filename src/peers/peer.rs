@@ -1,7 +1,7 @@
 extern crate tokio;
 use std::{net::IpAddr, time::Duration};
 
-use bitcoin::Network;
+use bitcoin::{p2p::address::AddrV2, Network};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     net::TcpStream,
@@ -29,7 +29,7 @@ const CONNECTION_TIMEOUT: u64 = 2;
 
 pub(crate) struct Peer {
     nonce: u32,
-    ip_addr: IpAddr,
+    ip_addr: AddrV2,
     port: u16,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
@@ -42,7 +42,7 @@ pub(crate) struct Peer {
 impl Peer {
     pub fn new(
         nonce: u32,
-        ip_addr: IpAddr,
+        ip_addr: AddrV2,
         port: u16,
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
@@ -65,9 +65,14 @@ impl Peer {
     }
 
     pub async fn connect(&mut self) -> Result<(), PeerError> {
+        let socket_addr = match self.ip_addr {
+            AddrV2::Ipv4(ip) => IpAddr::V4(ip),
+            AddrV2::Ipv6(ip) => IpAddr::V6(ip),
+            _ => return Err(PeerError::UnreachableSocketAddr),
+        };
         let timeout = tokio::time::timeout(
             Duration::from_secs(CONNECTION_TIMEOUT),
-            TcpStream::connect((self.ip_addr, self.port)),
+            TcpStream::connect((socket_addr, self.port)),
         )
         .await
         .map_err(|_| PeerError::TcpConnectionFailed)?;

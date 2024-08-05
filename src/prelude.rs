@@ -1,6 +1,4 @@
-use std::net::IpAddr;
-
-use bitcoin::{params::Params, Network};
+use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, params::Params, Network};
 
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
 pub const MEDIAN_TIME_PAST: usize = 11;
@@ -66,19 +64,36 @@ impl Median<u32> for Vec<u32> {
 }
 
 pub trait Netgroup {
-    fn netgroup(&mut self) -> String;
+    fn netgroup(&self) -> String;
 }
 
-impl Netgroup for IpAddr {
-    fn netgroup(&mut self) -> String {
-        if self.is_ipv4() {
-            self.to_string()
+impl Netgroup for AddrV2 {
+    fn netgroup(&self) -> String {
+        match self {
+            AddrV2::Ipv4(ip) => ip
+                .to_string()
                 .split('.')
                 .take(2)
                 .collect::<Vec<&str>>()
-                .join(".")
-        } else {
-            "V6ADDR".to_string()
+                .join("."),
+            AddrV2::Ipv6(ip) => ip
+                .to_string()
+                .replace("::", ".")
+                .split('.')
+                .take(4)
+                .collect::<Vec<&str>>()
+                .join("::"),
+            AddrV2::TorV2(t) => t.to_lower_hex_string(),
+            AddrV2::TorV3(t) => t.to_lower_hex_string(),
+            AddrV2::I2p(t) => t.to_lower_hex_string(),
+            AddrV2::Cjdns(cj) => cj
+                .to_string()
+                .replace("::", ".")
+                .split('.')
+                .take(4)
+                .collect::<Vec<&str>>()
+                .join("::"),
+            AddrV2::Unknown(_, _) => "UNKNOWN".to_owned(),
         }
     }
 }

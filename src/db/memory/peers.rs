@@ -1,6 +1,9 @@
-use std::{collections::HashMap, net::IpAddr};
+use std::collections::HashMap;
 
-use bitcoin::key::rand::{self, seq::IteratorRandom};
+use bitcoin::{
+    key::rand::{self, seq::IteratorRandom},
+    p2p::address::AddrV2,
+};
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::db::{error::DatabaseError, traits::PeerStore, FutureResult, PeerStatus, PersistedPeer};
@@ -9,7 +12,7 @@ use crate::db::{error::DatabaseError, traits::PeerStore, FutureResult, PeerStatu
 /// If DNS is not enabled, a node will require at least one peer to connect to.
 /// Thereafter, the node will find peers to connect to throughout the session.
 pub struct StatelessPeerStore {
-    list: HashMap<IpAddr, PersistedPeer>,
+    list: HashMap<AddrV2, PersistedPeer>,
 }
 
 impl StatelessPeerStore {
@@ -23,12 +26,12 @@ impl StatelessPeerStore {
         // Don't add back peers we already connected to this session.
         match peer.status {
             PeerStatus::New => {
-                self.list.entry(peer.addr).or_insert(peer);
+                self.list.entry(peer.clone().addr).or_insert(peer);
                 Ok(())
             }
             PeerStatus::Tried => Ok(()),
             PeerStatus::Ban => {
-                self.list.insert(peer.addr, peer);
+                self.list.insert(peer.clone().addr, peer);
                 Ok(())
             }
         }
@@ -41,7 +44,7 @@ impl StatelessPeerStore {
                 .list
                 .iter_mut()
                 .filter(|(_, peer)| peer.status != PeerStatus::Ban);
-            iter.choose(&mut rng).map(|(key, _)| *key)
+            iter.choose(&mut rng).map(|(key, _)| key.clone())
         };
         match random_peer {
             Some(ip) => self.list.remove(&ip).ok_or(DatabaseError::Load),
@@ -89,14 +92,16 @@ mod tests {
     #[tokio::test]
     async fn test_stateless_store() {
         let mut peer_store = StatelessPeerStore::new();
-        let ip_1 = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-        let ip_2 = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
-        let ip_3 = IpAddr::V4(Ipv4Addr::new(3, 3, 3, 3));
-        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, PeerStatus::New);
-        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::Tried);
-        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::Ban);
+        let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
+        let ip_2 = Ipv4Addr::new(2, 2, 2, 2);
+        let peer_1 = PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_2 = PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::New);
+        let tor = AddrV2::TorV2([0; 10]);
+        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::New);
+        let try_peer_2 =
+            PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::Tried);
+        let ban_peer_1 =
+            PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::Ban);
         peer_store.update(peer_1).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
         peer_store.update(peer_2).await.unwrap();

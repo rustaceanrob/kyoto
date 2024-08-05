@@ -5,7 +5,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bitcoin::{key::rand, p2p::ServiceFlags, Network};
+use bitcoin::{
+    key::rand,
+    p2p::{address::AddrV2, ServiceFlags},
+    Network,
+};
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
     sync::{
@@ -23,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    channel_messages::{MainThreadMessage, PeerThreadMessage},
+    channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
     error::NodeError,
     messages::Warning,
@@ -36,7 +40,7 @@ type Whitelist = Option<Vec<(IpAddr, u16)>>;
 #[derive(Debug)]
 pub(crate) struct ManagedPeer {
     net_time: i64,
-    ip_addr: IpAddr,
+    ip_addr: AddrV2,
     port: u16,
     service_flags: Option<ServiceFlags>,
     ptx: Sender<MainThreadMessage>,
@@ -131,13 +135,13 @@ impl PeerMap {
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
-    pub async fn dispatch(&mut self, ip: IpAddr, port: u16) {
+    pub async fn dispatch(&mut self, ip: AddrV2, port: u16) {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
         let mut peer = Peer::new(
             peer_num,
-            ip,
+            ip.clone(),
             port,
             self.network,
             self.mtx.clone(),
@@ -146,7 +150,7 @@ impl PeerMap {
         );
         let handle = tokio::spawn(async move { peer.connect().await });
         self.dialog
-            .send_dialog(format!("Connecting to {}:{}", ip, port))
+            .send_dialog(format!("Connecting to {:?}:{}", ip, port))
             .await;
         self.map.insert(
             peer_num,
@@ -210,13 +214,17 @@ impl PeerMap {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<(IpAddr, u16), NodeError> {
+    pub async fn next_peer(&mut self) -> Result<(AddrV2, u16), NodeError> {
         if let Some(whitelist) = &mut self.whitelist {
             if let Some((ip, port)) = whitelist.pop() {
                 self.dialog
                     .send_dialog("Using a configured peer.".into())
                     .await;
-                return Ok((ip, port));
+                let socket = match ip {
+                    IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+                    IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+                };
+                return Ok((socket, port));
             }
         }
         let current_count = {
@@ -234,7 +242,7 @@ impl PeerMap {
         let mut peer_manager = self.db.lock().await;
         let mut tries = 0;
         while tries < 10 {
-            let mut peer: (IpAddr, u16) = peer_manager
+            let peer: (AddrV2, u16) = peer_manager
                 .random()
                 .await
                 .map(|r| r.into())
@@ -264,18 +272,23 @@ impl PeerMap {
     }
 
     // Add peers to the database that were gossiped over the p2p network
-    pub async fn add_gossiped_peers(&mut self, peers: Vec<(IpAddr, u16, ServiceFlags)>) {
+    pub async fn add_gossiped_peers(&mut self, peers: Vec<CombinedAddr>) {
         let mut db = self.db.lock().await;
         for peer in peers {
             if let Err(e) = db
-                .update(PersistedPeer::new(peer.0, peer.1, peer.2, PeerStatus::New))
+                .update(PersistedPeer::new(
+                    peer.addr.clone(),
+                    peer.port,
+                    peer.services,
+                    PeerStatus::New,
+                ))
                 .await
             {
                 self.dialog
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
-                            "Encountered an error adding {}:{} flags: {} ... {e}",
-                            peer.0, peer.1, peer.2
+                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
+                            peer.addr, peer.port, peer.services
                         ),
                     })
                     .await;
@@ -288,7 +301,7 @@ impl PeerMap {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
-                    peer.ip_addr,
+                    peer.ip_addr.clone(),
                     peer.port,
                     peer.service_flags.unwrap_or(ServiceFlags::NONE),
                     PeerStatus::Tried,
@@ -298,7 +311,7 @@ impl PeerMap {
                 self.dialog
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
-                            "Encountered an error adding {}:{} flags: {} ... {e}",
+                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
                             peer.ip_addr,
                             peer.port,
                             peer.service_flags.unwrap_or(ServiceFlags::NONE)
@@ -314,7 +327,7 @@ impl PeerMap {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
-                    peer.ip_addr,
+                    peer.ip_addr.clone(),
                     peer.port,
                     peer.service_flags.unwrap_or(ServiceFlags::NONE),
                     PeerStatus::Ban,
@@ -324,7 +337,7 @@ impl PeerMap {
                 self.dialog
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
-                            "Encountered an error adding {}:{} flags: {} ... {e}",
+                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
                             peer.ip_addr,
                             peer.port,
                             peer.service_flags.unwrap_or(ServiceFlags::NONE)
@@ -345,10 +358,17 @@ impl PeerMap {
         let new_peers = Dns::new(self.network)
             .bootstrap()
             .await
-            .map_err(|_| PeerManagerError::Dns)?;
+            .map_err(|_| PeerManagerError::Dns)?
+            .into_iter()
+            .map(|ip| match ip {
+                IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+                IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+            })
+            .collect::<Vec<AddrV2>>();
         self.dialog
             .send_dialog(format!("Adding {} sourced from DNS", new_peers.len()))
             .await;
+
         // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock

@@ -1,7 +1,7 @@
 use core::future::Future;
 use core::pin::Pin;
-use std::net::IpAddr;
 
+use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
 
 /// Errors a database backend may produce.
@@ -20,7 +20,7 @@ pub(crate) type FutureResult<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E
 #[derive(Debug, Clone, PartialEq)]
 pub struct PersistedPeer {
     /// Canonical IP address of this peer.
-    pub addr: IpAddr,
+    pub addr: AddrV2,
     /// The port believed to be listening for connections.
     pub port: u16,
     /// The services this peer may offer.
@@ -30,7 +30,7 @@ pub struct PersistedPeer {
 }
 
 impl PersistedPeer {
-    pub fn new(addr: IpAddr, port: u16, services: ServiceFlags, status: PeerStatus) -> Self {
+    pub fn new(addr: AddrV2, port: u16, services: ServiceFlags, status: PeerStatus) -> Self {
         Self {
             addr,
             port,
@@ -40,7 +40,7 @@ impl PersistedPeer {
     }
 }
 
-impl From<PersistedPeer> for (IpAddr, u16) {
+impl From<PersistedPeer> for (AddrV2, u16) {
     fn from(value: PersistedPeer) -> Self {
         (value.addr, value.port)
     }
