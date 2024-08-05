@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::db::error::DatabaseError;
 use crate::db::traits::HeaderStore;
-use crate::db::FutureResult;
+use crate::prelude::FutureResult;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,

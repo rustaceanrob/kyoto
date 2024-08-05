@@ -98,6 +98,8 @@ pub enum Warning {
     NotEnoughConnections,
     /// A connection to a peer timed out.
     PeerTimedOut,
+    /// The node was unable to connect to a peer in the database.
+    CouldNotConnect,
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
@@ -126,6 +128,9 @@ impl core::fmt::Display for Warning {
                 f,
                 "The provided anchor is deeper than the database history."
             ),
+            Warning::CouldNotConnect => {
+                write!(f, "An attempted connection failed or timed out.")
+            }
             Warning::TransactionRejected => write!(f, "A transaction got rejected."),
             Warning::FailedPersistance { warning } => {
                 write!(f, "A database failed to persist some data: {}", warning)

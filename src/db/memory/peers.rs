@@ -6,7 +6,10 @@ use bitcoin::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::db::{error::DatabaseError, traits::PeerStore, FutureResult, PeerStatus, PersistedPeer};
+use crate::{
+    db::{error::DatabaseError, traits::PeerStore, PeerStatus, PersistedPeer},
+    prelude::FutureResult,
+};
 
 /// A simple peer store that does not save state in between sessions.
 /// If DNS is not enabled, a node will require at least one peer to connect to.
