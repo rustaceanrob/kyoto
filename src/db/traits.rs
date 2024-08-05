@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use bitcoin::{block::Header, BlockHash};
 
-use super::{error::DatabaseError, FutureResult, PersistedPeer};
+use crate::prelude::FutureResult;
+
+use super::{error::DatabaseError, PersistedPeer};
 
 /// Methods required to persist the chain of block headers.
 pub trait HeaderStore {

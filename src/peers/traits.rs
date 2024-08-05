@@ -10,17 +10,17 @@ use bitcoin::{
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
+    net::TcpStream,
 };
 
-use crate::{db::FutureResult, node::channel_messages::GetBlockConfig};
+use crate::{node::channel_messages::GetBlockConfig, prelude::FutureResult};
 
 use super::error::PeerError;
 
 const CONNECTION_TIMEOUT: u64 = 2;
+
+type Reader = Box<dyn AsyncRead + Send + Sync + Unpin>;
+type Writer = Box<dyn AsyncWrite + Send + Sync + Unpin>;
 
 pub(crate) trait MessageGenerator {
     fn version_message(&mut self, port: Option<u16>) -> Vec<u8>;
@@ -45,18 +45,21 @@ pub(crate) trait MessageGenerator {
 }
 
 pub(crate) trait NetworkConnector {
-    fn can_connect(&self, addr: AddrV2) -> bool;
+    fn can_connect(&self, addr: &AddrV2) -> bool;
 
-    fn connect<W, R>(&mut self, addr: AddrV2, port: u16) -> FutureResult<(R, W), PeerError>
-    where
-        W: AsyncWrite + Send + Sync + Unpin,
-        R: AsyncRead + Send + Sync + Unpin;
+    fn connect(&mut self, addr: AddrV2, port: u16) -> FutureResult<(Reader, Writer), PeerError>;
 }
 
 pub(crate) struct ClearNetConnection {}
 
+impl ClearNetConnection {
+    pub(crate) fn new() -> Self {
+        Self {}
+    }
+}
+
 impl NetworkConnector for ClearNetConnection {
-    fn can_connect(&self, addr: AddrV2) -> bool {
+    fn can_connect(&self, addr: &AddrV2) -> bool {
         match addr {
             AddrV2::Ipv4(_) => true,
             AddrV2::Ipv6(_) => true,
@@ -64,12 +67,8 @@ impl NetworkConnector for ClearNetConnection {
         }
     }
 
-    fn connect<W, R>(&mut self, addr: AddrV2, port: u16) -> FutureResult<(R, W), PeerError>
-    where
-        W: AsyncWrite + Send + Sync + Unpin,
-        R: AsyncRead + Send + Sync + Unpin,
-    {
-        let do_impl = async {
+    fn connect(&mut self, addr: AddrV2, port: u16) -> FutureResult<(Reader, Writer), PeerError> {
+        async fn do_impl(addr: AddrV2, port: u16) -> Result<(Reader, Writer), PeerError> {
             let socket_addr = match addr {
                 AddrV2::Ipv4(ip) => IpAddr::V4(ip),
                 AddrV2::Ipv6(ip) => IpAddr::V6(ip),
@@ -81,7 +80,6 @@ impl NetworkConnector for ClearNetConnection {
             )
             .await
             .map_err(|_| PeerError::ConnectionFailed)?;
-            // Replace with generalization
             match timeout {
                 Ok(stream) => {
                     let (reader, writer) = stream.into_split();
@@ -89,12 +87,12 @@ impl NetworkConnector for ClearNetConnection {
                 }
                 Err(_) => Err(PeerError::ConnectionFailed),
             }
-        };
-        Box::pin(do_impl)
+        }
+        Box::pin(do_impl(addr, port))
     }
 }
 
-impl Debug for dyn NetworkConnector + Send + Sync + Unpin {
+impl Debug for dyn NetworkConnector + Send + Sync {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

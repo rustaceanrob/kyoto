@@ -21,7 +21,11 @@ use tokio::{
 
 use crate::{
     db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
-    peers::{error::PeerError, peer::Peer, traits::NetworkConnector},
+    peers::{
+        error::PeerError,
+        peer::Peer,
+        traits::{ClearNetConnection, NetworkConnector},
+    },
     prelude::{Median, Netgroup},
 };
 
@@ -78,7 +82,7 @@ impl PeerMap {
             mtx,
             map: HashMap::new(),
             db: Arc::new(Mutex::new(db)),
-            connector: Arc::new(Mutex::new(())),
+            connector: Arc::new(Mutex::new(ClearNetConnection::new())),
             whitelist,
             dialog,
             target_db_size,
@@ -136,7 +140,7 @@ impl PeerMap {
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
-    pub async fn dispatch(&mut self, ip: AddrV2, port: u16) {
+    pub async fn dispatch(&mut self, ip: AddrV2, port: u16) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
@@ -149,7 +153,12 @@ impl PeerMap {
             prx,
             self.dialog.clone(),
         );
-        let handle = tokio::spawn(async move { peer.connect().await });
+        let mut connector = self.connector.lock().await;
+        if !connector.can_connect(&ip) {
+            return Err(PeerError::UnreachableSocketAddr);
+        }
+        let (reader, writer) = connector.connect(ip.clone(), port).await?;
+        let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.dialog
             .send_dialog(format!("Connecting to {:?}:{}", ip, port))
             .await;
@@ -164,6 +173,7 @@ impl PeerMap {
                 handle,
             },
         );
+        Ok(())
     }
 
     // Set the services of a peer

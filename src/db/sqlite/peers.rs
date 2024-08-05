@@ -10,7 +10,8 @@ use tokio::sync::Mutex;
 
 use crate::db::error::DatabaseError;
 use crate::db::traits::PeerStore;
-use crate::db::{FutureResult, PeerStatus, PersistedPeer};
+use crate::db::{PeerStatus, PersistedPeer};
+use crate::prelude::FutureResult;
 
 const PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
     ip_addr BLOB PRIMARY KEY,
