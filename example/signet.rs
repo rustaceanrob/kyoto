@@ -82,6 +82,9 @@ async fn main() {
                     }
                     break;
                 }
+                NodeMessage::ConnectionsMet => {
+                    tracing::info!("Connected to all required peers");
+                }
             }
         }
     }
