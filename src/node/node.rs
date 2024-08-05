@@ -479,6 +479,10 @@ impl Node {
                 .send_message(*nonce, MainThreadMessage::GetAddr)
                 .await;
         }
+        // Inform the user we are connected to all required peers
+        if peer_map.live().eq(&self.required_peers) {
+            self.dialog.send_data(NodeMessage::ConnectionsMet).await
+        }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
             locators: chain.locators().await,

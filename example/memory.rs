@@ -79,6 +79,7 @@ async fn main() {
                 tracing::info!("Chain tip: {}", update.tip().hash.to_string(),);
                 break;
             }
+            NodeMessage::ConnectionsMet => tracing::info!("Connected to all required peers"),
         }
     }
     let _ = sender.shutdown().await;

@@ -18,6 +18,8 @@ pub enum NodeMessage {
     Warning(Warning),
     /// The current state of the node in the syncing process
     StateChange(NodeState),
+    /// The node is connected to all required peers
+    ConnectionsMet,
     /// A relevant transaction based on the user provided scripts
     Transaction(IndexedTransaction),
     /// A relevant [`crate::Block`] based on the user provided scripts
