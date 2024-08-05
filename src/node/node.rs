@@ -9,6 +9,7 @@ use bitcoin::{
     block::Header,
     p2p::{
         message_filter::{CFHeaders, CFilter},
+        message_network::VersionMessage,
         ServiceFlags,
     },
     Block, Network, ScriptBuf,
@@ -35,7 +36,7 @@ use super::{
     broadcaster::Broadcaster,
     channel_messages::{
         CombinedAddr, GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage,
-        PeerThreadMessage, RemoteVersion,
+        PeerThreadMessage,
     },
     client::Client,
     config::NodeConfig,
@@ -43,6 +44,8 @@ use super::{
     error::NodeError,
     messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
 };
+
+pub const ADDR_V2_VERSION: u32 = 70015;
 
 type Whitelist = Option<Vec<(IpAddr, u16)>>;
 
@@ -188,14 +191,11 @@ impl Node {
                                     let best = {
                                         let mut peer_map = self.peer_map.lock().await;
                                         peer_map.set_offset(peer_thread.nonce, version.timestamp);
-                                        peer_map.set_services(peer_thread.nonce, version.service_flags);
-                                        peer_map.set_height(peer_thread.nonce, version.height as u32);
+                                        peer_map.set_services(peer_thread.nonce, version.services);
+                                        peer_map.set_height(peer_thread.nonce, version.start_height as u32);
                                         *peer_map.best_height().unwrap_or(&0)
                                     };
-                                    let response = self.handle_version(&peer_thread.nonce, version, best).await;
-                                    if self.need_peers().await? {
-                                        self.send_message(peer_thread.nonce, MainThreadMessage::GetAddr).await;
-                                    }
+                                    let response = self.handle_version(&peer_thread.nonce, version, best).await?;
                                     self.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
                                         .await;
@@ -434,17 +434,15 @@ impl Node {
     async fn handle_version(
         &mut self,
         nonce: &u32,
-        version_message: RemoteVersion,
+        version_message: VersionMessage,
         best_height: u32,
-    ) -> MainThreadMessage {
+    ) -> Result<MainThreadMessage, NodeError> {
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
             _ => {
-                if !version_message
-                    .service_flags
-                    .has(ServiceFlags::COMPACT_FILTERS)
-                    || !version_message.service_flags.has(ServiceFlags::NETWORK)
+                if !version_message.services.has(ServiceFlags::COMPACT_FILTERS)
+                    || !version_message.services.has(ServiceFlags::NETWORK)
                 {
                     self.dialog
                         .send_warning(Warning::UnexpectedSyncError {
@@ -452,7 +450,7 @@ impl Node {
                                 .into(),
                         })
                         .await;
-                    return MainThreadMessage::Disconnect;
+                    return Ok(MainThreadMessage::Disconnect);
                 }
             }
         }
@@ -462,15 +460,31 @@ impl Node {
         if chain.height().le(&best_height) {
             chain.set_best_known_height(best_height).await;
         }
+        let needs_peers = peer_map.need_peers().await?;
+        // First we signal for ADDRV2 support
+        if version_message.version.gt(&ADDR_V2_VERSION) && needs_peers {
+            peer_map
+                .send_message(*nonce, MainThreadMessage::GetAddrV2)
+                .await;
+        }
         peer_map
             .send_message(*nonce, MainThreadMessage::Verack)
             .await;
+        // Now we may request peers if required
+        if needs_peers {
+            self.dialog
+                .send_dialog("Requesting new addresses".into())
+                .await;
+            peer_map
+                .send_message(*nonce, MainThreadMessage::GetAddr)
+                .await;
+        }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
             locators: chain.locators().await,
             stop_hash: None,
         };
-        MainThreadMessage::GetHeaders(next_headers)
+        Ok(MainThreadMessage::GetHeaders(next_headers))
     }
 
     // Handle new addresses gossiped over the p2p network
@@ -697,11 +711,6 @@ impl Node {
             .load_headers()
             .await
             .map_err(NodeError::HeaderDatabase)
-    }
-
-    // Do we have a low amount of peers in the database
-    async fn need_peers(&mut self) -> Result<bool, NodeError> {
-        self.peer_map.lock().await.need_peers().await
     }
 }
 

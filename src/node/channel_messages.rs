@@ -3,6 +3,7 @@ use bitcoin::{
     p2p::{
         address::AddrV2,
         message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
+        message_network::VersionMessage,
         ServiceFlags,
     },
     Block, BlockHash, Transaction,
@@ -13,6 +14,7 @@ use crate::node::messages::RejectPayload;
 #[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {
     GetAddr,
+    GetAddrV2,
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
@@ -40,7 +42,7 @@ pub(crate) struct PeerThreadMessage {
 
 #[derive(Debug)]
 pub(crate) enum PeerMessage {
-    Version(RemoteVersion),
+    Version(VersionMessage),
     Addr(Vec<CombinedAddr>),
     Headers(Vec<Header>),
     FilterHeaders(CFHeaders),
@@ -52,13 +54,6 @@ pub(crate) enum PeerMessage {
     Verack,
     Ping(u64),
     Pong(u64),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct RemoteVersion {
-    pub service_flags: ServiceFlags,
-    pub timestamp: i64,
-    pub height: i32,
 }
 
 #[derive(Debug, Clone)]
