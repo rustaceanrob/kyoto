@@ -21,8 +21,7 @@ use tokio::{
 
 use crate::{
     db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
-    peers::error::PeerError,
-    peers::peer::Peer,
+    peers::{error::PeerError, peer::Peer, traits::NetworkConnector},
     prelude::{Median, Netgroup},
 };
 
@@ -56,6 +55,7 @@ pub(crate) struct PeerMap {
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<u32, ManagedPeer>,
     db: Arc<Mutex<dyn PeerStore + Send + Sync>>,
+    connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
     whitelist: Whitelist,
     dialog: Dialog,
     target_db_size: u32,
@@ -78,6 +78,7 @@ impl PeerMap {
             mtx,
             map: HashMap::new(),
             db: Arc::new(Mutex::new(db)),
+            connector: Arc::new(Mutex::new(())),
             whitelist,
             dialog,
             target_db_size,

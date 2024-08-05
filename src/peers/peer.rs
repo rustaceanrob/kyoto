@@ -1,10 +1,9 @@
 extern crate tokio;
-use std::{net::IpAddr, time::Duration};
+use std::time::Duration;
 
 use bitcoin::{p2p::address::AddrV2, Network};
 use tokio::{
-    io::{AsyncWrite, AsyncWriteExt},
-    net::TcpStream,
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
     sync::mpsc::{self, Receiver, Sender},
 };
@@ -64,38 +63,15 @@ impl Peer {
         }
     }
 
-    pub async fn connect(&mut self) -> Result<(), PeerError> {
-        let socket_addr = match self.ip_addr {
-            AddrV2::Ipv4(ip) => IpAddr::V4(ip),
-            AddrV2::Ipv6(ip) => IpAddr::V6(ip),
-            _ => return Err(PeerError::UnreachableSocketAddr),
-        };
-        let timeout = tokio::time::timeout(
-            Duration::from_secs(CONNECTION_TIMEOUT),
-            TcpStream::connect((socket_addr, self.port)),
-        )
-        .await
-        .map_err(|_| PeerError::TcpConnectionFailed)?;
-        // Replace with generalization
-        let mut stream: TcpStream;
-        if let Ok(tcp) = timeout {
-            stream = tcp;
-        } else {
-            self.dialog.send_warning(Warning::PeerTimedOut).await;
-            let _ = self
-                .main_thread_sender
-                .send(PeerThreadMessage {
-                    nonce: self.nonce,
-                    message: PeerMessage::Disconnect,
-                })
-                .await;
-            return Err(PeerError::TcpConnectionFailed);
-        }
+    pub async fn run<R, W>(&mut self, reader: R, mut writer: W) -> Result<(), PeerError>
+    where
+        R: AsyncRead + Send + Sync + Unpin + 'static,
+        W: AsyncWrite + Send + Sync + Unpin,
+    {
         let mut outbound_messages = V1OutboundMessage::new(self.network);
         let message = outbound_messages.version_message(None);
-        self.write_bytes(&mut stream, message).await?;
+        self.write_bytes(&mut writer, message).await?;
         self.message_timer.track();
-        let (reader, mut writer) = stream.into_split();
         let (tx, mut rx) = mpsc::channel(32);
         let mut peer_reader = Reader::new(reader, tx, self.network);
         let read_handle = tokio::spawn(async move {

@@ -27,7 +27,7 @@ impl_sourceless_error!(PeerReadError);
 
 #[derive(Debug)]
 pub enum PeerError {
-    TcpConnectionFailed,
+    ConnectionFailed,
     BufferWrite,
     ThreadChannel,
     DisconnectCommand,
@@ -38,7 +38,7 @@ pub enum PeerError {
 impl core::fmt::Display for PeerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            PeerError::TcpConnectionFailed => {
+            PeerError::ConnectionFailed => {
                 write!(f, "the peer's TCP port was closed or we could not connect.")
             }
             PeerError::BufferWrite => write!(f, "a message could not be written to the peer."),
