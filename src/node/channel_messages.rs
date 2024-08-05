@@ -1,8 +1,9 @@
 use bitcoin::{
     block::Header,
     p2p::{
+        address::AddrV2,
         message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-        Address, ServiceFlags,
+        ServiceFlags,
     },
     Block, BlockHash, Transaction,
 };
@@ -40,7 +41,7 @@ pub(crate) struct PeerThreadMessage {
 #[derive(Debug)]
 pub(crate) enum PeerMessage {
     Version(RemoteVersion),
-    Addr(Vec<Address>),
+    Addr(Vec<CombinedAddr>),
     Headers(Vec<Header>),
     FilterHeaders(CFHeaders),
     Filter(CFilter),
@@ -58,4 +59,25 @@ pub(crate) struct RemoteVersion {
     pub service_flags: ServiceFlags,
     pub timestamp: i64,
     pub height: i32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CombinedAddr {
+    pub addr: AddrV2,
+    pub port: u16,
+    pub services: ServiceFlags,
+}
+
+impl CombinedAddr {
+    pub(crate) fn new(addr: AddrV2, port: u16) -> Self {
+        Self {
+            addr,
+            port,
+            services: ServiceFlags::NONE,
+        }
+    }
+
+    pub(crate) fn services(&mut self, services: ServiceFlags) {
+        self.services = services
+    }
 }

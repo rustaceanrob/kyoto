@@ -99,11 +99,12 @@ impl TxBroadcast {
 }
 
 /// The strategy for how this transaction should be shared with the network
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub enum TxBroadcastPolicy {
     /// Broadcast the transaction to all peers at the same time.
     AllPeers,
     /// Broadcast the transaction to a single random peer, optimal for user privacy.
+    #[default]
     RandomPeer,
 }
 
@@ -154,15 +155,10 @@ impl From<TrustedPeer> for (IpAddr, Option<u16>) {
 }
 
 /// How to connect to peers on the peer-to-peer network
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 #[non_exhaustive]
 pub enum ConnectionType {
     /// Version one peer-to-peer connections
+    #[default]
     ClearNet,
-}
-
-impl Default for ConnectionType {
-    fn default() -> Self {
-        ConnectionType::ClearNet
-    }
 }

@@ -1,15 +1,18 @@
+use std::net::IpAddr;
+
 use bitcoin::consensus::{deserialize, deserialize_partial, Decodable};
 use bitcoin::io::BufRead;
+use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::{
     message::{NetworkMessage, RawNetworkMessage},
     message_blockdata::Inventory,
-    Address, Magic, ServiceFlags,
+    Magic, ServiceFlags,
 };
 use bitcoin::{Network, Txid};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Sender;
 
-use crate::node::channel_messages::{PeerMessage, RemoteVersion};
+use crate::node::channel_messages::{CombinedAddr, PeerMessage, RemoteVersion};
 use crate::node::messages::RejectPayload;
 
 use super::error::PeerReadError;
@@ -71,7 +74,7 @@ where
             message_buf.extend_from_slice(&contents_buf);
             let message: RawNetworkMessage =
                 deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
-            let cleaned_message = parse_message(message.payload());
+            let cleaned_message = self.parse_message(message.payload());
             match cleaned_message {
                 Some(message) => self
                     .tx
@@ -82,120 +85,120 @@ where
             }
         }
     }
-}
 
-fn parse_message(message: &NetworkMessage) -> Option<PeerMessage> {
-    match message {
-        NetworkMessage::Version(version) => Some(PeerMessage::Version(RemoteVersion {
-            service_flags: version.services,
-            timestamp: version.timestamp,
-            height: version.start_height,
-        })),
-        NetworkMessage::Verack => Some(PeerMessage::Verack),
-        NetworkMessage::Addr(addresses) => {
-            if addresses.len() > MAX_ADDR {
-                return Some(PeerMessage::Disconnect);
+    fn parse_message(&self, message: &NetworkMessage) -> Option<PeerMessage> {
+        match message {
+            NetworkMessage::Version(version) => Some(PeerMessage::Version(RemoteVersion {
+                service_flags: version.services,
+                timestamp: version.timestamp,
+                height: version.start_height,
+            })),
+            NetworkMessage::Verack => Some(PeerMessage::Verack),
+            NetworkMessage::Addr(addresses) => {
+                if addresses.len() > MAX_ADDR {
+                    return Some(PeerMessage::Disconnect);
+                }
+                let addresses: Vec<CombinedAddr> = addresses
+                    .iter()
+                    .filter(|f| f.1.services.has(ServiceFlags::COMPACT_FILTERS))
+                    .filter(|f| f.1.socket_addr().is_ok())
+                    .map(|(_, addr)| {
+                        let ip = match addr.socket_addr().unwrap().ip() {
+                            IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+                            IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+                        };
+                        let mut addr = CombinedAddr::new(ip, addr.port);
+                        addr.services(addr.services);
+                        addr
+                    })
+                    .collect();
+                Some(PeerMessage::Addr(addresses))
             }
-            let addresses: Vec<Address> = addresses
-                .iter()
-                .filter(|f| f.1.services.has(ServiceFlags::COMPACT_FILTERS))
-                .filter(|f| f.1.socket_addr().is_ok())
-                .map(|(_, addr)| addr.clone())
-                .collect();
-            Some(PeerMessage::Addr(addresses))
-        }
-        NetworkMessage::Inv(inventory) => {
-            if inventory.len() > MAX_INV {
-                return Some(PeerMessage::Disconnect);
-            }
-            let mut hashes = Vec::new();
-            for i in inventory {
-                match i {
-                    Inventory::Block(hash) => hashes.push(*hash),
-                    Inventory::CompactBlock(hash) => hashes.push(*hash),
-                    Inventory::WitnessBlock(hash) => hashes.push(*hash),
-                    _ => continue,
+            NetworkMessage::Inv(inventory) => {
+                if inventory.len() > MAX_INV {
+                    return Some(PeerMessage::Disconnect);
+                }
+                let mut hashes = Vec::new();
+                for i in inventory {
+                    match i {
+                        Inventory::Block(hash) => hashes.push(*hash),
+                        Inventory::CompactBlock(hash) => hashes.push(*hash),
+                        Inventory::WitnessBlock(hash) => hashes.push(*hash),
+                        _ => continue,
+                    }
+                }
+                if !hashes.is_empty() {
+                    Some(PeerMessage::NewBlocks(hashes))
+                } else {
+                    None
                 }
             }
-            if !hashes.is_empty() {
-                Some(PeerMessage::NewBlocks(hashes))
-            } else {
-                None
+            NetworkMessage::GetData(_) => None,
+            NetworkMessage::NotFound(_) => None,
+            NetworkMessage::GetBlocks(_) => None,
+            NetworkMessage::GetHeaders(_) => None,
+            NetworkMessage::MemPool => None,
+            NetworkMessage::Tx(_) => None,
+            NetworkMessage::Block(block) => Some(PeerMessage::Block(block.clone())),
+            NetworkMessage::Headers(headers) => {
+                if headers.len() > MAX_HEADERS {
+                    return Some(PeerMessage::Disconnect);
+                }
+                Some(PeerMessage::Headers(headers.clone()))
             }
-        }
-        NetworkMessage::GetData(_) => None,
-        NetworkMessage::NotFound(_) => None,
-        NetworkMessage::GetBlocks(_) => None,
-        NetworkMessage::GetHeaders(_) => None,
-        NetworkMessage::MemPool => None,
-        NetworkMessage::Tx(_) => None,
-        NetworkMessage::Block(block) => Some(PeerMessage::Block(block.clone())),
-        NetworkMessage::Headers(headers) => {
-            if headers.len() > MAX_HEADERS {
-                return Some(PeerMessage::Disconnect);
+            NetworkMessage::SendHeaders => None,
+            NetworkMessage::GetAddr => None,
+            NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(*nonce)),
+            NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(*nonce)),
+            NetworkMessage::MerkleBlock(_) => None,
+            NetworkMessage::FilterLoad(_) => None,
+            NetworkMessage::FilterAdd(_) => None,
+            NetworkMessage::FilterClear => None,
+            NetworkMessage::GetCFilters(_) => None,
+            NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter.clone())),
+            NetworkMessage::GetCFHeaders(_) => None,
+            NetworkMessage::CFHeaders(cf_headers) => {
+                Some(PeerMessage::FilterHeaders(cf_headers.clone()))
             }
-            Some(PeerMessage::Headers(headers.clone()))
-        }
-        NetworkMessage::SendHeaders => None,
-        NetworkMessage::GetAddr => None,
-        NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(*nonce)),
-        NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(*nonce)),
-        NetworkMessage::MerkleBlock(_) => None,
-        NetworkMessage::FilterLoad(_) => None,
-        NetworkMessage::FilterAdd(_) => None,
-        NetworkMessage::FilterClear => None,
-        NetworkMessage::GetCFilters(_) => None,
-        NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter.clone())),
-        NetworkMessage::GetCFHeaders(_) => None,
-        NetworkMessage::CFHeaders(cf_headers) => {
-            Some(PeerMessage::FilterHeaders(cf_headers.clone()))
-        }
-        NetworkMessage::GetCFCheckpt(_) => None,
-        NetworkMessage::CFCheckpt(_) => None,
-        NetworkMessage::SendCmpct(_) => None,
-        NetworkMessage::CmpctBlock(_) => None,
-        NetworkMessage::GetBlockTxn(_) => None,
-        NetworkMessage::BlockTxn(_) => None,
-        NetworkMessage::Alert(_) => None,
-        NetworkMessage::Reject(rejection) => {
-            let txid = Txid::from(rejection.hash);
-            Some(PeerMessage::Reject(RejectPayload {
-                reason: rejection.ccode,
-                txid,
-            }))
-        }
-        NetworkMessage::FeeFilter(_) => None,
-        NetworkMessage::WtxidRelay => None,
-        NetworkMessage::AddrV2(addresses) => {
-            if addresses.len() > MAX_ADDR {
-                return Some(PeerMessage::Disconnect);
+            NetworkMessage::GetCFCheckpt(_) => None,
+            NetworkMessage::CFCheckpt(_) => None,
+            NetworkMessage::SendCmpct(_) => None,
+            NetworkMessage::CmpctBlock(_) => None,
+            NetworkMessage::GetBlockTxn(_) => None,
+            NetworkMessage::BlockTxn(_) => None,
+            NetworkMessage::Alert(_) => None,
+            NetworkMessage::Reject(rejection) => {
+                let txid = Txid::from(rejection.hash);
+                Some(PeerMessage::Reject(RejectPayload {
+                    reason: rejection.ccode,
+                    txid,
+                }))
             }
-            let addresses: Vec<Address> = addresses
-                .iter()
-                .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))
-                .filter(|f| f.socket_addr().is_ok())
-                .map(|addr| match addr.socket_addr().unwrap().ip() {
-                    std::net::IpAddr::V4(ip) => Address {
-                        services: addr.services,
-                        address: ip.to_ipv6_mapped().segments(),
-                        port: addr.port,
-                    },
-                    std::net::IpAddr::V6(ip) => Address {
-                        services: addr.services,
-                        address: ip.segments(),
-                        port: addr.port,
-                    },
-                })
-                .collect();
-            Some(PeerMessage::Addr(addresses))
+            NetworkMessage::FeeFilter(_) => None,
+            NetworkMessage::WtxidRelay => None,
+            NetworkMessage::AddrV2(addresses) => {
+                if addresses.len() > MAX_ADDR {
+                    return Some(PeerMessage::Disconnect);
+                }
+                let addresses: Vec<CombinedAddr> = addresses
+                    .iter()
+                    .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))
+                    .map(|addr| {
+                        let mut ip = CombinedAddr::new(addr.addr.clone(), addr.port);
+                        ip.services(addr.services);
+                        ip
+                    })
+                    .collect();
+                Some(PeerMessage::Addr(addresses))
+            }
+            NetworkMessage::SendAddrV2 => None,
+            #[allow(unused)]
+            NetworkMessage::Unknown { command, payload } => Some(PeerMessage::Disconnect),
         }
-        NetworkMessage::SendAddrV2 => None,
-        #[allow(unused)]
-        NetworkMessage::Unknown { command, payload } => Some(PeerMessage::Disconnect),
     }
 }
 
-pub struct V1Header {
+struct V1Header {
     magic: Magic,
     _command: [u8; 12],
     length: u32,

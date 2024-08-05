@@ -1,9 +1,9 @@
+use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::p2p::ServiceFlags;
 use bitcoin::Network;
 use rusqlite::params;
 use rusqlite::{Connection, Result};
 use std::fs;
-use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -13,7 +13,7 @@ use crate::db::traits::PeerStore;
 use crate::db::{FutureResult, PeerStatus, PersistedPeer};
 
 const PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
-    ip_addr TEXT PRIMARY KEY,
+    ip_addr BLOB PRIMARY KEY,
     port INTEGER NOT NULL,
     service_flags INTEGER NOT NULL,
     tried BOOLEAN NOT NULL,
@@ -55,15 +55,10 @@ impl SqlitePeerDb {
             PeerStatus::Tried => (true, false),
             PeerStatus::Ban => (true, true),
         };
+        let blob = serialize(&peer.addr);
         lock.execute(
             stmt,
-            params![
-                peer.addr.to_string(),
-                peer.port,
-                peer.services.to_u64(),
-                tried,
-                banned,
-            ],
+            params![blob, peer.port, peer.services.to_u64(), tried, banned,],
         )
         .map_err(|_| DatabaseError::Write)?;
         Ok(())
@@ -76,7 +71,7 @@ impl SqlitePeerDb {
             .map_err(|_| DatabaseError::Write)?;
         let mut rows = stmt.query([]).map_err(|_| DatabaseError::Load)?;
         if let Some(row) = rows.next().map_err(|_| DatabaseError::Load)? {
-            let ip_addr: String = row.get(0).map_err(|_| DatabaseError::Load)?;
+            let ip_addr: Vec<u8> = row.get(0).map_err(|_| DatabaseError::Load)?;
             let port: u16 = row.get(1).map_err(|_| DatabaseError::Load)?;
             let service_flags: u64 = row.get(2).map_err(|_| DatabaseError::Load)?;
             let tried: bool = row.get(3).map_err(|_| DatabaseError::Load)?;
@@ -85,9 +80,7 @@ impl SqlitePeerDb {
             } else {
                 PeerStatus::New
             };
-            let ip = ip_addr
-                .parse::<IpAddr>()
-                .map_err(|_| DatabaseError::Deserialization)?;
+            let ip = deserialize(&ip_addr).map_err(|_| DatabaseError::Deserialization)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             Ok(PersistedPeer::new(ip, port, services, status))
         } else {
@@ -125,7 +118,7 @@ impl PeerStore for SqlitePeerDb {
 mod tests {
     use std::net::Ipv4Addr;
 
-    use bitcoin::p2p::ServiceFlags;
+    use bitcoin::p2p::{address::AddrV2, ServiceFlags};
 
     use super::*;
 
@@ -133,14 +126,16 @@ mod tests {
     #[ignore = "no tmp file"]
     async fn test_sql_peer_store() {
         let mut peer_store = SqlitePeerDb::new(bitcoin::Network::Testnet, None).unwrap();
-        let ip_1 = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-        let ip_2 = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
-        let ip_3 = IpAddr::V4(Ipv4Addr::new(3, 3, 3, 3));
-        let peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_3 = PersistedPeer::new(ip_3, 0, ServiceFlags::NONE, PeerStatus::New);
-        let try_peer_2 = PersistedPeer::new(ip_2, 0, ServiceFlags::NONE, PeerStatus::Tried);
-        let ban_peer_1 = PersistedPeer::new(ip_1, 0, ServiceFlags::NONE, PeerStatus::Ban);
+        let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
+        let ip_2 = Ipv4Addr::new(2, 2, 2, 2);
+        let tor = AddrV2::TorV2([8; 10]);
+        let peer_1 = PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_2 = PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::New);
+        let try_peer_2 =
+            PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::Tried);
+        let ban_peer_1 =
+            PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::Ban);
         peer_store.update(peer_1).await.unwrap();
         assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
         peer_store.update(peer_2).await.unwrap();
@@ -155,6 +150,9 @@ mod tests {
         assert_ne!(ban_peer_1.addr, random.addr);
         let random = peer_store.random().await.unwrap();
         assert_ne!(ban_peer_1.addr, random.addr);
+        let _ = peer_store.random().await.unwrap();
+        let _ = peer_store.random().await.unwrap();
+        let _ = peer_store.random().await.unwrap();
         let random = peer_store.random().await.unwrap();
         assert_ne!(ban_peer_1.addr, random.addr);
     }

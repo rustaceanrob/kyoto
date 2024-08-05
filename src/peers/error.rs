@@ -32,6 +32,7 @@ pub enum PeerError {
     ThreadChannel,
     DisconnectCommand,
     Reader,
+    UnreachableSocketAddr,
 }
 
 impl core::fmt::Display for PeerError {
@@ -49,6 +50,9 @@ impl core::fmt::Display for PeerError {
                 write!(f, "the main thread advised this peer to disconnect.")
             }
             PeerError::Reader => write!(f, "the reading thread encountered an error."),
+            PeerError::UnreachableSocketAddr => {
+                write!(f, "cannot make use of provided p2p address.")
+            }
         }
     }
 }

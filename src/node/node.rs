@@ -9,7 +9,7 @@ use bitcoin::{
     block::Header,
     p2p::{
         message_filter::{CFHeaders, CFilter},
-        Address, ServiceFlags,
+        ServiceFlags,
     },
     Block, Network, ScriptBuf,
 };
@@ -34,8 +34,8 @@ use crate::{
 use super::{
     broadcaster::Broadcaster,
     channel_messages::{
-        GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
-        RemoteVersion,
+        CombinedAddr, GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage,
+        PeerThreadMessage, RemoteVersion,
     },
     client::Client,
     config::NodeConfig,
@@ -474,27 +474,15 @@ impl Node {
     }
 
     // Handle new addresses gossiped over the p2p network
-    async fn handle_new_addrs(&mut self, new_peers: Vec<Address>) {
+    async fn handle_new_addrs(&mut self, new_peers: Vec<CombinedAddr>) {
         self.dialog
             .send_dialog(format!(
                 "Adding {} new peers to the peer database",
                 new_peers.len()
             ))
             .await;
-        let peers = new_peers
-            .into_iter()
-            .map(|addr| {
-                (
-                    addr.socket_addr()
-                        .expect("IP should have been screened")
-                        .ip(),
-                    addr.port,
-                    addr.services,
-                )
-            })
-            .collect();
         let mut peer_map = self.peer_map.lock().await;
-        peer_map.add_gossiped_peers(peers).await;
+        peer_map.add_gossiped_peers(new_peers).await;
     }
 
     // We always send headers to our peers, so our next message depends on our state
