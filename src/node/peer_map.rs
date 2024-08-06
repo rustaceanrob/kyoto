@@ -27,6 +27,7 @@ use crate::{
         traits::{ClearNetConnection, NetworkConnector},
     },
     prelude::{Median, Netgroup},
+    ConnectionType,
 };
 
 use super::{
@@ -73,8 +74,17 @@ impl PeerMap {
         db: impl PeerStore + Send + Sync + 'static,
         whitelist: Whitelist,
         dialog: Dialog,
+        connection_type: ConnectionType,
         target_db_size: u32,
     ) -> Self {
+        let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
+            ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
+            #[cfg(feature = "tor")]
+            ConnectionType::Tor(client) => {
+                use crate::peers::tor::TorConnection;
+                Arc::new(Mutex::new(TorConnection::new(client)))
+            }
+        };
         Self {
             num_peers: 0,
             heights: HashMap::new(),
@@ -82,7 +92,7 @@ impl PeerMap {
             mtx,
             map: HashMap::new(),
             db: Arc::new(Mutex::new(db)),
-            connector: Arc::new(Mutex::new(ClearNetConnection::new())),
+            connector,
             whitelist,
             dialog,
             target_db_size,

@@ -5,8 +5,8 @@ use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::db::memory::peers::StatelessPeerStore;
 use kyoto::db::sqlite::headers::SqliteHeaderDb;
 use kyoto::node::messages::NodeMessage;
-use kyoto::BlockHash;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::{BlockHash, ConnectionType, TorClient, TorClientConfig};
 use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -18,6 +18,10 @@ async fn main() {
     // Add third-party logging
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
+    // Start a TorClient
+    let tor = TorClient::create_bootstrapped(TorClientConfig::default())
+        .await
+        .unwrap();
     // Add Bitcoin scripts to scan the blockchain for
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
@@ -46,9 +50,11 @@ async fn main() {
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(anchor)
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .num_required_peers(1)
         // We only maintain a list of 32 peers in memory
         .peer_db_size(32)
+        // Connect to peers over Tor
+        .set_connection_type(ConnectionType::Tor(tor))
         // Build without the default databases
         .build_with_databases(peer_store, header_store);
     // Run the node

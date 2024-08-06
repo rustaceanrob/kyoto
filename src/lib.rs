@@ -18,6 +18,13 @@ mod prelude;
 
 use std::net::IpAddr;
 
+#[cfg(feature = "tor")]
+pub use arti_client::TorClient;
+#[cfg(feature = "tor")]
+pub use arti_client::TorClientConfig;
+#[cfg(feature = "tor")]
+use tor_rtcompat::PreferredRuntime;
+
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::message_network::RejectReason;
 pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
@@ -155,10 +162,13 @@ impl From<TrustedPeer> for (IpAddr, Option<u16>) {
 }
 
 /// How to connect to peers on the peer-to-peer network
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 #[non_exhaustive]
 pub enum ConnectionType {
     /// Version one peer-to-peer connections
     #[default]
     ClearNet,
+    /// Connect to peers over Tor
+    #[cfg(feature = "tor")]
+    Tor(TorClient<PreferredRuntime>),
 }

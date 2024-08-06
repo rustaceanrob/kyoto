@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::ops::DerefMut;
 
 use bitcoin::consensus::{deserialize, deserialize_partial, Decodable};
 use bitcoin::io::BufRead;
@@ -11,6 +12,7 @@ use bitcoin::p2p::{
 use bitcoin::{Network, Txid};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::Mutex;
 
 use crate::node::channel_messages::{CombinedAddr, PeerMessage};
 use crate::node::messages::RejectPayload;
@@ -25,23 +27,18 @@ const MAX_ADDR: usize = 1_000;
 const MAX_INV: usize = 50_000;
 const MAX_HEADERS: usize = 2_000;
 
-pub(crate) struct Reader<R>
-where
-    R: AsyncRead + Send + Sync + Unpin,
-{
-    stream: R,
+pub(crate) struct Reader {
+    stream: Mutex<Box<dyn AsyncRead + Send + Unpin>>,
     tx: Sender<PeerMessage>,
     network: Network,
 }
 
-impl<R> Reader<R>
-where
-    R: AsyncRead + Send + Sync + Unpin,
-{
-    pub fn new(stream: R, tx: Sender<PeerMessage>, network: Network) -> Self
-    where
-        R: AsyncRead + Send + Sync + Unpin,
-    {
+impl Reader {
+    pub fn new(
+        stream: Mutex<Box<dyn AsyncRead + Send + Unpin>>,
+        tx: Sender<PeerMessage>,
+        network: Network,
+    ) -> Self {
         Self {
             stream,
             tx,
@@ -50,11 +47,12 @@ where
     }
 
     pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {
+        let mut lock = self.stream.lock().await;
+        let stream = lock.deref_mut();
         loop {
             // V1 headers are 24 bytes
             let mut message_buf = vec![0_u8; 24];
-            let _ = self
-                .stream
+            let _ = stream
                 .read_exact(&mut message_buf)
                 .await
                 .map_err(|_| PeerReadError::ReadBuffer)?;
@@ -70,7 +68,7 @@ where
                 return Err(PeerReadError::Deserialization);
             }
             let mut contents_buf = vec![0_u8; header.length as usize];
-            let _ = self.stream.read_exact(&mut contents_buf).await.unwrap();
+            let _ = stream.read_exact(&mut contents_buf).await.unwrap();
             message_buf.extend_from_slice(&contents_buf);
             let message: RawNetworkMessage =
                 deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
