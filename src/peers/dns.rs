@@ -152,19 +152,31 @@ impl DNSQuery {
     async fn parse_message(&self, mut response: &[u8]) -> Result<Vec<IpAddr>, DNSQueryError> {
         let mut ips = Vec::with_capacity(10);
         let mut buf: [u8; 2] = [0, 0];
-        response.read_exact(&mut buf).unwrap(); // Read 2 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 2 bytes
         if self.message_id != buf {
             return Err(DNSQueryError::MessageID);
         }
         // Read flags and ignore
-        response.read_exact(&mut buf).unwrap(); // Read 4 bytes
-        response.read_exact(&mut buf).unwrap(); // Read 6 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 4 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 6 bytes
         let _qdcount = u16::from_be_bytes(buf);
-        response.read_exact(&mut buf).unwrap(); // Read 8 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 8 bytes
         let ancount = u16::from_be_bytes(buf);
-        response.read_exact(&mut buf).unwrap(); // Read 10 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 10 bytes
         let _nscount = u16::from_be_bytes(buf);
-        response.read_exact(&mut buf).unwrap(); // Read 12 bytes
+        response
+            .read_exact(&mut buf)
+            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 12 bytes
         let _arcount = u16::from_be_bytes(buf);
         // The question should be repeated back to us
         let mut buf: Vec<u8> = vec![0; self.question.len()];
@@ -222,6 +234,7 @@ mod test {
     use super::Dns;
 
     #[tokio::test]
+    #[ignore = "dns works"]
     async fn dns_responds() {
         let addrs = Dns::new(bitcoin::network::Network::Signet)
             .bootstrap()

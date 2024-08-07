@@ -68,7 +68,10 @@ impl Reader {
                 return Err(PeerReadError::Deserialization);
             }
             let mut contents_buf = vec![0_u8; header.length as usize];
-            let _ = stream.read_exact(&mut contents_buf).await.unwrap();
+            let _ = stream
+                .read_exact(&mut contents_buf)
+                .await
+                .map_err(|_| PeerReadError::ReadBuffer)?;
             message_buf.extend_from_slice(&contents_buf);
             let message: RawNetworkMessage =
                 deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
