@@ -1,10 +1,23 @@
-# Kyoto Light Client
+<div align="center">
+  <h1>Kyoto: Bitcoin Light Client</h1>
+  <p>
+    <strong>An Implementation of BIP-157/BIP-158</strong>
+  </p>
+
+  <p>
+    <a href="https://github.com/bitcoindevkit/bdk/blob/master/LICENSE"><img alt="MIT or Apache-2.0 Licensed" src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg"/></a>
+    <a href="https://github.com/rustaceanrob/kyoto/actions?query=workflow%3ACI"><img alt="CI Status" src="https://github.com/bitcoindevkit/bdk/workflows/CI/badge.svg"></a>
+    <!-- <a href="https://docs.rs/bdk_wallet"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bdk_wallet-green"/></a> -->
+    <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
+    <!-- <a href="https://discord.gg/d7NkDKm"><img alt="Chat on Discord" src="https://img.shields.io/discord/753336465005608961?logo=discord"></a> -->
+  </p>
+</div>
 
 ⚠️ **Warning**: This project is under development and is not suitable for actual use ⚠️
 
-## Description
+## About
 
-Kyoto is aiming to be a light-weight and private Bitcoin client. While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the standard SPV for [LND](https://github.com/lightningnetwork/lnd), integrations with existing Rust clients for [LDK](https://github.com/lightningdevkit) and [BDK](https://github.com/bitcoindevkit) haven't come to furition. The [Nakamoto](https://github.com/cloudhead/nakamoto) project is complete with some very modular, elegant programming, but the lead maintainer has other projects to focus on. [Murmel](https://github.com/rust-bitcoin/murmel) is yet another light client in Rust, but the last commit was 4 years ago at the time of writing. The Rust community of crates has evolved quickly in terms of asynchronus frameworks and runtime executors. Like the [LDK node](https://github.com/lightningdevkit/ldk-node?tab=readme-ov-file) project, this project leverages the use of `tokio`. By leveraging how futures and executors have developed over the years, the hope is a light client in Rust should be significantly easier to maintain. To read more about the scope, usage recommendations, and implementation details, see [DETAILS.md](./doc/DETAILS.md).
+Kyoto is aiming to be a simple, memory-conservative, and private Bitcoin client for developers to build wallet applications. To read more about the scope, usage recommendations, and implementation details, see [DETAILS.md](./doc/DETAILS.md).
 
 ## Running an example
 
@@ -15,8 +28,9 @@ To run the Signet example, fork the project and run: `cargo run --example signet
 The following snippet demonstrates how to build a Kyoto node. See the docs for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
 ```rust
-use kyoto::node::NodeBuilder;
+use kyoto::NodeBuilder;
 use kyoto::TrustedPeer;
+
 let builder = NodeBuilder::new(bitcoin::Network::Signet);
 // Add node preferences and build the node/client
 let (mut node, mut client) = builder
@@ -35,3 +49,9 @@ let (mut node, mut client) = builder
     // Create the node and client
     .build_node()
 ```
+
+#### Minimum Supported Rust Version (MSRV) Policy
+
+The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`. 
+
+While connections over the Tor protocl are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarentees will be made when using Tor, and the feature should be considered experimental.
