@@ -5,6 +5,8 @@ pub(crate) mod error;
 pub(crate) mod outbound_messages;
 pub(crate) mod peer;
 pub(crate) mod reader;
+#[cfg(feature = "tor")]
+pub(crate) mod tor;
 pub(crate) mod traits;
 
 #[cfg(test)]

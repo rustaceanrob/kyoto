@@ -29,7 +29,7 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     filters::cfheader_chain::AppendAttempt,
     node::peer_map::PeerMap,
-    TxBroadcastPolicy,
+    ConnectionType, TxBroadcastPolicy,
 };
 
 use super::{
@@ -88,6 +88,7 @@ impl Node {
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: usize,
         target_peer_size: u32,
+        connection_type: ConnectionType,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> (Self, Client) {
@@ -107,6 +108,7 @@ impl Node {
             peer_store,
             white_list,
             dialog.clone(),
+            connection_type,
             target_peer_size,
         )));
         // Set up the transaction broadcaster
@@ -144,18 +146,19 @@ impl Node {
     }
 
     pub(crate) fn new_from_config(
-        config: &NodeConfig,
+        config: NodeConfig,
         network: Network,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> (Self, Client) {
         Node::new(
             network,
-            config.white_list.clone(),
-            config.addresses.clone(),
+            config.white_list,
+            config.addresses,
             config.header_checkpoint,
             config.required_peers as usize,
             config.target_peer_size,
+            config.connection_type,
             peer_store,
             header_store,
         )
@@ -320,7 +323,7 @@ impl Node {
                 .send_warning(Warning::NotEnoughConnections)
                 .await;
             let ip = peer_map.next_peer().await?;
-            if let Err(_) = peer_map.dispatch(ip.0, ip.1).await {
+            if peer_map.dispatch(ip.0, ip.1).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect).await;
             }
         }

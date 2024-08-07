@@ -28,11 +28,11 @@ jobs:
       - name: Pin dependencies
         if: matrix.msrv
         run: cargo update -p allocator-api2 --precise "0.2.9" --verbose
-      - name: Lint
+      - name: Lint all targets
         run: cargo clippy --all-targets
       - name: Format
         run: cargo fmt -- --check
-      - name: Build
+      - name: Build with defeault features
         run: cargo build --verbose
       - name: Check release build on Rust ${{ matrix.toolchain }}
         run: cargo check --release --verbose --color always

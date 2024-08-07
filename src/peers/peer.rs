@@ -1,9 +1,9 @@
 extern crate tokio;
-use std::time::Duration;
+use std::{ops::DerefMut, time::Duration};
 
 use bitcoin::Network;
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    io::{AsyncWrite, AsyncWriteExt},
     select,
     sync::mpsc::{self, Receiver, Sender},
 };
@@ -21,7 +21,7 @@ use super::{
     counter::{MessageCounter, MessageTimer},
     error::PeerError,
     reader::Reader,
-    traits::MessageGenerator,
+    traits::{MessageGenerator, StreamReader, StreamWriter},
 };
 
 const CONNECTION_TIMEOUT: u64 = 2;
@@ -57,14 +57,16 @@ impl Peer {
         }
     }
 
-    pub async fn run<R, W>(&mut self, reader: R, mut writer: W) -> Result<(), PeerError>
-    where
-        R: AsyncRead + Send + Sync + Unpin + 'static,
-        W: AsyncWrite + Send + Sync + Unpin,
-    {
+    pub async fn run(
+        &mut self,
+        reader: StreamReader,
+        writer: StreamWriter,
+    ) -> Result<(), PeerError> {
+        let mut lock = writer.lock().await;
+        let writer = lock.deref_mut();
         let mut outbound_messages = V1OutboundMessage::new(self.network);
         let message = outbound_messages.version_message(None);
-        self.write_bytes(&mut writer, message).await?;
+        self.write_bytes(writer, message).await?;
         self.message_timer.track();
         let (tx, mut rx) = mpsc::channel(32);
         let mut peer_reader = Reader::new(reader, tx, self.network);
@@ -92,7 +94,7 @@ impl Peer {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
-                                match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
+                                match self.handle_peer_message(message, writer, &mut outbound_messages).await {
                                     Ok(()) => continue,
                                     Err(e) => {
                                         match e {
@@ -111,7 +113,7 @@ impl Peer {
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
-                            match self.main_thread_request(message, &mut writer, &mut outbound_messages).await {
+                            match self.main_thread_request(message, writer, &mut outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
@@ -137,7 +139,7 @@ impl Peer {
     ) -> Result<(), PeerError>
     where
         M: MessageGenerator,
-        W: AsyncWrite + Send + Sync + Unpin,
+        W: AsyncWrite + Send + Unpin,
     {
         match message {
             PeerMessage::Version(version) => {
@@ -261,7 +263,7 @@ impl Peer {
     ) -> Result<(), PeerError>
     where
         M: MessageGenerator,
-        W: AsyncWrite + Send + Sync + Unpin,
+        W: AsyncWrite + Send + Unpin,
     {
         match request {
             MainThreadMessage::GetAddr => {
@@ -312,7 +314,7 @@ impl Peer {
 
     async fn write_bytes<W>(&mut self, writer: &mut W, message: Vec<u8>) -> Result<(), PeerError>
     where
-        W: AsyncWrite + Send + Sync + Unpin,
+        W: AsyncWrite + Send + Unpin,
     {
         writer
             .write_all(&message)

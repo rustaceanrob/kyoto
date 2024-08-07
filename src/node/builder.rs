@@ -3,11 +3,11 @@ use std::{collections::HashSet, path::PathBuf};
 use bitcoin::{Network, ScriptBuf};
 
 use crate::prelude::default_port_from_network;
-use crate::TrustedPeer;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
+use crate::{ConnectionType, TrustedPeer};
 
 use super::{client::Client, config::NodeConfig, node::Node};
 
@@ -82,22 +82,37 @@ impl NodeBuilder {
         self
     }
 
+    pub fn set_connection_type(mut self, connection_type: ConnectionType) -> Self {
+        self.config.connection_type = connection_type;
+        self
+    }
+
     /// Consume the node builder and receive a [`Node`] and [`Client`].
     #[cfg(feature = "database")]
-    pub fn build_node(&self) -> (Node, Client) {
+    pub fn build_node(&mut self) -> (Node, Client) {
         use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone()).unwrap();
         let header_store =
             SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();
-        Node::new_from_config(&self.config, self.network, peer_store, header_store)
+        Node::new_from_config(
+            core::mem::take(&mut self.config),
+            self.network,
+            peer_store,
+            header_store,
+        )
     }
 
     /// Consume the node builder by using custom database implementations, receiving a [`Node`] and [`Client`].
     pub fn build_with_databases(
-        &self,
+        &mut self,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> (Node, Client) {
-        Node::new_from_config(&self.config, self.network, peer_store, header_store)
+        Node::new_from_config(
+            core::mem::take(&mut self.config),
+            self.network,
+            peer_store,
+            header_store,
+        )
     }
 }

@@ -11,6 +11,7 @@ use bitcoin::{
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
+    sync::Mutex,
 };
 
 use crate::{node::channel_messages::GetBlockConfig, prelude::FutureResult};
@@ -19,8 +20,8 @@ use super::error::PeerError;
 
 const CONNECTION_TIMEOUT: u64 = 2;
 
-type Reader = Box<dyn AsyncRead + Send + Sync + Unpin>;
-type Writer = Box<dyn AsyncWrite + Send + Sync + Unpin>;
+pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
+pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
 
 pub(crate) trait MessageGenerator {
     fn version_message(&mut self, port: Option<u16>) -> Vec<u8>;
@@ -47,7 +48,11 @@ pub(crate) trait MessageGenerator {
 pub(crate) trait NetworkConnector {
     fn can_connect(&self, addr: &AddrV2) -> bool;
 
-    fn connect(&mut self, addr: AddrV2, port: u16) -> FutureResult<(Reader, Writer), PeerError>;
+    fn connect(
+        &mut self,
+        addr: AddrV2,
+        port: u16,
+    ) -> FutureResult<(StreamReader, StreamWriter), PeerError>;
 }
 
 pub(crate) struct ClearNetConnection {}
@@ -60,15 +65,18 @@ impl ClearNetConnection {
 
 impl NetworkConnector for ClearNetConnection {
     fn can_connect(&self, addr: &AddrV2) -> bool {
-        match addr {
-            AddrV2::Ipv4(_) => true,
-            AddrV2::Ipv6(_) => true,
-            _ => false,
-        }
+        matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_))
     }
 
-    fn connect(&mut self, addr: AddrV2, port: u16) -> FutureResult<(Reader, Writer), PeerError> {
-        async fn do_impl(addr: AddrV2, port: u16) -> Result<(Reader, Writer), PeerError> {
+    fn connect(
+        &mut self,
+        addr: AddrV2,
+        port: u16,
+    ) -> FutureResult<(StreamReader, StreamWriter), PeerError> {
+        async fn do_impl(
+            addr: AddrV2,
+            port: u16,
+        ) -> Result<(StreamReader, StreamWriter), PeerError> {
             let socket_addr = match addr {
                 AddrV2::Ipv4(ip) => IpAddr::V4(ip),
                 AddrV2::Ipv6(ip) => IpAddr::V6(ip),
@@ -83,7 +91,7 @@ impl NetworkConnector for ClearNetConnection {
             match timeout {
                 Ok(stream) => {
                     let (reader, writer) = stream.into_split();
-                    Ok((Box::new(reader), Box::new(writer)))
+                    Ok((Mutex::new(Box::new(reader)), Mutex::new(Box::new(writer))))
                 }
                 Err(_) => Err(PeerError::ConnectionFailed),
             }
