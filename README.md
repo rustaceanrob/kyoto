@@ -54,4 +54,4 @@ let (mut node, mut client) = builder
 
 The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`. 
 
-While connections over the Tor protocl are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarentees will be made when using Tor, and the feature should be considered experimental.
+While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
