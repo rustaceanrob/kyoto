@@ -20,6 +20,7 @@ use super::error::PeerError;
 
 const CONNECTION_TIMEOUT: u64 = 2;
 
+// FIXME: after downstream PR: Box<dyn AsyncRead + Send +Sync + Unpin>
 pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
 pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
 
