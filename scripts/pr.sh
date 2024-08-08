@@ -1,4 +1,4 @@
 cargo test
 cargo fmt
-cargo clippy
+cargo clippy --all-targets
 cargo run --example signet

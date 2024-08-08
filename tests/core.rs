@@ -111,7 +111,7 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut Receiver<NodeMessa
 async fn test_reorg() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -165,7 +165,7 @@ async fn test_reorg() {
 async fn test_mine_after_reorg() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -222,7 +222,7 @@ async fn test_mine_after_reorg() {
 async fn test_broadcast_success() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -309,7 +309,7 @@ async fn test_broadcast_success() {
 async fn test_broadcast_fail() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -389,7 +389,7 @@ async fn test_broadcast_fail() {
 async fn test_long_chain() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -420,7 +420,7 @@ async fn test_long_chain() {
 async fn test_sql_reorg() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -490,7 +490,7 @@ async fn test_sql_reorg() {
 async fn test_two_deep_reorg() {
     let rpc_result = initialize_client();
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if let Err(_) = rpc_result {
+    if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
@@ -566,7 +566,7 @@ async fn test_sql_stale_anchor() {
     )
     .unwrap();
     // Do a call that will only fail if we are not connected to RPC.
-    if let Err(_) = rpc.get_new_address(None, None) {
+    if rpc.get_new_address(None, None).is_err() {
         println!("There is no wallet loaded. Have you ran `mine.sh`?");
         return;
     }
