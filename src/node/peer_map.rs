@@ -44,7 +44,7 @@ type Whitelist = Option<Vec<(IpAddr, u16)>>;
 #[derive(Debug)]
 pub(crate) struct ManagedPeer {
     net_time: i64,
-    ip_addr: AddrV2,
+    address: AddrV2,
     port: u16,
     service_flags: Option<ServiceFlags>,
     ptx: Sender<MainThreadMessage>,
@@ -150,7 +150,7 @@ impl PeerMap {
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
-    pub async fn dispatch(&mut self, ip: AddrV2, port: u16) -> Result<(), PeerError> {
+    pub async fn dispatch(&mut self, address: AddrV2, port: u16) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
@@ -162,19 +162,19 @@ impl PeerMap {
             self.dialog.clone(),
         );
         let mut connector = self.connector.lock().await;
-        if !connector.can_connect(&ip) {
+        if !connector.can_connect(&address) {
             return Err(PeerError::UnreachableSocketAddr);
         }
         self.dialog
-            .send_dialog(format!("Connecting to {:?}:{}", ip, port))
+            .send_dialog(format!("Connecting to {:?}:{}", address, port))
             .await;
-        let (reader, writer) = connector.connect(ip.clone(), port).await?;
+        let (reader, writer) = connector.connect(address.clone(), port).await?;
         let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.map.insert(
             peer_num,
             ManagedPeer {
                 service_flags: None,
-                ip_addr: ip,
+                address,
                 port,
                 net_time: 0,
                 ptx,
@@ -320,7 +320,7 @@ impl PeerMap {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
-                    peer.ip_addr.clone(),
+                    peer.address.clone(),
                     peer.port,
                     peer.service_flags.unwrap_or(ServiceFlags::NONE),
                     PeerStatus::Tried,
@@ -331,7 +331,7 @@ impl PeerMap {
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
                             "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.ip_addr,
+                            peer.address,
                             peer.port,
                             peer.service_flags.unwrap_or(ServiceFlags::NONE)
                         ),
@@ -346,7 +346,7 @@ impl PeerMap {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
-                    peer.ip_addr.clone(),
+                    peer.address.clone(),
                     peer.port,
                     peer.service_flags.unwrap_or(ServiceFlags::NONE),
                     PeerStatus::Ban,
@@ -357,7 +357,7 @@ impl PeerMap {
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
                             "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.ip_addr,
+                            peer.address,
                             peer.port,
                             peer.service_flags.unwrap_or(ServiceFlags::NONE)
                         ),

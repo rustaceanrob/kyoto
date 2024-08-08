@@ -22,10 +22,7 @@ impl TorConnection {
 
 impl NetworkConnector for TorConnection {
     fn can_connect(&self, addr: &AddrV2) -> bool {
-        matches!(
-            addr,
-            AddrV2::Ipv4(_) | AddrV2::Ipv6(_) | AddrV2::TorV2(_) | AddrV2::TorV3(_)
-        )
+        matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_) | AddrV2::TorV3(_))
     }
 
     // FIXME: (@leonardo) If we receive the AddressV2Message, we wouldn't need the port parameter, and could use the `socket_addr` method too.
@@ -60,7 +57,7 @@ impl NetworkConnector for TorConnection {
                 }
                 AddrV2::TorV3(pk) => {
                     let hs_id = HsId::from(pk);
-                    let tor_addr = TorAddr::from(hs_id.to_string())
+                    let tor_addr = TorAddr::from((hs_id.to_string(), port))
                         .map_err(|_e| PeerError::UnreachableSocketAddr)?;
 
                     let mut stream_prefs = StreamPrefs::default();
