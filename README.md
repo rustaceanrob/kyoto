@@ -9,13 +9,12 @@
     <a href="https://github.com/rustaceanrob/kyoto/actions?query=workflow%3ACI"><img alt="CI Status" src="https://github.com/bitcoindevkit/bdk/workflows/CI/badge.svg"></a>
     <!-- <a href="https://docs.rs/bdk_wallet"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bdk_wallet-green"/></a> -->
     <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
-    <!-- <a href="https://discord.gg/d7NkDKm"><img alt="Chat on Discord" src="https://img.shields.io/discord/753336465005608961?logo=discord"></a> -->
   </p>
 </div>
 
-⚠️ **Warning**: This project is under development and is not suitable for actual use ⚠️
-
 ## About
+
+⚠️ **Warning**: This project is under development and is not currently suitable for use ⚠️
 
 Kyoto is aiming to be a simple, memory-conservative, and private Bitcoin client for developers to build wallet applications. To read more about the scope, usage recommendations, and implementation details, see [DETAILS.md](./doc/DETAILS.md).
 
@@ -55,3 +54,17 @@ let (mut node, mut client) = builder
 The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`. 
 
 While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
+
+#### Integration Testing
+
+To run the integrations against your `bitcoind` instance, in the root of the project:
+
+```
+chmod +x scripts/integration.sh
+sh scripts/integration.sh "path/to/bitcoin/folder"
+```
+
+To run the unit tests, `cargo fmt`, `clippy`, and an example:
+
+`sh scripts/pr.sh`
+
