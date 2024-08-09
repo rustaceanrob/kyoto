@@ -129,6 +129,13 @@ impl TrustedPeer {
         Self { address, port }
     }
 
+    /// Create a new peer from a TorV3 service and port.
+    #[cfg(feature = "tor")]
+    pub fn new_from_tor_v3(public_key: [u8; 32], port: Option<u16>) -> Self {
+        let address = AddrV2::TorV3(public_key);
+        Self { address, port }
+    }
+
     /// Create a new trusted peer using the default port for the network.
     pub fn from_ip(ip_addr: IpAddr) -> Self {
         let address = match ip_addr {
