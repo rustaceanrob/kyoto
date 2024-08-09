@@ -32,6 +32,7 @@ arti-client = { version = "0.21.0", features = [
     "rustls",
     "tokio",
     "onion-service-client",
+    "experimental-api"
 ], default-features = false, optional = true }
 tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
 

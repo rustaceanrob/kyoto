@@ -19,9 +19,7 @@ mod prelude;
 use std::net::IpAddr;
 
 #[cfg(feature = "tor")]
-pub use arti_client::TorClient;
-#[cfg(feature = "tor")]
-pub use arti_client::TorClientConfig;
+pub use arti_client::{TorClient, TorClientConfig};
 #[cfg(feature = "tor")]
 use tor_rtcompat::PreferredRuntime;
 
