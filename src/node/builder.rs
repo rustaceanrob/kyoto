@@ -33,7 +33,7 @@ impl NodeBuilder {
                 .into_iter()
                 .map(|trusted| {
                     (
-                        trusted.ip(),
+                        trusted.address(),
                         trusted
                             .port()
                             .unwrap_or(default_port_from_network(&self.network)),

@@ -32,7 +32,7 @@ arti-client = { version = "0.21.0", features = [
     "rustls",
     "tokio",
     "onion-service-client",
-    "experimental-api"
+    "experimental-api",
 ], default-features = false, optional = true }
 tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
 
@@ -66,6 +66,6 @@ name = "rescan"
 path = "example/rescan.rs"
 
 [[example]]
-name = "memory"
-path = "example/memory.rs"
+name = "tor"
+path = "example/tor.rs"
 required-features = ["tor"]

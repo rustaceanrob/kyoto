@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    net::IpAddr,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -8,6 +7,7 @@ use std::{
 use bitcoin::{
     block::Header,
     p2p::{
+        address::AddrV2,
         message_filter::{CFHeaders, CFilter},
         message_network::VersionMessage,
         ServiceFlags,
@@ -47,7 +47,7 @@ use super::{
 
 pub const ADDR_V2_VERSION: u32 = 70015;
 
-type Whitelist = Option<Vec<(IpAddr, u16)>>;
+type Whitelist = Option<Vec<(AddrV2, u16)>>;
 
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]

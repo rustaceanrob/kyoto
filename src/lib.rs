@@ -24,6 +24,7 @@ pub use arti_client::{TorClient, TorClientConfig};
 use tor_rtcompat::PreferredRuntime;
 
 pub use bitcoin::block::Header;
+pub use bitcoin::p2p::address::AddrV2;
 pub use bitcoin::p2p::message_network::RejectReason;
 pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
 /// Build a light client and node.
@@ -117,28 +118,42 @@ pub enum TxBroadcastPolicy {
 #[derive(Debug, Clone)]
 pub struct TrustedPeer {
     /// The IP address of the remote node to connect to.
-    pub ip: IpAddr,
+    pub address: AddrV2,
     /// The port to establish a TCP connection. If none is provided, the typical Bitcoin Core port is used as the default.
     pub port: Option<u16>,
 }
 
 impl TrustedPeer {
     /// Create a new trusted peer.
-    pub fn new(ip_addr: IpAddr, port: Option<u16>) -> Self {
-        Self { ip: ip_addr, port }
+    pub fn new(address: AddrV2, port: Option<u16>) -> Self {
+        Self { address, port }
     }
 
     /// Create a new trusted peer using the default port for the network.
     pub fn from_ip(ip_addr: IpAddr) -> Self {
+        let address = match ip_addr {
+            IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+            IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+        };
         Self {
-            ip: ip_addr,
+            address,
+            port: None,
+        }
+    }
+
+    /// Create a new peer from a TorV3 service.
+    #[cfg(feature = "tor")]
+    pub fn from_tor_v3(public_key: [u8; 32]) -> Self {
+        let address = AddrV2::TorV3(public_key);
+        Self {
+            address,
             port: None,
         }
     }
 
     /// The IP address of the trusted peer.
-    pub fn ip(&self) -> IpAddr {
-        self.ip
+    pub fn address(&self) -> AddrV2 {
+        self.address.clone()
     }
 
     /// A recommended port to connect to, if there is one.
@@ -149,13 +164,17 @@ impl TrustedPeer {
 
 impl From<(IpAddr, Option<u16>)> for TrustedPeer {
     fn from(value: (IpAddr, Option<u16>)) -> Self {
-        TrustedPeer::new(value.0, value.1)
+        let address = match value.0 {
+            IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+            IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+        };
+        TrustedPeer::new(address, value.1)
     }
 }
 
-impl From<TrustedPeer> for (IpAddr, Option<u16>) {
+impl From<TrustedPeer> for (AddrV2, Option<u16>) {
     fn from(value: TrustedPeer) -> Self {
-        (value.ip(), value.port())
+        (value.address(), value.port())
     }
 }
 
