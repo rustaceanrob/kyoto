@@ -38,7 +38,7 @@ use super::{
 };
 
 // Preferred peers to connect to based on the user configuration
-type Whitelist = Option<Vec<(IpAddr, u16)>>;
+type Whitelist = Option<Vec<(AddrV2, u16)>>;
 
 // A peer that is or was connected to the node
 #[derive(Debug)]
@@ -235,15 +235,11 @@ impl PeerMap {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<(AddrV2, u16), NodeError> {
         if let Some(whitelist) = &mut self.whitelist {
-            if let Some((ip, port)) = whitelist.pop() {
+            if let Some((address, port)) = whitelist.pop() {
                 self.dialog
                     .send_dialog("Using a configured peer.".into())
                     .await;
-                let socket = match ip {
-                    IpAddr::V4(ip) => AddrV2::Ipv4(ip),
-                    IpAddr::V6(ip) => AddrV2::Ipv6(ip),
-                };
-                return Ok((socket, port));
+                return Ok((address, port));
             }
         }
         let current_count = {

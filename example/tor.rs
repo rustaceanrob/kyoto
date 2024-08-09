@@ -6,12 +6,14 @@ use kyoto::db::memory::peers::StatelessPeerStore;
 use kyoto::db::sqlite::headers::SqliteHeaderDb;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
-use kyoto::{BlockHash, ConnectionType, TorClient, TorClientConfig};
+use kyoto::{BlockHash, ConnectionType, TorClient, TorClientConfig, TrustedPeer};
 use std::collections::HashSet;
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    str::FromStr,
-};
+use std::str::FromStr;
+
+const PEER_ONION: [u8; 32] = [
+    122, 158, 138, 248, 80, 128, 65, 182, 7, 162, 120, 132, 58, 231, 181, 235, 247, 78, 128, 81,
+    77, 117, 148, 234, 156, 5, 51, 150, 136, 144, 21, 22,
+];
 
 #[tokio::main]
 async fn main() {
@@ -34,7 +36,7 @@ async fn main() {
     let (height, hash) = SIGNET_HEADER_CP.last().unwrap();
     let anchor = HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap());
     // Define a peer to connect to
-    let peer = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
+    let peer = TrustedPeer::from_tor_v3(PEER_ONION);
     // Limited devices may not save any peers to disk
     let peer_store = StatelessPeerStore::new();
     // To handle reorgs, it is still recommended to store block headers
@@ -44,15 +46,15 @@ async fn main() {
     // Add node preferences and build the node/client
     let (mut node, client) = builder
         // Add the peer
-        .add_peers(vec![(peer, None).into()])
+        .add_peers(vec![peer])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(anchor)
         // The number of connections we would like to maintain
-        .num_required_peers(1)
+        .num_required_peers(2)
         // We only maintain a list of 32 peers in memory
-        .peer_db_size(32)
+        .peer_db_size(256)
         // Connect to peers over Tor
         .set_connection_type(ConnectionType::Tor(tor))
         // Build without the default databases
