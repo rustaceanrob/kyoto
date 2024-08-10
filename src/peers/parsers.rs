@@ -1,4 +1,5 @@
 use bip324::serde::NetworkMessage;
+use bip324::{PacketReader, ReceivedMessage};
 use bitcoin::consensus::{deserialize, deserialize_partial};
 use bitcoin::p2p::message::RawNetworkMessage;
 use bitcoin::Network;
@@ -53,6 +54,51 @@ impl V1MessageParser {
 }
 
 impl MessageParser for V1MessageParser {
+    fn read_message(&mut self) -> FutureResult<Option<NetworkMessage>, PeerReadError> {
+        Box::pin(self.do_read_message())
+    }
+}
+
+pub(crate) struct V2MessageParser {
+    stream: StreamReader,
+    decryptor: PacketReader,
+}
+
+impl V2MessageParser {
+    pub(crate) fn new(stream: StreamReader, decryptor: PacketReader) -> Self {
+        Self { stream, decryptor }
+    }
+
+    async fn do_read_message(&mut self) -> Result<Option<NetworkMessage>, PeerReadError> {
+        let mut stream = self.stream.lock().await;
+        let mut len_buf = [0; 3];
+        let _ = stream
+            .read_exact(&mut len_buf)
+            .await
+            .map_err(|_| PeerReadError::ReadBuffer)?;
+        let message_len = self.decryptor.decypt_len(len_buf);
+        let mut response_message = vec![0; message_len];
+        let _ = stream
+            .read_exact(&mut response_message)
+            .await
+            .map_err(|_| PeerReadError::ReadBuffer)?;
+        let msg = self
+            .decryptor
+            .decrypt_contents_with_alloc(&response_message, None)
+            .unwrap();
+        let message = ReceivedMessage::new(&msg.clone()).unwrap();
+        match message.message {
+            Some(message) => {
+                let parsed = bip324::serde::deserialize(&message)
+                    .map_err(|_| PeerReadError::Deserialization)?;
+                Ok(Some(parsed))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl MessageParser for V2MessageParser {
     fn read_message(&mut self) -> FutureResult<Option<NetworkMessage>, PeerReadError> {
         Box::pin(self.do_read_message())
     }

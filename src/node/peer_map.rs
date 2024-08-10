@@ -150,7 +150,7 @@ impl PeerMap {
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
-    pub async fn dispatch(&mut self, address: AddrV2, port: u16) -> Result<(), PeerError> {
+    pub async fn dispatch(&mut self, loaded_peer: PersistedPeer) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let peer_num = self.num_peers + 1;
         self.num_peers = peer_num;
@@ -159,23 +159,29 @@ impl PeerMap {
             self.network,
             self.mtx.clone(),
             prx,
+            loaded_peer.services,
             self.dialog.clone(),
         );
         let mut connector = self.connector.lock().await;
-        if !connector.can_connect(&address) {
+        if !connector.can_connect(&loaded_peer.addr) {
             return Err(PeerError::UnreachableSocketAddr);
         }
         self.dialog
-            .send_dialog(format!("Connecting to {:?}:{}", address, port))
+            .send_dialog(format!(
+                "Connecting to {:?}:{}",
+                loaded_peer.addr, loaded_peer.port
+            ))
             .await;
-        let (reader, writer) = connector.connect(address.clone(), port).await?;
+        let (reader, writer) = connector
+            .connect(loaded_peer.addr.clone(), loaded_peer.port)
+            .await?;
         let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.map.insert(
             peer_num,
             ManagedPeer {
                 service_flags: None,
-                address,
-                port,
+                address: loaded_peer.addr,
+                port: loaded_peer.port,
                 net_time: 0,
                 ptx,
                 handle,
@@ -233,13 +239,14 @@ impl PeerMap {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<(AddrV2, u16), NodeError> {
+    pub async fn next_peer(&mut self) -> Result<PersistedPeer, NodeError> {
         if let Some(whitelist) = &mut self.whitelist {
             if let Some((address, port)) = whitelist.pop() {
                 self.dialog
                     .send_dialog("Using a configured peer.".into())
                     .await;
-                return Ok((address, port));
+                let peer = PersistedPeer::new(address, port, ServiceFlags::NONE, PeerStatus::Tried);
+                return Ok(peer);
             }
         }
         let current_count = {
@@ -257,12 +264,11 @@ impl PeerMap {
         let mut peer_manager = self.db.lock().await;
         let mut tries = 0;
         while tries < 10 {
-            let peer: (AddrV2, u16) = peer_manager
+            let peer = peer_manager
                 .random()
                 .await
-                .map(|r| r.into())
                 .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?;
-            if self.net_groups.contains(&peer.0.netgroup()) {
+            if self.net_groups.contains(&peer.addr.netgroup()) {
                 tries += 1;
                 continue;
             } else {
@@ -272,7 +278,6 @@ impl PeerMap {
         peer_manager
             .random()
             .await
-            .map(|r| r.into())
             .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))
     }
 

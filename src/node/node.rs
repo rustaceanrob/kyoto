@@ -322,8 +322,8 @@ impl Node {
             self.dialog
                 .send_warning(Warning::NotEnoughConnections)
                 .await;
-            let ip = peer_map.next_peer().await?;
-            if peer_map.dispatch(ip.0, ip.1).await.is_err() {
+            let address = peer_map.next_peer().await?;
+            if peer_map.dispatch(address).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect).await;
             }
         }
