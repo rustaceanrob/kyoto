@@ -4,6 +4,7 @@ use std::{net::IpAddr, time::Duration};
 use bitcoin::{
     p2p::{
         address::AddrV2,
+        message::NetworkMessage,
         message_filter::{GetCFHeaders, GetCFilters},
     },
     BlockHash, Transaction,
@@ -16,14 +17,14 @@ use tokio::{
 
 use crate::{node::channel_messages::GetBlockConfig, prelude::FutureResult};
 
-use super::error::PeerError;
+use super::error::{PeerError, PeerReadError};
 
 const CONNECTION_TIMEOUT: u64 = 2;
 
-// FIXME: after downstream PR: Box<dyn AsyncRead + Send +Sync + Unpin>
 pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
 pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
 
+// Responsible for serializing messages to write over the wire, either encrypted or plaintext.
 pub(crate) trait MessageGenerator {
     fn version_message(&mut self, port: Option<u16>) -> Vec<u8>;
 
@@ -46,6 +47,12 @@ pub(crate) trait MessageGenerator {
     fn transaction(&mut self, transaction: Transaction) -> Vec<u8>;
 }
 
+// Responsible for parsing plaintext or encrypted messages off of the  wire.
+pub(crate) trait MessageParser: Send + Sync {
+    fn read_message(&mut self) -> FutureResult<Option<NetworkMessage>, PeerReadError>;
+}
+
+// Establishes connections based on the network configuration.
 pub(crate) trait NetworkConnector {
     fn can_connect(&self, addr: &AddrV2) -> bool;
 
