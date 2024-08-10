@@ -1,7 +1,7 @@
 extern crate tokio;
 use std::{ops::DerefMut, time::Duration};
 
-use bitcoin::Network;
+use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     select,
@@ -34,6 +34,7 @@ pub(crate) struct Peer {
     network: Network,
     message_counter: MessageCounter,
     message_timer: MessageTimer,
+    services: ServiceFlags,
     dialog: Dialog,
 }
 
@@ -43,6 +44,7 @@ impl Peer {
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
+        services: ServiceFlags,
         dialog: Dialog,
     ) -> Self {
         let message_counter = MessageCounter::new();
@@ -54,6 +56,7 @@ impl Peer {
             network,
             message_counter,
             message_timer,
+            services,
             dialog,
         }
     }
@@ -66,7 +69,7 @@ impl Peer {
         let mut lock = writer.lock().await;
         let writer = lock.deref_mut();
         let mut outbound_messages = V1OutboundMessage::new(self.network);
-        let message = outbound_messages.version_message(None);
+        let message = outbound_messages.version_message(None)?;
         self.write_bytes(writer, message).await?;
         self.message_timer.track();
         let (tx, mut rx) = mpsc::channel(32);
@@ -227,7 +230,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Ping(nonce) => {
-                let message = message_generator.pong(nonce);
+                let message = message_generator.pong(nonce)?;
                 self.write_bytes(writer, message).await?;
                 Ok(())
             }
@@ -269,43 +272,43 @@ impl Peer {
         match request {
             MainThreadMessage::GetAddr => {
                 self.message_counter.sent_addrs();
-                let message = message_generator.addr();
+                let message = message_generator.addr()?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetAddrV2 => {
                 self.message_counter.sent_addrs();
-                let message = message_generator.addrv2();
+                let message = message_generator.addrv2()?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_timer.track();
-                let message = message_generator.headers(config.locators, config.stop_hash);
+                let message = message_generator.headers(config.locators, config.stop_hash)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilterHeaders(config) => {
                 self.message_counter.sent_filter_header();
                 self.message_timer.track();
-                let message = message_generator.cf_headers(config);
+                let message = message_generator.cf_headers(config)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilters(config) => {
                 self.message_counter.sent_filters();
-                let message = message_generator.filters(config);
+                let message = message_generator.filters(config)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetBlock(message) => {
                 self.message_counter.sent_block();
                 self.message_timer.track();
-                let message = message_generator.block(message);
+                let message = message_generator.block(message)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::BroadcastTx(transaction) => {
                 self.message_counter.sent_tx();
-                let message = message_generator.transaction(transaction);
+                let message = message_generator.transaction(transaction)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Verack => {
-                let message = message_generator.verack();
+                let message = message_generator.verack()?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),

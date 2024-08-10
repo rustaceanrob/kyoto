@@ -29,6 +29,8 @@ impl_sourceless_error!(PeerReadError);
 #[derive(Debug)]
 pub enum PeerError {
     ConnectionFailed,
+    MessageSerialization,
+    HandshakeFailed,
     BufferWrite,
     ThreadChannel,
     DisconnectCommand,
@@ -53,6 +55,12 @@ impl core::fmt::Display for PeerError {
             PeerError::Reader => write!(f, "the reading thread encountered an error."),
             PeerError::UnreachableSocketAddr => {
                 write!(f, "cannot make use of provided p2p address.")
+            }
+            PeerError::MessageSerialization => {
+                write!(f, "serializing a message into bytes failed.")
+            }
+            PeerError::HandshakeFailed => {
+                write!(f, "an attempted V2 transport handshake failed.")
             }
         }
     }
