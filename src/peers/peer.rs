@@ -20,6 +20,7 @@ use crate::{
 use super::{
     counter::{MessageCounter, MessageTimer},
     error::PeerError,
+    parsers::V1MessageParser,
     reader::Reader,
     traits::{MessageGenerator, StreamReader, StreamWriter},
 };
@@ -69,12 +70,12 @@ impl Peer {
         self.write_bytes(writer, message).await?;
         self.message_timer.track();
         let (tx, mut rx) = mpsc::channel(32);
-        let mut peer_reader = Reader::new(reader, tx, self.network);
+        let mut peer_reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
         let read_handle = tokio::spawn(async move {
-            match peer_reader.read_from_remote().await {
-                Ok(_) => Ok(()),
-                Err(_) => Err(PeerError::Reader),
-            }
+            peer_reader
+                .read_from_remote()
+                .await
+                .map_err(|_| PeerError::Reader)
         });
         loop {
             if read_handle.is_finished() {

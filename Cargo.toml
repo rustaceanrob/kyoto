@@ -17,6 +17,7 @@ bitcoin = { version = "0.32.0", features = [
     "serde",
     "rand-std",
 ], default-features = false }
+bip324 = { version = "0.3.1" }
 tokio = { version = "1.37", default-features = false, features = [
     "rt-multi-thread",
     "sync",
