@@ -25,7 +25,7 @@ pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
 pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
 
 // Responsible for serializing messages to write over the wire, either encrypted or plaintext.
-pub(crate) trait MessageGenerator {
+pub(crate) trait MessageGenerator: Send + Sync {
     fn version_message(&mut self, port: Option<u16>) -> Result<Vec<u8>, PeerError>;
 
     fn verack(&mut self) -> Result<Vec<u8>, PeerError>;

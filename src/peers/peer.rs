@@ -1,11 +1,15 @@
 extern crate tokio;
 use std::{ops::DerefMut, time::Duration};
 
+use bip324::{Handshake, PacketHandler, Role};
 use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
-    io::{AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     select,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
 };
 
 use crate::{
@@ -20,12 +24,16 @@ use crate::{
 use super::{
     counter::{MessageCounter, MessageTimer},
     error::PeerError,
-    parsers::V1MessageParser,
+    outbound_messages::V2OutboundMessage,
+    parsers::{V1MessageParser, V2MessageParser},
     reader::Reader,
     traits::{MessageGenerator, StreamReader, StreamWriter},
 };
 
 const CONNECTION_TIMEOUT: u64 = 2;
+const MAX_RESPONSE: [u8; 4096] = [0; 4096];
+
+type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
 
 pub(crate) struct Peer {
     nonce: u32,
@@ -66,14 +74,40 @@ impl Peer {
         reader: StreamReader,
         writer: StreamWriter,
     ) -> Result<(), PeerError> {
+        let (tx, mut rx) = mpsc::channel(32);
         let mut lock = writer.lock().await;
         let writer = lock.deref_mut();
-        let mut outbound_messages = V1OutboundMessage::new(self.network);
+        let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
+            let mut lock = reader.lock().await;
+            let read_lock = lock.deref_mut();
+            let handshake_result = self.try_handshake(writer, read_lock).await;
+            if let Err(ref e) = handshake_result {
+                self.dialog
+                    .send_dialog(format!(
+                        "Failed to establish an encrypted connection: {}",
+                        e.to_string()
+                    ))
+                    .await;
+                self.dialog.send_warning(Warning::CouldNotConnect).await;
+            }
+            let packet_handler = handshake_result?;
+            let (decryptor, encryptor) = packet_handler.into_split();
+            let message_mutex: MutexMessageGenerator =
+                Mutex::new(Box::new(V2OutboundMessage::new(self.network, encryptor)));
+            drop(lock);
+            let reader = Reader::new(V2MessageParser::new(reader, decryptor), tx);
+            (message_mutex, reader)
+        } else {
+            let outbound_messages = V1OutboundMessage::new(self.network);
+            let message_mutex: MutexMessageGenerator = Mutex::new(Box::new(outbound_messages));
+            let reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
+            (message_mutex, reader)
+        };
+        let mut message_lock = message_mutex.lock().await;
+        let mut outbound_messages = message_lock.deref_mut();
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(writer, message).await?;
         self.message_timer.track();
-        let (tx, mut rx) = mpsc::channel(32);
-        let mut peer_reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
         let read_handle = tokio::spawn(async move {
             peer_reader
                 .read_from_remote()
@@ -135,14 +169,13 @@ impl Peer {
         }
     }
 
-    async fn handle_peer_message<M, W>(
+    async fn handle_peer_message<W>(
         &mut self,
         message: PeerMessage,
         writer: &mut W,
-        message_generator: &mut M,
+        message_generator: &mut Box<dyn MessageGenerator>,
     ) -> Result<(), PeerError>
     where
-        M: MessageGenerator,
         W: AsyncWrite + Send + Unpin,
     {
         match message {
@@ -259,14 +292,13 @@ impl Peer {
         }
     }
 
-    async fn main_thread_request<M, W>(
+    async fn main_thread_request<W>(
         &mut self,
         request: MainThreadMessage,
         writer: &mut W,
-        message_generator: &mut M,
+        message_generator: &mut Box<dyn MessageGenerator>,
     ) -> Result<(), PeerError>
     where
-        M: MessageGenerator,
         W: AsyncWrite + Send + Unpin,
     {
         match request {
@@ -326,5 +358,50 @@ impl Peer {
             .map_err(|_| PeerError::BufferWrite)?;
         writer.flush().await.map_err(|_| PeerError::BufferWrite)?;
         Ok(())
+    }
+
+    async fn try_handshake<W, R>(
+        &mut self,
+        writer: &mut W,
+        reader: &mut R,
+    ) -> Result<PacketHandler, PeerError>
+    where
+        W: AsyncWrite + Send + Unpin,
+        R: AsyncRead + Send + Unpin,
+    {
+        self.dialog
+            .send_dialog("Attempting an encrypted connection".into())
+            .await;
+        let mut public_key = [0; 64];
+        let mut handshake = Handshake::new(self.network, Role::Initiator, None, &mut public_key)
+            .map_err(|_| PeerError::HandshakeFailed)?;
+        self.write_bytes(writer, public_key.to_vec()).await?;
+        let mut remote_public_key = [0u8; 64];
+        let _ = reader
+            .read_exact(&mut remote_public_key)
+            .await
+            .map_err(|_| PeerError::Reader)?;
+        let mut local_garbage_terminator_message = [0u8; 36];
+        handshake
+            .complete_materials(remote_public_key, &mut local_garbage_terminator_message)
+            .map_err(|_| PeerError::HandshakeFailed)?;
+        self.write_bytes(writer, local_garbage_terminator_message.to_vec())
+            .await?;
+        let mut max_response = MAX_RESPONSE;
+        let size = reader
+            .read(&mut max_response)
+            .await
+            .map_err(|_| PeerError::Reader)?;
+        let response = &mut max_response[..size];
+        handshake
+            .authenticate_garbage_and_version(response)
+            .map_err(|_| PeerError::HandshakeFailed)?;
+        let packet_handler = handshake
+            .finalize()
+            .map_err(|_| PeerError::HandshakeFailed)?;
+        self.dialog
+            .send_dialog("Established an encrypted connection".into())
+            .await;
+        Ok(packet_handler)
     }
 }
