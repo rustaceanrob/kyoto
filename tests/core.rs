@@ -13,7 +13,7 @@ use kyoto::{
         messages::NodeMessage,
         node::Node,
     },
-    TxBroadcast,
+    ServiceFlags, TrustedPeer, TxBroadcast,
 };
 
 const RPC_USER: &str = "test";
@@ -50,9 +50,11 @@ async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
 
 async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let mut trusted: TrustedPeer = host.into();
+    trusted.set_services(ServiceFlags::P2P_V2);
     let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host.into()])
+        .add_peers(vec![trusted])
         .add_scripts(addrs)
         .build_node();
     (node, client)
@@ -62,10 +64,12 @@ async fn new_node_anchor_sql(
     addrs: HashSet<ScriptBuf>,
     checkpoint: HeaderCheckpoint,
 ) -> (Node, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let addr = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let mut trusted: TrustedPeer = addr.into();
+    trusted.set_services(ServiceFlags::P2P_V2);
     let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host.into()])
+        .add_peers(vec![trusted])
         .add_scripts(addrs)
         .anchor_checkpoint(checkpoint)
         .build_node();

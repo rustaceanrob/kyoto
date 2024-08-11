@@ -26,8 +26,8 @@ use crate::{
         peer::Peer,
         traits::{ClearNetConnection, NetworkConnector},
     },
-    prelude::{Median, Netgroup},
-    ConnectionType,
+    prelude::{default_port_from_network, Median, Netgroup},
+    ConnectionType, TrustedPeer,
 };
 
 use super::{
@@ -38,7 +38,7 @@ use super::{
 };
 
 // Preferred peers to connect to based on the user configuration
-type Whitelist = Option<Vec<(AddrV2, u16)>>;
+type Whitelist = Option<Vec<TrustedPeer>>;
 
 // A peer that is or was connected to the node
 #[derive(Debug)]
@@ -241,11 +241,15 @@ impl PeerMap {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<PersistedPeer, NodeError> {
         if let Some(whitelist) = &mut self.whitelist {
-            if let Some((address, port)) = whitelist.pop() {
+            if let Some(peer) = whitelist.pop() {
                 self.dialog
                     .send_dialog("Using a configured peer.".into())
                     .await;
-                let peer = PersistedPeer::new(address, port, ServiceFlags::NONE, PeerStatus::Tried);
+                let port = peer
+                    .port
+                    .unwrap_or(default_port_from_network(&self.network));
+                let peer =
+                    PersistedPeer::new(peer.address, port, peer.known_services, PeerStatus::Tried);
                 return Ok(peer);
             }
         }
@@ -316,6 +320,7 @@ impl PeerMap {
         }
     }
 
+    // We tried this peer and successfully connected.
     pub async fn tried(&mut self, nonce: &u32) {
         if let Some(peer) = self.map.get(nonce) {
             let mut db = self.db.lock().await;
@@ -342,6 +347,7 @@ impl PeerMap {
         }
     }
 
+    // This peer misbehaved in some way.
     pub async fn ban(&mut self, nonce: &u32) {
         if let Some(peer) = self.map.get(nonce) {
             let mut db = self.db.lock().await;
@@ -370,7 +376,7 @@ impl PeerMap {
 
     #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
-        use crate::{peers::dns::Dns, prelude::default_port_from_network};
+        use crate::peers::dns::Dns;
         self.dialog
             .send_dialog("Bootstraping peers with DNS".into())
             .await;

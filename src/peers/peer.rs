@@ -370,7 +370,7 @@ impl Peer {
         R: AsyncRead + Send + Unpin,
     {
         self.dialog
-            .send_dialog("Attempting an encrypted connection".into())
+            .send_dialog("Starting a handshake to build a secure channel".into())
             .await;
         let mut public_key = [0; 64];
         let mut handshake = Handshake::new(self.network, Role::Initiator, None, &mut public_key)

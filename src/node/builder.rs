@@ -2,7 +2,6 @@ use std::{collections::HashSet, path::PathBuf};
 
 use bitcoin::{Network, ScriptBuf};
 
-use crate::prelude::default_port_from_network;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
@@ -28,19 +27,7 @@ impl NodeBuilder {
 
     /// Add preferred peers to try to connect to.
     pub fn add_peers(mut self, whitelist: Vec<TrustedPeer>) -> Self {
-        self.config.white_list = Some(
-            whitelist
-                .into_iter()
-                .map(|trusted| {
-                    (
-                        trusted.address(),
-                        trusted
-                            .port()
-                            .unwrap_or(default_port_from_network(&self.network)),
-                    )
-                })
-                .collect(),
-        );
+        self.config.white_list = Some(whitelist);
         self
     }
 

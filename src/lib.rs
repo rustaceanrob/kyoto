@@ -26,6 +26,7 @@ use tor_rtcompat::PreferredRuntime;
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::address::AddrV2;
 pub use bitcoin::p2p::message_network::RejectReason;
+pub use bitcoin::p2p::ServiceFlags;
 pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
 /// Build a light client and node.
 pub use node::builder::NodeBuilder;
@@ -121,19 +122,33 @@ pub struct TrustedPeer {
     pub address: AddrV2,
     /// The port to establish a TCP connection. If none is provided, the typical Bitcoin Core port is used as the default.
     pub port: Option<u16>,
+    /// The services this peer is known to offer before starting the node.
+    pub known_services: ServiceFlags,
 }
 
 impl TrustedPeer {
     /// Create a new trusted peer.
-    pub fn new(address: AddrV2, port: Option<u16>) -> Self {
-        Self { address, port }
+    pub fn new(address: AddrV2, port: Option<u16>, services: ServiceFlags) -> Self {
+        Self {
+            address,
+            port,
+            known_services: services,
+        }
     }
 
     /// Create a new peer from a TorV3 service and port.
     #[cfg(feature = "tor")]
-    pub fn new_from_tor_v3(public_key: [u8; 32], port: Option<u16>) -> Self {
+    pub fn new_from_tor_v3(
+        public_key: [u8; 32],
+        port: Option<u16>,
+        services: ServiceFlags,
+    ) -> Self {
         let address = AddrV2::TorV3(public_key);
-        Self { address, port }
+        Self {
+            address,
+            port,
+            known_services: services,
+        }
     }
 
     /// Create a new trusted peer using the default port for the network.
@@ -145,6 +160,7 @@ impl TrustedPeer {
         Self {
             address,
             port: None,
+            known_services: ServiceFlags::NONE,
         }
     }
 
@@ -155,6 +171,7 @@ impl TrustedPeer {
         Self {
             address,
             port: None,
+            known_services: ServiceFlags::NONE,
         }
     }
 
@@ -167,6 +184,16 @@ impl TrustedPeer {
     pub fn port(&self) -> Option<u16> {
         self.port
     }
+
+    /// The services this peer is known to offer.
+    pub fn services(&self) -> ServiceFlags {
+        self.known_services
+    }
+
+    /// Set the known services for this trusted peer.
+    pub fn set_services(&mut self, services: ServiceFlags) {
+        self.known_services = services;
+    }
 }
 
 impl From<(IpAddr, Option<u16>)> for TrustedPeer {
@@ -175,7 +202,7 @@ impl From<(IpAddr, Option<u16>)> for TrustedPeer {
             IpAddr::V4(ip) => AddrV2::Ipv4(ip),
             IpAddr::V6(ip) => AddrV2::Ipv6(ip),
         };
-        TrustedPeer::new(address, value.1)
+        TrustedPeer::new(address, value.1, ServiceFlags::NONE)
     }
 }
 
@@ -184,7 +211,6 @@ impl From<TrustedPeer> for (AddrV2, Option<u16>) {
         (value.address(), value.port())
     }
 }
-
 /// How to connect to peers on the peer-to-peer network
 #[derive(Default, Clone)]
 #[non_exhaustive]
