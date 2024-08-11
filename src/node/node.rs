@@ -7,7 +7,6 @@ use std::{
 use bitcoin::{
     block::Header,
     p2p::{
-        address::AddrV2,
         message_filter::{CFHeaders, CFilter},
         message_network::VersionMessage,
         ServiceFlags,
@@ -29,7 +28,7 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     filters::cfheader_chain::AppendAttempt,
     node::peer_map::PeerMap,
-    ConnectionType, TxBroadcastPolicy,
+    ConnectionType, TrustedPeer, TxBroadcastPolicy,
 };
 
 use super::{
@@ -47,7 +46,7 @@ use super::{
 
 pub const ADDR_V2_VERSION: u32 = 70015;
 
-type Whitelist = Option<Vec<(AddrV2, u16)>>;
+type Whitelist = Option<Vec<TrustedPeer>>;
 
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
