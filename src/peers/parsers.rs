@@ -86,7 +86,7 @@ impl V2MessageParser {
             .decryptor
             .decrypt_contents_with_alloc(&response_message, None)
             .unwrap();
-        let message = ReceivedMessage::new(&msg.clone()).unwrap();
+        let message = ReceivedMessage::new(&msg).unwrap();
         match message.message {
             Some(message) => {
                 let parsed = bip324::serde::deserialize(&message)
