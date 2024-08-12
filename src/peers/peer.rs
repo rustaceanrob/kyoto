@@ -83,10 +83,7 @@ impl Peer {
             let handshake_result = self.try_handshake(writer, read_lock).await;
             if let Err(ref e) = handshake_result {
                 self.dialog
-                    .send_dialog(format!(
-                        "Failed to establish an encrypted connection: {}",
-                        e.to_string()
-                    ))
+                    .send_dialog(format!("Failed to establish an encrypted connection: {e}"))
                     .await;
                 self.dialog.send_warning(Warning::CouldNotConnect).await;
             }
@@ -104,7 +101,7 @@ impl Peer {
             (message_mutex, reader)
         };
         let mut message_lock = message_mutex.lock().await;
-        let mut outbound_messages = message_lock.deref_mut();
+        let outbound_messages = message_lock.deref_mut();
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(writer, message).await?;
         self.message_timer.track();
@@ -132,7 +129,7 @@ impl Peer {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
-                                match self.handle_peer_message(message, writer, &mut outbound_messages).await {
+                                match self.handle_peer_message(message, writer, outbound_messages).await {
                                     Ok(()) => continue,
                                     Err(e) => {
                                         match e {
@@ -151,7 +148,7 @@ impl Peer {
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
-                            match self.main_thread_request(message, writer, &mut outbound_messages).await {
+                            match self.main_thread_request(message, writer, outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
@@ -370,7 +367,7 @@ impl Peer {
         R: AsyncRead + Send + Unpin,
     {
         self.dialog
-            .send_dialog("Starting a handshake to build a secure channel".into())
+            .send_dialog("Initiating a handshake for encrypted messaging".into())
             .await;
         let mut public_key = [0; 64];
         let mut handshake = Handshake::new(self.network, Role::Initiator, None, &mut public_key)
@@ -395,7 +392,10 @@ impl Peer {
         let response = &mut max_response[..size];
         handshake
             .authenticate_garbage_and_version(response)
-            .map_err(|_| PeerError::HandshakeFailed)?;
+            .map_err(|e| {
+                eprintln!("Failed to authenticate the remote garbage and terminator. Bytes received: {size}. Source: {e}");
+                PeerError::HandshakeFailed
+            })?;
         let packet_handler = handshake
             .finalize()
             .map_err(|_| PeerError::HandshakeFailed)?;

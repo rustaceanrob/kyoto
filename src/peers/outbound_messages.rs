@@ -44,7 +44,7 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         port.unwrap_or(default_port),
     );
     let from_and_recv = Address::new(&ip, ServiceFlags::NONE);
-    let msg = VersionMessage {
+    VersionMessage {
         version: PROTOCOL_VERSION,
         services: ServiceFlags::NONE,
         timestamp: now as i64,
@@ -54,8 +54,7 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         user_agent: "Kyoto Light Client / 0.1.0 / rust-bitcoin 0.32".to_string(),
         start_height: 0,
         relay: false,
-    };
-    msg
+    }
 }
 
 impl MessageGenerator for V1OutboundMessage {
