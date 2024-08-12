@@ -6,6 +6,7 @@ use bitcoin::BlockHash;
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::node::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::{AddrV2, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -30,13 +31,17 @@ async fn main() {
     addresses.insert(address);
     // Add preferred peers to connect to
     let peer_1 = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
-    let peer_2 = IpAddr::V4(Ipv4Addr::new(23, 137, 57, 100));
+    let peer_2 = TrustedPeer::new(
+        AddrV2::Ipv4(Ipv4Addr::new(23, 137, 57, 100)),
+        None,
+        ServiceFlags::P2P_V2,
+    );
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
     let (mut node, client) = builder
         // Add the peers
-        .add_peers(vec![(peer_1, None).into(), (peer_2, None).into()])
+        .add_peers(vec![(peer_1, None).into(), peer_2])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint

@@ -1,5 +1,5 @@
 use bip324::serde::NetworkMessage;
-use bip324::{PacketReader, ReceivedMessage};
+use bip324::PacketReader;
 use bitcoin::consensus::{deserialize, deserialize_partial};
 use bitcoin::p2p::message::RawNetworkMessage;
 use bitcoin::Network;
@@ -12,6 +12,7 @@ use super::traits::{MessageParser, StreamReader};
 use super::V1Header;
 
 const MAX_MESSAGE_BYTES: u32 = 1024 * 1024 * 32;
+const DECOY_BYTE: u8 = 128;
 
 pub(crate) struct V1MessageParser {
     stream: StreamReader,
@@ -77,6 +78,9 @@ impl V2MessageParser {
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
         let message_len = self.decryptor.decypt_len(len_buf);
+        if message_len > MAX_MESSAGE_BYTES as usize {
+            return Err(PeerReadError::TooManyMessages);
+        }
         let mut response_message = vec![0; message_len];
         let _ = stream
             .read_exact(&mut response_message)
@@ -85,15 +89,14 @@ impl V2MessageParser {
         let msg = self
             .decryptor
             .decrypt_contents_with_alloc(&response_message, None)
-            .unwrap();
-        let message = ReceivedMessage::new(&msg).unwrap();
-        match message.message {
-            Some(message) => {
-                let parsed = bip324::serde::deserialize(&message)
-                    .map_err(|_| PeerReadError::Deserialization)?;
-                Ok(Some(parsed))
-            }
-            None => Ok(None),
+            .map_err(|_| PeerReadError::DecryptionFailed)?;
+        let header = msg.first().ok_or(PeerReadError::ReadBuffer)?;
+        if DECOY_BYTE.eq(header) {
+            Ok(None)
+        } else {
+            let parsed = bip324::serde::deserialize(&msg[1..])
+                .map_err(|_| PeerReadError::Deserialization)?;
+            Ok(Some(parsed))
         }
     }
 }

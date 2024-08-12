@@ -86,41 +86,37 @@ impl MessageGenerator for V1OutboundMessage {
     ) -> Result<Vec<u8>, PeerError> {
         let msg =
             GetHeadersMessage::new(locator_hashes, stop_hash.unwrap_or(BlockHash::all_zeros()));
-        let data =
-            &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetHeaders(msg));
+        let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetHeaders(msg));
         Ok(serialize(&data))
     }
 
     fn cf_headers(&mut self, message: GetCFHeaders) -> Result<Vec<u8>, PeerError> {
-        let data = &mut RawNetworkMessage::new(
-            self.network.magic(),
-            NetworkMessage::GetCFHeaders(message),
-        );
+        let data =
+            RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFHeaders(message));
         Ok(serialize(&data))
     }
 
     fn filters(&mut self, message: GetCFilters) -> Result<Vec<u8>, PeerError> {
         let data =
-            &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFilters(message));
+            RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetCFilters(message));
         Ok(serialize(&data))
     }
 
     fn block(&mut self, config: GetBlockConfig) -> Result<Vec<u8>, PeerError> {
         let inv = Inventory::Block(config.locator);
-        let data =
-            &mut RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetData(vec![inv]));
+        let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetData(vec![inv]));
         Ok(serialize(&data))
     }
 
     fn pong(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::Pong(nonce);
-        let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
+        let data = RawNetworkMessage::new(self.network.magic(), msg);
         Ok(serialize(&data))
     }
 
     fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::Tx(transaction);
-        let data = &mut RawNetworkMessage::new(self.network.magic(), msg);
+        let data = RawNetworkMessage::new(self.network.magic(), msg);
         Ok(serialize(&data))
     }
 }
@@ -139,10 +135,10 @@ impl V2OutboundMessage {
         bip324::serde::serialize(message).map_err(|_| PeerError::MessageSerialization)
     }
 
-    fn serialize_plaintext(&mut self, plaintext: Vec<u8>) -> Result<Vec<u8>, PeerError> {
+    fn encrypt_plaintext(&mut self, plaintext: Vec<u8>) -> Result<Vec<u8>, PeerError> {
         self.encryptor
             .prepare_packet_with_alloc(&plaintext, None, false)
-            .map_err(|_| PeerError::MessageSerialization)
+            .map_err(|_| PeerError::MessageEncryption)
     }
 }
 
@@ -150,22 +146,22 @@ impl MessageGenerator for V2OutboundMessage {
     fn version_message(&mut self, port: Option<u16>) -> Result<Vec<u8>, PeerError> {
         let msg = make_version(port, &self.network);
         let plaintext = self.serialize_network_message(NetworkMessage::Version(msg))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn verack(&mut self) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::Verack)?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn addr(&mut self) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::GetAddr)?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn addrv2(&mut self) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::SendAddrV2)?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn headers(
@@ -176,32 +172,32 @@ impl MessageGenerator for V2OutboundMessage {
         let msg =
             GetHeadersMessage::new(locator_hashes, stop_hash.unwrap_or(BlockHash::all_zeros()));
         let plaintext = self.serialize_network_message(NetworkMessage::GetHeaders(msg))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn cf_headers(&mut self, message: GetCFHeaders) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::GetCFHeaders(message))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn filters(&mut self, message: GetCFilters) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::GetCFilters(message))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn block(&mut self, config: GetBlockConfig) -> Result<Vec<u8>, PeerError> {
         let inv = Inventory::Block(config.locator);
         let plaintext = self.serialize_network_message(NetworkMessage::GetData(vec![inv]))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn pong(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::Pong(nonce))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 
     fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::Tx(transaction))?;
-        self.serialize_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext)
     }
 }

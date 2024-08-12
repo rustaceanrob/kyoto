@@ -20,7 +20,11 @@ Kyoto is aiming to be a simple, memory-conservative, and private Bitcoin client 
 
 ## Running an example
 
-To run the Signet example, fork the project and run: `cargo run --example signet` in the root directory.
+To run the Signet example, in the root directory:
+
+```
+cargo run --example signet
+```
 
 #### Getting Started
 
@@ -66,5 +70,7 @@ sh scripts/integration.sh "path/to/bitcoin/folder"
 
 To run the unit tests, `cargo fmt`, `clippy`, and an example:
 
-`sh scripts/pr.sh`
+```
+sh scripts/pr.sh
+```
 
