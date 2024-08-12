@@ -4,6 +4,7 @@ use crate::impl_sourceless_error;
 pub(crate) enum PeerReadError {
     ReadBuffer,
     Deserialization,
+    DecryptionFailed,
     TooManyMessages,
     PeerTimeout,
     MpscChannel,
@@ -19,6 +20,7 @@ impl core::fmt::Display for PeerReadError {
             PeerReadError::TooManyMessages => write!(f, "DOS protection."),
             PeerReadError::PeerTimeout => write!(f, "peer timeout."),
             PeerReadError::MpscChannel => write!(f, "sending over the channel failed."),
+            PeerReadError::DecryptionFailed => write!(f, "decrypting a message failed."),
         }
     }
 }
@@ -29,6 +31,7 @@ impl_sourceless_error!(PeerReadError);
 #[derive(Debug)]
 pub enum PeerError {
     ConnectionFailed,
+    MessageEncryption,
     MessageSerialization,
     HandshakeFailed,
     BufferWrite,
@@ -62,6 +65,9 @@ impl core::fmt::Display for PeerError {
             PeerError::HandshakeFailed => {
                 write!(f, "an attempted V2 transport handshake failed.")
             }
+            PeerError::MessageEncryption => {
+                write!(f, "encrypting a serialized message failed.")
+            }
         }
     }
 }
@@ -76,7 +82,7 @@ pub(crate) enum DnsBootstrapError {
 impl core::fmt::Display for DnsBootstrapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DnsBootstrapError::NotEnoughPeersError => write!(f, "most dns seeding failed"),
+            DnsBootstrapError::NotEnoughPeersError => write!(f, "most dns seeding failed."),
         }
     }
 }
@@ -102,8 +108,8 @@ impl core::fmt::Display for DNSQueryError {
                 write!(f, "the end of the response was reached before we expected.")
             }
             DNSQueryError::Udp => write!(f, "reading or writing from the UDP connection failed."),
-            DNSQueryError::MessageID => write!(f, "mismatch of message ID"),
-            DNSQueryError::Question => write!(f, "the question of the message does not match"),
+            DNSQueryError::MessageID => write!(f, "mismatch of message ID."),
+            DNSQueryError::Question => write!(f, "the question of the message does not match."),
         }
     }
 }

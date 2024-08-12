@@ -392,10 +392,7 @@ impl Peer {
         let response = &mut max_response[..size];
         handshake
             .authenticate_garbage_and_version(response)
-            .map_err(|e| {
-                eprintln!("Failed to authenticate the remote garbage and terminator. Bytes received: {size}. Source: {e}");
-                PeerError::HandshakeFailed
-            })?;
+            .map_err(|_| PeerError::HandshakeFailed)?;
         let packet_handler = handshake
             .finalize()
             .map_err(|_| PeerError::HandshakeFailed)?;
