@@ -44,7 +44,7 @@ use super::{
     messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
 };
 
-pub const ADDR_V2_VERSION: u32 = 70015;
+pub(crate) const ADDR_V2_VERSION: u32 = 70015;
 
 type Whitelist = Option<Vec<TrustedPeer>>;
 

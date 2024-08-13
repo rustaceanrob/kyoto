@@ -109,13 +109,19 @@ pub enum Warning {
     /// A transaction got rejected.
     TransactionRejected,
     /// A database failed to persist some data.
-    FailedPersistance { warning: String },
+    FailedPersistance {
+        /// Additional context for the persistance failure.
+        warning: String,
+    },
     /// The peer sent us a potential fork
     EvaluatingFork,
     /// The peer database has no values.
     EmptyPeerDatabase,
     /// An unexpected error occured processing a peer-to-peer message.
-    UnexpectedSyncError { warning: String },
+    UnexpectedSyncError {
+        /// Additional context as to why block syncing failed.
+        warning: String,
+    },
 }
 
 impl core::fmt::Display for Warning {
