@@ -40,6 +40,7 @@ use crate::{
 const MAX_REORG_DEPTH: u32 = 5_000;
 const REORG_LOOKBACK: u32 = 7;
 const MAX_HEADER_SIZE: usize = 20_000;
+const FILTER_BASIC: u8 = 0x00;
 
 #[derive(Debug)]
 pub(crate) struct Chain {
@@ -599,7 +600,7 @@ impl Chain {
             .unwrap_or(self.tip());
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         GetCFHeaders {
-            filter_type: 0x00,
+            filter_type: FILTER_BASIC,
             start_height: self.cf_header_chain.height() + 1,
             stop_hash,
         }
@@ -676,7 +677,7 @@ impl Chain {
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
         GetCFilters {
-            filter_type: 0x00,
+            filter_type: FILTER_BASIC,
             start_height: self.filter_chain.height() + 1,
             stop_hash,
         }

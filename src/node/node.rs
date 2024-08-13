@@ -26,7 +26,7 @@ use crate::{
         error::HeaderSyncError,
     },
     db::traits::{HeaderStore, PeerStore},
-    filters::cfheader_chain::AppendAttempt,
+    filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
     node::peer_map::PeerMap,
     ConnectionType, TrustedPeer, TxBroadcastPolicy,
 };
@@ -206,7 +206,7 @@ impl Node {
                                 PeerMessage::Headers(headers) => {
                                     self.dialog.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
                                         .await;
-                                    match self.handle_headers(headers).await {
+                                    match self.handle_headers(peer_thread.nonce, headers).await {
                                         Some(response) => {
                                             self.send_message(peer_thread.nonce, response).await;
                                         }
@@ -230,7 +230,7 @@ impl Node {
                                         None => continue,
                                     }
                                 }
-                                PeerMessage::Block(block) => match self.handle_block(block).await {
+                                PeerMessage::Block(block) => match self.handle_block(peer_thread.nonce, block).await {
                                     Some(response) => {
                                         self.send_message(peer_thread.nonce, response).await;
                                     }
@@ -508,7 +508,11 @@ impl Node {
     }
 
     // We always send headers to our peers, so our next message depends on our state
-    async fn handle_headers(&mut self, headers: Vec<Header>) -> Option<MainThreadMessage> {
+    async fn handle_headers(
+        &mut self,
+        peer_id: u32,
+        headers: Vec<Header>,
+    ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.sync_chain(headers).await {
             match e {
@@ -526,12 +530,21 @@ impl Node {
                     }
                     return None;
                 }
+                HeaderSyncError::LessWorkFork => {
+                    self.dialog
+                        .send_warning(Warning::UnexpectedSyncError {
+                            warning: "A peer sent us a fork with less work.".into(),
+                        })
+                        .await;
+                }
                 _ => {
                     self.dialog
                         .send_warning(Warning::UnexpectedSyncError {
                             warning: format!("Unexpected header syncing error: {}", e),
                         })
                         .await;
+                    let mut lock = self.peer_map.lock().await;
+                    lock.ban(&peer_id).await;
                     return Some(MainThreadMessage::Disconnect);
                 }
             }
@@ -600,13 +613,15 @@ impl Node {
                         ),
                     })
                     .await;
+                let mut lock = self.peer_map.lock().await;
+                lock.ban(&peer_id).await;
                 Some(MainThreadMessage::Disconnect)
             }
         }
     }
 
     // Handle a new compact block filter
-    async fn handle_filter(&mut self, _peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
+    async fn handle_filter(&mut self, peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter).await {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
@@ -616,13 +631,20 @@ impl Node {
                         warning: format!("Compact filter syncing encountered an error: {}", e),
                     })
                     .await;
-                Some(MainThreadMessage::Disconnect)
+                match e {
+                    CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
+                    _ => {
+                        let mut lock = self.peer_map.lock().await;
+                        lock.ban(&peer_id).await;
+                        Some(MainThreadMessage::Disconnect)
+                    }
+                }
             }
         }
     }
 
     // Scan a block for transactions.
-    async fn handle_block(&mut self, block: Block) -> Option<MainThreadMessage> {
+    async fn handle_block(&mut self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.scan_block(&block).await {
             self.dialog
@@ -630,6 +652,8 @@ impl Node {
                     warning: format!("Unexpected block scanning error: {}", e),
                 })
                 .await;
+            let mut lock = self.peer_map.lock().await;
+            lock.ban(&peer_id).await;
             return Some(MainThreadMessage::Disconnect);
         }
         None
