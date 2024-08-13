@@ -6,6 +6,7 @@
 //! and vetted.
 
 #![allow(dead_code)]
+#![warn(missing_docs)]
 /// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
 /// Traits and structures that define the data persistence required for a node.
@@ -92,11 +93,12 @@ impl IndexedBlock {
 pub struct TxBroadcast {
     /// The presumably valid Bitcoin transaction.
     pub tx: Transaction,
-    /// The strategy for how this transaction should be shared with the network
+    /// The strategy for how this transaction should be shared with the network.
     pub broadcast_policy: TxBroadcastPolicy,
 }
 
 impl TxBroadcast {
+    /// Prepare a transaction for broadcast with associated broadcast strategy.
     pub fn new(tx: Transaction, broadcast_policy: TxBroadcastPolicy) -> Self {
         Self {
             tx,
@@ -105,7 +107,7 @@ impl TxBroadcast {
     }
 }
 
-/// The strategy for how this transaction should be shared with the network
+/// The strategy for how this transaction should be shared with the network.
 #[derive(Debug, Default, Clone)]
 pub enum TxBroadcastPolicy {
     /// Broadcast the transaction to all peers at the same time.

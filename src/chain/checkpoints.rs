@@ -454,6 +454,7 @@ pub struct HeaderCheckpoint {
 }
 
 impl HeaderCheckpoint {
+    /// Create a new checkpoint from a known checkpoint of significant work.
     pub fn new(height: u32, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }

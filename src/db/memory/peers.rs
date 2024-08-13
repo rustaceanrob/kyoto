@@ -19,6 +19,7 @@ pub struct StatelessPeerStore {
 }
 
 impl StatelessPeerStore {
+    /// Construct a new in-memory store.
     pub fn new() -> Self {
         Self {
             list: HashMap::new(),

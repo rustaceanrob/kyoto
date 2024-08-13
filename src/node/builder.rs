@@ -69,6 +69,7 @@ impl NodeBuilder {
         self
     }
 
+    /// Set the desired communication channel. Either directly over TCP or over the Tor network.
     pub fn set_connection_type(mut self, connection_type: ConnectionType) -> Self {
         self.config.connection_type = connection_type;
         self

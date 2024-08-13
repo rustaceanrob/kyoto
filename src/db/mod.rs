@@ -1,3 +1,6 @@
+use bitcoin::key::rand::distributions::Standard;
+use bitcoin::key::rand::prelude::Distribution;
+use bitcoin::key::rand::{thread_rng, Rng};
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
 
@@ -25,6 +28,7 @@ pub struct PersistedPeer {
 }
 
 impl PersistedPeer {
+    /// Build a new peer with known fields
     pub fn new(addr: AddrV2, port: u16, services: ServiceFlags, status: PeerStatus) -> Self {
         Self {
             addr,
@@ -50,4 +54,21 @@ pub enum PeerStatus {
     Tried,
     /// A connected peer responded with faulty or malicious behavior.
     Ban,
+}
+
+impl Distribution<PeerStatus> for Standard {
+    fn sample<R: bitcoin::key::rand::Rng + ?Sized>(&self, rng: &mut R) -> PeerStatus {
+        // This may look wrong but we would like to add skew towards tried peers.
+        match rng.gen_range(0..=2) {
+            0 => PeerStatus::New,
+            _ => PeerStatus::Tried,
+        }
+    }
+}
+
+impl PeerStatus {
+    pub(crate) fn random() -> PeerStatus {
+        let mut rng = thread_rng();
+        rng.gen()
+    }
 }

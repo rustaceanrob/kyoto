@@ -37,6 +37,8 @@ use super::{
     messages::Warning,
 };
 
+const MAX_TRIES: usize = 50;
+
 // Preferred peers to connect to based on the user configuration
 type Whitelist = Option<Vec<TrustedPeer>>;
 
@@ -267,12 +269,13 @@ impl PeerMap {
         }
         let mut peer_manager = self.db.lock().await;
         let mut tries = 0;
-        while tries < 10 {
+        let desired_status = PeerStatus::random();
+        while tries < MAX_TRIES {
             let peer = peer_manager
                 .random()
                 .await
                 .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?;
-            if self.net_groups.contains(&peer.addr.netgroup()) {
+            if self.net_groups.contains(&peer.addr.netgroup()) || desired_status.ne(&peer.status) {
                 tries += 1;
                 continue;
             } else {
