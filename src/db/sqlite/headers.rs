@@ -13,7 +13,15 @@ use crate::db::error::DatabaseError;
 use crate::db::traits::HeaderStore;
 use crate::prelude::FutureResult;
 
-const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
+// Labels for the schema table
+const SCHEMA_TABLE_NAME: &str = "header_schema_versions";
+const SCHEMA_COLUMN: &str = "schema_key";
+const VERSION_COLUMN: &str = "version";
+const SCHEMA_KEY: &str = "current_version";
+// Update this in the case of schema changes
+const SCHEMA_VERSION: u8 = 0;
+// Always execute this query and adjust the schema with migrations
+const INITIAL_HEADER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,
     block_hash TEXT NOT NULL,
     version INTEGER NOT NULL,
@@ -42,11 +50,38 @@ impl SqliteHeaderDb {
             fs::create_dir_all(&path).unwrap();
         }
         let conn = Connection::open(path.join("headers.db")).map_err(|_| DatabaseError::Open)?;
-        conn.execute(SCHEMA, []).map_err(|_| DatabaseError::Load)?;
+        // Create the schema version
+        let schema_table_query = format!(
+            "CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN} TEXT PRIMARY KEY, {VERSION_COLUMN} INTEGER NOT NULL)");
+        // Update the schema version
+        conn.execute(&schema_table_query, [])
+            .map_err(|_| DatabaseError::Write)?;
+        let schema_init_version = format!(
+            "INSERT OR REPLACE INTO {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN}, {VERSION_COLUMN}) VALUES (?1, ?2)");
+        conn.execute(&schema_init_version, params![SCHEMA_KEY, SCHEMA_VERSION])
+            .map_err(|_| DatabaseError::Write)?;
+        // Build the table if it doesn't exist
+        conn.execute(INITIAL_HEADER_SCHEMA, [])
+            .map_err(|_| DatabaseError::Load)?;
+        // Migrate to any new schema versions
+        Self::migrate(&conn)?;
+
         Ok(Self {
             network,
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    // This function currently does nothing, but if new columns are required this may be used to alter the tables
+    // without breaking older tables.
+    fn migrate(conn: &Connection) -> Result<(), DatabaseError> {
+        let version_query =
+            format!("SELECT {VERSION_COLUMN} FROM {SCHEMA_TABLE_NAME} WHERE {SCHEMA_COLUMN} = ?1");
+        let _current_version: u8 = conn
+            .query_row(&version_query, [SCHEMA_KEY], |row| row.get(0))
+            .map_err(|_| DatabaseError::Load)?;
+        // Match on the version and migrate to new schemas in the future
+        Ok(())
     }
 
     async fn load_after(
