@@ -3,13 +3,13 @@
 #### Peers
 
 - [x] Bootstrap peer list with DNS
-  - [ ] Home brewed DNS resolver? (Too hard. Feature gated DNS instead)
+  - [x] Home brewed DNS client
   - [x] Check for DNS flooding/poisoning? (Kind of: just limit to 256 peers per DNS query)
 - [x] Persist to storage
   - [x] Organize by `/16`? (Just don't select peers from the same net group)
-  - [ ] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery
+  - [x] Weight the priorities of high probability connections (DNS), service flags, and new peer discovery (Completed with random preference for new/tried)
   - [x] Condense to single DB
-- [ ] Ban peers
+- [x] Ban peers
 - [x] Add optional whitelist
 - [x] Add in-memory `PeerStore` implementor
 
@@ -71,11 +71,12 @@
 - [x] Reach out with v1 version message
 - [x] Respond to `Ping`
 - [x] Send `Verack` and eagerly send `GetAddr`
-  - [ ] May limit addresses if peer persistence is saturated
+  - [x] May limit addresses if peer persistence is saturated (Set desired size)
 - [x] Filter messages at the reader level
   - [ ] Add back: `Inv`, `Block`, `TX`, ?
     - [x] `Inv` (blocks)
     - [x] `Block`
+    - [ ] `Tx` (Open question/configuration)
   - [x] Update `Inv` of block headers to header chain
 - [ ] Set up "peer config"
   - [x] TCP timeout
@@ -86,7 +87,7 @@
   - [x] Message counter
   - [ ] `Ping` if peer has not been heard from (Probably better to just disconnect)
 - [x] `Disconnect` peers with high latency (If we send a critical message and a peer doesn't respond in 5 seconds, disconnect)
-- [ ] Add BIP-324 with V1 fallback
+- [x] Add BIP-324 with V1 fallback
 
 #### Transaction Broadcaster
 
