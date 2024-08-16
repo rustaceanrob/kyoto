@@ -58,8 +58,7 @@ pub enum PeerStatus {
 
 impl Distribution<PeerStatus> for Standard {
     fn sample<R: bitcoin::key::rand::Rng + ?Sized>(&self, rng: &mut R) -> PeerStatus {
-        // This may look wrong but we would like to add skew towards tried peers.
-        match rng.gen_range(0..=2) {
+        match rng.gen_range(0..=1) {
             0 => PeerStatus::New,
             _ => PeerStatus::Tried,
         }
