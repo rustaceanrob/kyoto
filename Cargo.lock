@@ -1509,7 +1509,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyoto"
+name = "kyoto-cbf"
 version = "0.1.0"
 dependencies = [
  "arti-client",
