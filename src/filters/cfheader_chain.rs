@@ -8,6 +8,7 @@ use super::cfheader_batch::CFHeaderBatch;
 
 const INITIAL_BUFFER_SIZE: usize = 20_000;
 
+#[derive(Debug, PartialEq)]
 pub(crate) enum AppendAttempt {
     // Nothing to do yet
     AddedToQueue,
@@ -96,6 +97,8 @@ impl CFHeaderChain {
             .zip(cf_headers.inner())
         {
             if header_one.ne(&header_two) || hash_one.ne(&hash_two) {
+                self.merged_queue = None;
+                self.current_quorum = 0;
                 return AppendAttempt::Conflict(block_hash);
             }
         }
