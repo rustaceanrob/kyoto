@@ -1620,6 +1620,7 @@ mod tests {
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
+        assert!(chain.is_synced());
         // Request the headers again
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
@@ -1664,5 +1665,169 @@ mod tests {
             })
             .await;
         assert!(sync_filter_4.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_inv_no_queue() {
+        let gen = HeaderCheckpoint::new(
+            2496,
+            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
+                .unwrap(),
+        );
+        let mut chain = new_regtest_two_peers(gen);
+        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
+        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
+        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
+        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
+        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
+        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let chain_sync = chain.sync_chain(header_batch).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 2500);
+        chain.set_best_known_height(2500).await;
+        assert!(chain.is_synced());
+        let filter_1 = hex::decode("018976c0").unwrap();
+        let filter_2 = hex::decode("018b1f28").unwrap();
+        let filter_3 = hex::decode("01117310").unwrap();
+        let filter_4 = hex::decode("0189dff0").unwrap();
+        let filter_5 = hex::decode("01504fe0").unwrap();
+        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
+        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
+        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
+        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
+        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
+        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
+        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
+        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
+        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
+        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
+        chain.next_cf_header_message().await;
+        let chain_sync = chain.sync_chain(vec![block_5]).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 2501);
+        assert!(chain.is_synced());
+        chain.next_cf_header_message().await;
+        let cf_headers = CFHeaders {
+            filter_type: 0x00,
+            stop_hash: block_4.block_hash(),
+            previous_filter_header: FilterHeader::from_slice(
+                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
+                    .unwrap(),
+            )
+            .unwrap(),
+            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+        };
+        let cf_header_sync_res = chain.sync_cf_headers(1, cf_headers).await;
+        assert!(cf_header_sync_res.is_err());
+        chain.next_cf_header_message().await;
+        let cf_headers = CFHeaders {
+            filter_type: 0x00,
+            stop_hash: block_5.block_hash(),
+            previous_filter_header: FilterHeader::from_slice(
+                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
+                    .unwrap(),
+            )
+            .unwrap(),
+            filter_hashes: vec![
+                filter_hash_1,
+                filter_hash_2,
+                filter_hash_3,
+                filter_hash_4,
+                filter_hash_5,
+            ],
+        };
+        let cf_header_sync_res = chain.sync_cf_headers(2, cf_headers).await;
+        assert!(cf_header_sync_res.is_ok());
+        let cf_headers = CFHeaders {
+            filter_type: 0x00,
+            stop_hash: block_5.block_hash(),
+            previous_filter_header: FilterHeader::from_slice(
+                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
+                    .unwrap(),
+            )
+            .unwrap(),
+            filter_hashes: vec![
+                filter_hash_1,
+                filter_hash_2,
+                filter_hash_3,
+                filter_hash_4,
+                filter_hash_5,
+            ],
+        };
+        let cf_header_sync_res = chain.sync_cf_headers(2, cf_headers).await;
+        assert!(cf_header_sync_res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_inv_with_queue() {
+        let gen = HeaderCheckpoint::new(
+            2496,
+            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
+                .unwrap(),
+        );
+        let mut chain = new_regtest_two_peers(gen);
+        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
+        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
+        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
+        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
+        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
+        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let chain_sync = chain.sync_chain(header_batch).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 2500);
+        chain.set_best_known_height(2500).await;
+        assert!(chain.is_synced());
+        let filter_1 = hex::decode("018976c0").unwrap();
+        let filter_2 = hex::decode("018b1f28").unwrap();
+        let filter_3 = hex::decode("01117310").unwrap();
+        let filter_4 = hex::decode("0189dff0").unwrap();
+        let filter_5 = hex::decode("01504fe0").unwrap();
+        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
+        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
+        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
+        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
+        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
+        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
+        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
+        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
+        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
+        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
+        chain.next_cf_header_message().await;
+        let cf_headers = CFHeaders {
+            filter_type: 0x00,
+            stop_hash: block_4.block_hash(),
+            previous_filter_header: FilterHeader::from_slice(
+                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
+                    .unwrap(),
+            )
+            .unwrap(),
+            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+        };
+        let cf_header_sync_res = chain.sync_cf_headers(1, cf_headers).await;
+        assert!(cf_header_sync_res.is_ok());
+        let chain_sync = chain.sync_chain(vec![block_5]).await;
+        assert!(chain_sync.is_ok());
+        assert_eq!(chain.height(), 2501);
+        chain.next_cf_header_message().await;
+        let cf_headers = CFHeaders {
+            filter_type: 0x00,
+            stop_hash: block_5.block_hash(),
+            previous_filter_header: FilterHeader::from_slice(
+                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
+                    .unwrap(),
+            )
+            .unwrap(),
+            filter_hashes: vec![
+                filter_hash_1,
+                filter_hash_2,
+                filter_hash_3,
+                filter_hash_4,
+                filter_hash_5,
+            ],
+        };
+        let cf_header_sync_res = chain.sync_cf_headers(1, cf_headers).await;
+        assert!(cf_header_sync_res.is_ok());
+        assert_eq!(cf_header_sync_res.unwrap(), AppendAttempt::Extended);
+        assert_eq!(chain.cf_header_chain.height(), 2500);
     }
 }
