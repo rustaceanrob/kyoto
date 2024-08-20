@@ -37,4 +37,10 @@ jobs:
       - name: Check release build on Rust ${{ matrix.toolchain }}
         run: cargo check --release --verbose --color always
       - name: Test
-        run: cargo test --verbose
+        run: cargo test --verbose -- --skip test_signet_syncs
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Sync signet
+        run: cargo test --verbose test_signet_syncs

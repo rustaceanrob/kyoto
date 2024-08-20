@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr},
+    str::FromStr,
     time::Duration,
 };
 
@@ -8,6 +9,7 @@ use bitcoin::{address::NetworkChecked, consensus::serialize, Amount, ScriptBuf};
 use bitcoincore_rpc::{json::CreateRawTransactionInput, RpcApi};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
+    db::memory::peers::StatelessPeerStore,
     node::{
         client::{Client, Receiver},
         messages::NodeMessage,
@@ -650,4 +652,37 @@ async fn test_sql_stale_anchor() {
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     rpc.stop().unwrap();
+}
+
+#[tokio::test]
+async fn test_signet_syncs() {
+    let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+        .unwrap()
+        .require_network(bitcoin::Network::Signet)
+        .unwrap()
+        .into();
+    let mut set = HashSet::new();
+    set.insert(address);
+    let host = (IpAddr::from(Ipv4Addr::new(68, 47, 229, 218)), None);
+    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Signet);
+    let (mut node, client) = builder
+        .add_peers(vec![host.into()])
+        .add_scripts(set)
+        .build_with_databases(StatelessPeerStore::new(), ());
+    tokio::task::spawn(async move { node.run().await });
+    async fn print_and_sync(client: Client) {
+        let mut receiver = client.receiver();
+        loop {
+            if let Ok(message) = receiver.recv().await {
+                match message {
+                    NodeMessage::Dialog(d) => println!("{d}"),
+                    NodeMessage::Warning(w) => println!("{w}"),
+                    NodeMessage::Synced(_) => break,
+                    _ => (),
+                }
+            }
+        }
+    }
+    let timeout = tokio::time::timeout(Duration::from_secs(180), print_and_sync(client)).await;
+    assert!(timeout.is_ok());
 }
