@@ -448,6 +448,7 @@ impl Chain {
                 self.clear_compact_filter_queue();
                 self.cf_header_chain.remove(removed_hashes);
                 self.filter_chain.remove(removed_hashes);
+                self.block_queue.remove(removed_hashes);
                 self.dialog
                     .send_data(NodeMessage::BlocksDisconnected(reorged))
                     .await;
