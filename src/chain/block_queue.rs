@@ -65,6 +65,15 @@ impl BlockQueue {
     pub(crate) fn complete(&self) -> bool {
         self.want.is_none() && self.queue.is_empty()
     }
+
+    pub(crate) fn remove(&mut self, hashes: &[BlockHash]) {
+        self.queue.retain(|hash| !hashes.contains(hash));
+        if let Some(want) = self.want {
+            if hashes.contains(&want) {
+                self.want = None;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -149,5 +158,31 @@ mod test {
         queue.received(&hash_3);
         assert!(queue.complete());
         assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn test_blocks_removed() {
+        let hash_1 =
+            BlockHash::from_str("0000007a93b953158a12aef32eb9cc4366eb1eea5892fb04afbeec421c29319d")
+                .unwrap();
+        let hash_2 =
+            BlockHash::from_str("0000009e41d363546c5126c045bdef80e863324ac87f2bec88927a53662f6c0b")
+                .unwrap();
+        let hash_3 =
+            BlockHash::from_str("000000254633c01d43534d80981c3d1e0f4f3541cce2af68084e7631832d2572")
+                .unwrap();
+        let mut queue = BlockQueue::new();
+        queue.add(hash_1);
+        queue.add(hash_2);
+        queue.add(hash_3);
+        queue.add(hash_1);
+        assert_eq!(queue.queue.len(), 3);
+        assert_eq!(queue.pop(), Some(hash_1));
+        assert_eq!(queue.want, Some(hash_1));
+        queue.remove(&[hash_1]);
+        assert_eq!(queue.want, None);
+        queue.remove(&[hash_2]);
+        assert_eq!(queue.queue.len(), 1);
+        assert_eq!(queue.pop(), Some(hash_3));
     }
 }
