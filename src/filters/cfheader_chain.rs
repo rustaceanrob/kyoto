@@ -86,7 +86,7 @@ impl CFHeaderChain {
     }
 
     // Verify a batch of filter headers and hashes is what we expect.
-    pub(crate) async fn verify(&mut self, cf_headers: CFHeaderBatch) -> AppendAttempt {
+    pub(crate) async fn verify(&mut self, cf_headers: &mut CFHeaderBatch) -> AppendAttempt {
         // The caller is responsible for knowing if there is a queue or not
         for ((block_hash, header_one, hash_one), (header_two, hash_two)) in self
             .merged_queue
@@ -94,7 +94,7 @@ impl CFHeaderChain {
             .unwrap()
             .iter()
             .map(|queue| queue.tuple())
-            .zip(cf_headers.inner())
+            .zip(cf_headers.take_inner())
         {
             if header_one.ne(&header_two) || hash_one.ne(&hash_two) {
                 self.merged_queue = None;

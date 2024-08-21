@@ -507,7 +507,7 @@ impl Chain {
         _peer_id: u32,
         cf_headers: CFHeaders,
     ) -> Result<AppendAttempt, CFHeaderSyncError> {
-        let batch: CFHeaderBatch = cf_headers.into();
+        let mut batch: CFHeaderBatch = cf_headers.into();
         self.dialog
             .chain_update(
                 self.height(),
@@ -532,10 +532,10 @@ impl Chain {
         self.audit_cf_headers(&batch).await?;
         // We already have a message like this. Verify they are the same
         if self.cf_header_chain.has_queue() {
-            Ok(self.cf_header_chain.verify(batch).await)
+            Ok(self.cf_header_chain.verify(&mut batch).await)
         } else {
             // Associate the block hashes with the filter hashes and add them to the queue
-            let queue = self.construct_cf_header_queue(&batch).await?;
+            let queue = self.construct_cf_header_queue(&mut batch).await?;
             Ok(self.cf_header_chain.set_queue(queue).await)
         }
     }
@@ -543,11 +543,11 @@ impl Chain {
     // We need to associate the block hash with the incoming filter hashes
     async fn construct_cf_header_queue(
         &self,
-        batch: &CFHeaderBatch,
+        batch: &mut CFHeaderBatch,
     ) -> Result<Vec<QueuedCFHeader>, CFHeaderSyncError> {
         let mut queue = Vec::new();
         let ref_height = self.cf_header_chain.height();
-        for (index, (filter_header, filter_hash)) in batch.inner().into_iter().enumerate() {
+        for (index, (filter_header, filter_hash)) in batch.take_inner().into_iter().enumerate() {
             let block_hash = self
                 // This call may or may not retrieve the hash from disk
                 .blockhash_at_height(ref_height + index as u32 + 1)
@@ -697,12 +697,12 @@ impl Chain {
     }
 
     // Scan an incoming block for transactions with our scripts
-    pub(crate) async fn scan_block(&mut self, block: &Block) -> Result<(), BlockScanError> {
+    pub(crate) async fn scan_block(&mut self, block: Block) -> Result<(), BlockScanError> {
         if self.block_queue.received(&block.block_hash()) {
             match self.height_of_hash(block.block_hash()).await {
                 Some(height) => {
                     self.dialog
-                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block.clone())))
+                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
                         .await;
                     Ok(())
                 }
