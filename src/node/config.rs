@@ -4,7 +4,7 @@ use bitcoin::ScriptBuf;
 
 use crate::{chain::checkpoints::HeaderCheckpoint, ConnectionType, TrustedPeer};
 
-const TARGET_PEER_DB_SIZE: u32 = 256;
+const TARGET_PEER_DB_SIZE: u32 = 4096;
 
 pub(crate) struct NodeConfig {
     pub required_peers: u8,

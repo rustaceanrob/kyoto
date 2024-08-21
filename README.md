@@ -51,6 +51,7 @@ let (mut node, mut client) = builder
     .num_required_peers(2)
     // Create the node and client
     .build_node()
+    .unwrap()
 ```
 
 #### Minimum Supported Rust Version (MSRV) Policy

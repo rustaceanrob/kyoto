@@ -169,6 +169,10 @@ impl Node {
     }
 
     /// Run the node continuously. Typically run on a separate thread than the underlying application.
+    ///
+    /// # Errors
+    ///
+    /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
     pub async fn run(&mut self) -> Result<(), NodeError> {
         self.dialog.send_dialog("Starting node".into()).await;
         self.is_running

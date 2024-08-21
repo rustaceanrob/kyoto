@@ -48,6 +48,10 @@ impl Client {
     }
 
     /// Tell the node to stop running.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the node has already stopped.
     pub async fn shutdown(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Shutdown)
@@ -83,6 +87,10 @@ impl Client {
     /// Note that this may take a significant amount of time depending on your peer and broadcast policy.
     /// Furthermore, this is not a guarantee that the transaction has been _propagated_ throughout the network,
     /// only that one or more peers has received the transaction.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running or the transaction was rejected by at least one peer.
     pub async fn wait_for_broadcast(&mut self, tx: TxBroadcast) -> Result<(), ClientError> {
         let txid = tx.tx.compute_txid();
         self.ntx
@@ -134,6 +142,10 @@ impl ClientSender {
     }
 
     /// Tell the node to shut down.
+    ///
+    /// # Errors
+    ///
+    /// If the node has already stopped running.
     pub async fn shutdown(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Shutdown)
@@ -142,6 +154,10 @@ impl ClientSender {
     }
 
     /// Broadcast a new transaction to the network.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
     pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Broadcast(tx))
@@ -150,6 +166,10 @@ impl ClientSender {
     }
 
     /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
     pub async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::AddScripts(scripts))
@@ -158,6 +178,10 @@ impl ClientSender {
     }
 
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
     pub async fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Rescan)
