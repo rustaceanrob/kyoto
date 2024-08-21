@@ -99,7 +99,7 @@
 - [x] Add more error cases for loading faulty headers from persistence
 - [x] Handle `Inv` during CF header download
 - [ ] Add local unconfirmed transaction DB? (Advised against by downstream)
-- [ ] Too many `clone`
+- [x] Too many `clone`
 
 #### Testing
 
@@ -110,13 +110,13 @@
   - [x] Fork with equal work
   - [x] Fork with more work
 - [ ] CF header chain
-  - [ ] Unexpected stop hash
-  - [ ] Unexpected filter hash
-  - [ ] Multiple peers expected filter hash
+  - [x] Unexpected stop hash
+  - [x] Unexpected filter hash
+  - [x] Multiple peers expected filter hash
   - [ ] Properly identify bad peers (Not testable without a way to compute the filters)
 - [ ] Filter chain
-  - [ ] Repeated filter
-  - [ ] Bad filter
+  - [x] Repeated filter
+  - [x] Bad filter
 - [ ] Header Chain
   - [x] Expected height
   - [x] Expected height after fork
