@@ -231,7 +231,7 @@ impl PeerMap {
     pub async fn send_random(&mut self, message: MainThreadMessage) {
         let mut rng = StdRng::from_entropy();
         if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
-            let _ = peer.ptx.send(message.clone()).await;
+            let _ = peer.ptx.send(message).await;
         }
     }
 

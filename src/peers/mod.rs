@@ -1,4 +1,8 @@
-use bitcoin::{consensus::Decodable, io::BufRead, p2p::Magic};
+use bitcoin::{
+    consensus::Decodable,
+    io::BufRead,
+    p2p::{message::CommandString, Magic},
+};
 
 pub(crate) mod counter;
 #[cfg(feature = "dns")]
@@ -14,7 +18,7 @@ pub(crate) mod traits;
 
 pub(crate) struct V1Header {
     magic: Magic,
-    _command: [u8; 12],
+    command: CommandString,
     length: u32,
     _checksum: u32,
 }
@@ -24,12 +28,12 @@ impl Decodable for V1Header {
         reader: &mut R,
     ) -> Result<Self, bitcoin::consensus::encode::Error> {
         let magic = Magic::consensus_decode(reader)?;
-        let _command = <[u8; 12]>::consensus_decode(reader)?;
+        let command = CommandString::consensus_decode(reader)?;
         let length = u32::consensus_decode(reader)?;
         let _checksum = u32::consensus_decode(reader)?;
         Ok(Self {
             magic,
-            _command,
+            command,
             length,
             _checksum,
         })

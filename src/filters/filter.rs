@@ -43,14 +43,14 @@ impl Filter {
             .map_err(|_| FilterError::IORead)
     }
 
-    pub async fn is_filter_for_block(&mut self, block: &Block) -> Result<bool, FilterError> {
+    pub async fn is_filter_for_block(&mut self, block: Block) -> Result<bool, FilterError> {
         // Skip the coinbase transaction
-        for tx in block.txdata.iter().skip(1) {
+        for tx in block.txdata.into_iter().skip(1) {
             let scripts = tx
                 .output
-                .iter()
+                .into_iter()
                 .filter(|output| !output.script_pubkey.is_op_return())
-                .map(|output| output.script_pubkey.clone());
+                .map(|output| output.script_pubkey);
             if !self
                 .block_filter
                 .match_all(
