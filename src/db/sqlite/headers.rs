@@ -47,7 +47,7 @@ impl SqliteHeaderDb {
         path.push("data");
         path.push(network.to_string());
         if !path.exists() {
-            fs::create_dir_all(&path).unwrap();
+            fs::create_dir_all(&path).map_err(|_| DatabaseError::Open)?;
         }
         let conn = Connection::open(path.join("headers.db")).map_err(|_| DatabaseError::Open)?;
         // Create the schema version
@@ -109,14 +109,16 @@ impl SqliteHeaderDb {
 
             let next_header = Header {
                 version: Version::from_consensus(version),
-                prev_blockhash: BlockHash::from_str(&prev_hash).unwrap(),
-                merkle_root: TxMerkleNode::from_str(&merkle_root).unwrap(),
+                prev_blockhash: BlockHash::from_str(&prev_hash)
+                    .map_err(|_| DatabaseError::Deserialization)?,
+                merkle_root: TxMerkleNode::from_str(&merkle_root)
+                    .map_err(|_| DatabaseError::Deserialization)?,
                 time,
                 bits: CompactTarget::from_consensus(bits),
                 nonce,
             };
             if BlockHash::from_str(&hash)
-                .unwrap()
+                .map_err(|_| DatabaseError::Deserialization)?
                 .ne(&next_header.block_hash())
             {
                 return Err(DatabaseError::Corruption);

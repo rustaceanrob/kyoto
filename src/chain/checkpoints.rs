@@ -511,10 +511,4 @@ impl HeaderCheckpoints {
             }
         }
     }
-
-    pub fn skip_all(&mut self) {
-        while !self.is_exhausted() {
-            self.advance()
-        }
-    }
 }

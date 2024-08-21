@@ -368,16 +368,13 @@ impl Chain {
         assert!(!self.checkpoints.is_exhausted());
         // Eagerly append the batch to the chain
         self.header_chain.extend(header_batch.inner());
-        let checkpoint = self
-            .checkpoints
-            .next()
-            .expect("checkpoints are not exhausted");
+        let checkpoint = self.checkpoints.next().unwrap();
         // We need to check a hard-coded checkpoint
         if self.height().ge(&checkpoint.height) {
             if self
                 .blockhash_at_height(checkpoint.height)
                 .await
-                .expect("height is greater than the base checkpoint")
+                .ok_or(HeaderSyncError::InvalidCheckpoint)?
                 .eq(&checkpoint.hash)
             {
                 self.dialog
@@ -425,12 +422,12 @@ impl Chain {
             .iter()
             .map(|header| header.work())
             .reduce(|acc, next| acc + next)
-            .expect("all headers of a fork cannot be in our chain");
+            .ok_or(HeaderSyncError::FloatingHeaders)?;
         let stem_position = self
             .height_of_hash(
                 uncommon
                     .first()
-                    .expect("all headers of a fork cannot be in our chain")
+                    .ok_or(HeaderSyncError::FloatingHeaders)?
                     .prev_blockhash,
             )
             .await;
@@ -516,10 +513,7 @@ impl Chain {
                 self.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                self.best_known_height
-                    .unwrap_or(self.height())
-                    .try_into()
-                    .unwrap(),
+                self.best_known_height.unwrap_or(self.height()),
             )
             .await;
         match batch.last_header() {
@@ -676,10 +670,7 @@ impl Chain {
                 self.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                self.best_known_height
-                    .unwrap_or(self.height())
-                    .try_into()
-                    .unwrap(),
+                self.best_known_height.unwrap_or(self.height()),
             )
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);

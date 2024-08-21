@@ -49,7 +49,8 @@ async fn main() {
         // The number of connections we would like to maintain
         .num_required_peers(2)
         // Create the node and client
-        .build_node();
+        .build_node()
+        .unwrap();
     // Check if the node is running. Another part of the program may be giving us the node.
     if !node.is_running() {
         tokio::task::spawn(async move { node.run().await });

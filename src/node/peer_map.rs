@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::IpAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -133,11 +132,8 @@ impl PeerMap {
 
     // Get the median time adjustment for the currently connected peers
     pub fn median_time_adjustment(&self) -> i64 {
-        if self.map.values().len() > 0 {
-            let mut time_offsets: Vec<i64> = self.map.values().map(|peer| peer.net_time).collect();
-            return time_offsets.median().unwrap();
-        }
-        0
+        let mut time_offsets: Vec<i64> = self.map.values().map(|peer| peer.net_time).collect();
+        time_offsets.median()
     }
 
     // Set the time offset of a connected peer
@@ -380,6 +376,7 @@ impl PeerMap {
     #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
         use crate::peers::dns::Dns;
+        use std::net::IpAddr;
         self.dialog
             .send_dialog("Bootstraping peers with DNS".into())
             .await;
