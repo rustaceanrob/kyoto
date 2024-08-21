@@ -2,13 +2,14 @@ use std::{collections::HashSet, path::PathBuf};
 
 use bitcoin::{Network, ScriptBuf};
 
+use super::{client::Client, config::NodeConfig, node::Node};
+#[cfg(feature = "database")]
+use crate::db::error::DatabaseError;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
 use crate::{ConnectionType, TrustedPeer};
-
-use super::{client::Client, config::NodeConfig, node::Node};
 
 /// Build a [`Node`] in an additive way.
 pub struct NodeBuilder {
@@ -76,18 +77,21 @@ impl NodeBuilder {
     }
 
     /// Consume the node builder and receive a [`Node`] and [`Client`].
+    ///
+    /// # Errors
+    ///
+    /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "database")]
-    pub fn build_node(&mut self) -> (Node, Client) {
+    pub fn build_node(&mut self) -> Result<(Node, Client), DatabaseError> {
         use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
-        let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone()).unwrap();
-        let header_store =
-            SqliteHeaderDb::new(self.network, self.config.data_path.clone()).unwrap();
-        Node::new_from_config(
+        let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
+        let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
+        Ok(Node::new_from_config(
             core::mem::take(&mut self.config),
             self.network,
             peer_store,
             header_store,
-        )
+        ))
     }
 
     /// Consume the node builder by using custom database implementations, receiving a [`Node`] and [`Client`].

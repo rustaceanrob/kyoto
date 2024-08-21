@@ -44,7 +44,7 @@ impl SqlitePeerDb {
         path.push("data");
         path.push(network.to_string());
         if !path.exists() {
-            fs::create_dir_all(&path).unwrap();
+            fs::create_dir_all(&path).map_err(|_| DatabaseError::Open)?
         }
         let conn = Connection::open(path.join("peers.db")).map_err(|_| DatabaseError::Open)?;
         // Create the schema version

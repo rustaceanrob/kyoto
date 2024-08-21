@@ -21,7 +21,7 @@ impl Dialog {
         num_headers: u32,
         num_cf_headers: u32,
         num_filters: u32,
-        best_height: usize,
+        best_height: u32,
     ) {
         let message = format!(
             "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",

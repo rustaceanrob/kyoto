@@ -42,7 +42,7 @@ impl HeadersBatch {
         let median_times: Vec<u32> = previous_buffer
             .windows(MEDIAN_TIME_PAST)
             .map(|window| window.iter().map(|block| block.time).collect::<Vec<_>>())
-            .map(|mut times| times.median().expect("at least one time"))
+            .map(|mut times| times.median())
             .collect();
         median_times
             .iter()

@@ -58,14 +58,15 @@ impl Reader {
                 }
                 let addresses: Vec<CombinedAddr> = addresses
                     .iter()
-                    .filter(|f| f.1.services.has(ServiceFlags::COMPACT_FILTERS))
-                    .filter(|f| f.1.socket_addr().is_ok())
-                    .map(|(_, addr)| {
-                        let ip = match addr.socket_addr().unwrap().ip() {
+                    .map(|(_, addr)| addr)
+                    .filter(|addr| addr.services.has(ServiceFlags::COMPACT_FILTERS))
+                    .filter_map(|addr| addr.socket_addr().ok().map(|sock| (addr.port, sock)))
+                    .map(|(port, addr)| {
+                        let ip = match addr.ip() {
                             IpAddr::V4(ip) => AddrV2::Ipv4(ip),
                             IpAddr::V6(ip) => AddrV2::Ipv6(ip),
                         };
-                        let mut addr = CombinedAddr::new(ip, addr.port);
+                        let mut addr = CombinedAddr::new(ip, port);
                         addr.services(addr.services);
                         addr
                     })
@@ -137,10 +138,11 @@ impl Reader {
                     return Some(PeerMessage::Disconnect);
                 }
                 let addresses: Vec<CombinedAddr> = addresses
-                    .iter()
+                    .into_iter()
                     .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))
                     .map(|addr| {
-                        let mut ip = CombinedAddr::new(addr.addr.clone(), addr.port);
+                        let port = addr.port;
+                        let mut ip = CombinedAddr::new(addr.addr, port);
                         ip.services(addr.services);
                         ip
                     })

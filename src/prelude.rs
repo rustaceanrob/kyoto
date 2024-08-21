@@ -20,50 +20,50 @@ macro_rules! impl_sourceless_error {
 }
 
 pub trait Median<T> {
-    fn median(&mut self) -> Option<T>;
+    fn median(&mut self) -> T;
 }
 
 impl Median<i64> for Vec<i64> {
-    fn median(&mut self) -> Option<i64> {
+    fn median(&mut self) -> i64 {
         self.sort();
         let len = self.len();
         if len == 0 {
-            None
+            0
         } else if len % 2 == 1 {
-            Some(self[len / 2])
+            self[len / 2]
         } else {
             let mid = len / 2;
-            Some((self[mid - 1] + self[mid]) / 2)
+            (self[mid - 1] + self[mid]) / 2
         }
     }
 }
 
 impl Median<u64> for Vec<u64> {
-    fn median(&mut self) -> Option<u64> {
+    fn median(&mut self) -> u64 {
         self.sort();
         let len = self.len();
         if len == 0 {
-            None
+            0
         } else if len % 2 == 1 {
-            Some(self[len / 2])
+            self[len / 2]
         } else {
             let mid = len / 2;
-            Some((self[mid - 1] + self[mid]) / 2)
+            (self[mid - 1] + self[mid]) / 2
         }
     }
 }
 
 impl Median<u32> for Vec<u32> {
-    fn median(&mut self) -> Option<u32> {
+    fn median(&mut self) -> u32 {
         self.sort();
         let len = self.len();
         if len == 0 {
-            None
+            0
         } else if len % 2 == 1 {
-            Some(self[len / 2])
+            self[len / 2]
         } else {
             let mid = len / 2;
-            Some((self[mid - 1] + self[mid]) / 2)
+            (self[mid - 1] + self[mid]) / 2
         }
     }
 }
