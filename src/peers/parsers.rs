@@ -1,6 +1,6 @@
 use bip324::serde::NetworkMessage;
 use bip324::PacketReader;
-use bitcoin::consensus::{deserialize, deserialize_partial};
+use bitcoin::consensus::{deserialize, deserialize_partial, Decodable};
 use bitcoin::p2p::message::RawNetworkMessage;
 use bitcoin::Network;
 use tokio::io::AsyncReadExt;
@@ -47,10 +47,21 @@ impl V1MessageParser {
             .read_exact(&mut contents_buf)
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
-        message_buf.extend_from_slice(&contents_buf);
-        let message: RawNetworkMessage =
-            deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
-        Ok(Some(message.payload().clone()))
+        // FIXME: Either through a rust-bitcoin backport which has this on master or match every command string
+        match header.command.as_ref() {
+            "block" => {
+                let mut buf = contents_buf.as_slice();
+                Ok(Some(NetworkMessage::Block(
+                    Decodable::consensus_decode(&mut buf).map_err(|_| PeerReadError::ReadBuffer)?,
+                )))
+            }
+            _ => {
+                message_buf.extend_from_slice(&contents_buf);
+                let message: RawNetworkMessage =
+                    deserialize(&message_buf).map_err(|_| PeerReadError::Deserialization)?;
+                Ok(Some(message.payload().clone()))
+            }
+        }
     }
 }
 
