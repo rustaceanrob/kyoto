@@ -302,27 +302,29 @@ impl Chain {
         if self.contains_hash(header_batch.last().block_hash()) {
             return Ok(());
         }
-        let initially_syncing = !self.checkpoints.is_exhausted();
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch).await?;
         // How we handle forks depends on if we are caught up through all checkpoints or not
-        if initially_syncing {
-            self.catch_up_sync(header_batch).await?;
-        } else {
-            // Nothing left to do but add the headers to the chain
-            if self.tip().eq(&header_batch.first().prev_blockhash) {
-                self.header_chain.extend(header_batch.inner());
-                return Ok(());
+        match self.checkpoints.next().cloned() {
+            Some(checkpoint) => {
+                self.catch_up_sync(header_batch, checkpoint).await?;
             }
-            // We see if we have this previous hash in the database, and reload our
-            // chain from that hash if so.
-            let fork_start_hash = header_batch.first().prev_blockhash;
-            if !self.contains_hash(fork_start_hash) {
-                self.load_fork(&header_batch).await?;
+            None => {
+                // Nothing left to do but add the headers to the chain
+                if self.tip().eq(&header_batch.first().prev_blockhash) {
+                    self.header_chain.extend(header_batch.inner());
+                    return Ok(());
+                }
+                // We see if we have this previous hash in the database, and reload our
+                // chain from that hash if so.
+                let fork_start_hash = header_batch.first().prev_blockhash;
+                if !self.contains_hash(fork_start_hash) {
+                    self.load_fork(&header_batch).await?;
+                }
+                // Check if the fork has more work.
+                self.evaluate_fork(&header_batch).await?;
             }
-            // Check if the fork has more work.
-            self.evaluate_fork(&header_batch).await?;
-        }
+        };
         self.manage_memory().await;
         Ok(())
     }
@@ -364,11 +366,13 @@ impl Chain {
     }
 
     /// Sync with extra requirements on checkpoints and forks
-    async fn catch_up_sync(&mut self, header_batch: HeadersBatch) -> Result<(), HeaderSyncError> {
-        assert!(!self.checkpoints.is_exhausted());
+    async fn catch_up_sync(
+        &mut self,
+        header_batch: HeadersBatch,
+        checkpoint: HeaderCheckpoint,
+    ) -> Result<(), HeaderSyncError> {
         // Eagerly append the batch to the chain
         self.header_chain.extend(header_batch.inner());
-        let checkpoint = self.checkpoints.next().unwrap();
         // We need to check a hard-coded checkpoint
         if self.height().ge(&checkpoint.height) {
             if self
@@ -400,11 +404,11 @@ impl Chain {
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
         }
-        // check the difficulty adjustment when possible
+        // TODO: check the difficulty adjustment when possible
         Ok(())
     }
 
-    // audit the difficulty adjustment of the blocks we received
+    // Audit the difficulty adjustment of the blocks we received
 
     // This function draws from the neutrino implemention, where even if a fork is valid
     // we only accept it if there is more work provided. otherwise, we disconnect the peer sending

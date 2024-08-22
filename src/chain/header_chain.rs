@@ -179,11 +179,12 @@ impl HeaderChain {
     // Remove old headers from the map to save memory, having saved them on disk
     pub(crate) fn move_up(&mut self) {
         let mut header_iter = self.headers.iter().rev().take(RESIZE).rev();
-        let (height, header) = header_iter.nth(0).unwrap();
-        self.anchor_checkpoint = HeaderCheckpoint::new(*height, header.block_hash());
-        self.headers = header_iter
-            .map(|(height, header)| (*height, *header))
-            .collect();
+        if let Some((height, header)) = header_iter.nth(0) {
+            self.anchor_checkpoint = HeaderCheckpoint::new(*height, header.block_hash());
+            self.headers = header_iter
+                .map(|(height, header)| (*height, *header))
+                .collect();
+        }
     }
 
     // Extend the current chain, potentially rewriting history. Higher order functions should decide what we extend
