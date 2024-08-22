@@ -619,7 +619,7 @@ impl Chain {
         // Disallow any filter that we do not have a block hash for
         match expected_filter_hash {
             Some(ref_hash) => {
-                if filter.filter_hash().await.ne(ref_hash) {
+                if filter.filter_hash().ne(ref_hash) {
                     return Err(CFilterSyncError::MisalignedFilterHash);
                 }
             }
