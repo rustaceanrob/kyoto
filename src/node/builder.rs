@@ -12,6 +12,53 @@ use crate::{
 use crate::{ConnectionType, TrustedPeer};
 
 /// Build a [`Node`] in an additive way.
+///
+/// # Examples
+///
+/// ```rust
+/// use std::net::{IpAddr, Ipv4Addr};
+/// use std::collections::HashSet;
+/// use kyoto::{NodeBuilder, Network};
+///
+/// let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), None);
+/// let builder = NodeBuilder::new(Network::Regtest);
+/// let (node, client) = builder
+///     .add_peers(vec![host.into()])
+///     .build_node()
+///     .unwrap();
+/// ```
+///
+/// More pratically, known Bitcoin scripts to monitor for may be added
+/// as the node is built.
+///
+/// ```rust
+/// use std::collections::HashSet;
+/// use std::str::FromStr;
+/// use kyoto::{HeaderCheckpoint, NodeBuilder, Network, Address, BlockHash};
+///
+/// let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+///     .unwrap()
+///     .require_network(Network::Signet)
+///     .unwrap()
+///     .into();
+/// let mut script_set = HashSet::new();
+/// script_set.insert(address);
+/// let builder = NodeBuilder::new(Network::Signet);
+/// // Add node preferences and build the node/client
+/// let (mut node, client) = builder
+///     // The Bitcoin scripts to monitor
+///     .add_scripts(script_set)
+///     // Only scan blocks strictly after an anchor checkpoint
+///     .anchor_checkpoint(HeaderCheckpoint::new(
+///         170_000,
+///         BlockHash::from_str("00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d")
+///             .unwrap(),
+///     ))
+///     // The number of connections we would like to maintain
+///     .num_required_peers(2)
+///     .build_node()
+///     .unwrap();
+/// ```
 pub struct NodeBuilder {
     config: NodeConfig,
     network: Network,
