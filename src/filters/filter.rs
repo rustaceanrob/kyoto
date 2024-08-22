@@ -7,24 +7,25 @@ use super::error::FilterError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Filter {
-    contents: Vec<u8>,
+    filter_hash: FilterHash,
     block_hash: BlockHash,
     block_filter: BlockFilter,
 }
 
 impl Filter {
     pub fn new(contents: Vec<u8>, block_hash: BlockHash) -> Self {
+        let hash = sha256d::Hash::hash(&contents);
+        let filter_hash = FilterHash::from_raw_hash(hash);
         let block_filter = BlockFilter::new(&contents);
         Self {
-            contents,
+            filter_hash,
             block_hash,
             block_filter,
         }
     }
 
-    pub async fn filter_hash(&self) -> FilterHash {
-        let hash = sha256d::Hash::hash(&self.contents);
-        FilterHash::from_raw_hash(hash)
+    pub fn filter_hash(&self) -> &FilterHash {
+        &self.filter_hash
     }
 
     fn block_hash(&self) -> &BlockHash {
