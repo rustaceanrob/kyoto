@@ -35,7 +35,6 @@ async fn main() {
         ))
         // The number of connections we would like to maintain
         .num_required_peers(2)
-        // Create the node and client, choosing not to store headers
         .build_node()
         .unwrap();
     // Run the node and wait for the sync message;

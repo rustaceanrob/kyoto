@@ -4,6 +4,62 @@
 //! device running the software. _Private_, as in the Bitcoin nodes that serve Kyoto data do not know what transactions the
 //! client is querying for, only the entire Bitcoin block. _Small_, as in the dependencies are meant to remain limited
 //! and vetted.
+//!
+//! # Example usage
+//!
+//! ```no_run
+//! use std::str::FromStr;
+//! use std::collections::HashSet;
+//! use kyoto::{NodeBuilder, NodeMessage, Address, Network, HeaderCheckpoint, BlockHash};
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     // Add third-party logging
+//!     let subscriber = tracing_subscriber::FmtSubscriber::new();
+//!     tracing::subscriber::set_global_default(subscriber).unwrap();
+//!     // Add Bitcoin scripts to scan the blockchain for
+//!     let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+//!         .unwrap()
+//!         .require_network(bitcoin::Network::Signet)
+//!         .unwrap()
+//!         .into();
+//!     let mut addresses = HashSet::new();
+//!     addresses.insert(address);
+//!     // Create a new node builder
+//!     let builder = NodeBuilder::new(Network::Signet);
+//!     // Add node preferences and build the node/client
+//!     let (mut node, client) = builder
+//!         // The Bitcoin scripts to monitor
+//!         .add_scripts(addresses)
+//!         // Only scan blocks strictly after an anchor checkpoint
+//!         .anchor_checkpoint(HeaderCheckpoint::new(
+//!             170_000,
+//!             BlockHash::from_str("00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d")
+//!                 .unwrap(),
+//!         ))
+//!         // The number of connections we would like to maintain
+//!         .num_required_peers(2)
+//!         .build_node()
+//!         .unwrap();
+//!     // Run the node and wait for the sync message;
+//!     tokio::task::spawn(async move { node.run().await });
+//!     // Split the client into components that send messages and listen to messages
+//!     let (sender, mut receiver) = client.split();
+//!     // Sync with the single script added
+//!     if let Ok(message) = receiver.recv().await {
+//!         match message {
+//!             NodeMessage::Dialog(d) => tracing::info!("{}", d),
+//!             NodeMessage::Warning(e) => tracing::warn!("{}", e),
+//!             NodeMessage::Synced(update) => {
+//!                 tracing::info!("Synced chain up to block {}", update.tip().height);
+//!                 tracing::info!("Chain tip: {}", update.tip().hash);
+//!             }
+//!             _ => (),
+//!         }
+//!     }
+//!     client.shutdown().await;
+//! }
+//! ```
 
 #![allow(dead_code)]
 #![warn(missing_docs)]
@@ -33,9 +89,15 @@ pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Tx
 pub use chain::checkpoints::HeaderCheckpoint;
 pub use chain::checkpoints::MAINNET_HEADER_CP;
 pub use chain::checkpoints::SIGNET_HEADER_CP;
+#[cfg(feature = "database")]
+pub use db::error::DatabaseError;
+pub use db::memory::peers::StatelessPeerStore;
+#[cfg(feature = "database")]
+pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 pub use db::traits::{HeaderStore, PeerStore};
 pub use node::builder::NodeBuilder;
 pub use node::client::{Client, ClientSender};
+pub use node::error::{ClientError, NodeError};
 pub use node::messages::{ClientMessage, NodeMessage, RejectPayload, SyncUpdate, Warning};
 pub use node::node::{Node, NodeState};
 pub use tokio::sync::broadcast::Receiver;
@@ -121,6 +183,26 @@ pub enum TxBroadcastPolicy {
 }
 
 /// A peer on the Bitcoin P2P network
+///
+/// # Building peers
+///
+/// ```rust
+/// use std::net::{IpAddr, Ipv4Addr};
+/// use kyoto::{TrustedPeer, ServiceFlags, AddrV2};
+///
+/// let local_host = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+/// let mut trusted = TrustedPeer::from_ip(local_host);
+/// // Optionally set the known services of the peer later.
+/// trusted.set_services(ServiceFlags::P2P_V2);
+///
+/// let local_host = Ipv4Addr::new(0, 0, 0, 0);
+/// // Or construct a trusted peer directly.
+/// let trusted = TrustedPeer::new(AddrV2::Ipv4(local_host), None, ServiceFlags::P2P_V2);
+///
+/// // Or implicitly with `into`
+/// let local_host = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+/// let trusted: TrustedPeer = (local_host, None).into();
+/// ```
 #[derive(Debug, Clone)]
 pub struct TrustedPeer {
     /// The IP address of the remote node to connect to.
