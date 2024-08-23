@@ -1,8 +1,8 @@
-//! Kyoto is a limited, private, and small Bitcoin client built in accordance
-//! with the [BIP-157](https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki) and [BIP-158](https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki)
-//! standards. _Limited_, as in Kyoto makes very little assumptions about the underlying resources of the
-//! device running the software. _Private_, as in the Bitcoin nodes that serve Kyoto data do not know what transactions the
-//! client is querying for, only the entire Bitcoin block. _Small_, as in the dependencies are meant to remain limited
+//! Kyoto is a conservative, private, and cohesive Bitcoin client built in accordance
+//! with the [BIP157](https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki) and [BIP158](https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki)
+//! standards. _Conservative_, as in Kyoto makes very little assumptions about the underlying memory requirements of the
+//! device running the software. _Private_, as in the Bitcoin nodes that serve Kyoto nodes data do not know what transactions the
+//! client is querying for, only the entire Bitcoin block. _Cohesive_, as in the dependencies of the core library are meant to remain limited
 //! and vetted.
 //!
 //! # Example usage
@@ -20,7 +20,7 @@
 //!     // Add Bitcoin scripts to scan the blockchain for
 //!     let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
 //!         .unwrap()
-//!         .require_network(bitcoin::Network::Signet)
+//!         .require_network(Network::Signet)
 //!         .unwrap()
 //!         .into();
 //!     let mut addresses = HashSet::new();
@@ -57,7 +57,7 @@
 //!             _ => (),
 //!         }
 //!     }
-//!     client.shutdown().await;
+//!     sender.shutdown().await;
 //! }
 //! ```
 

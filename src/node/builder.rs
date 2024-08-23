@@ -15,6 +15,8 @@ use crate::{ConnectionType, TrustedPeer};
 ///
 /// # Examples
 ///
+/// Nodes may be built with minimal configuration.
+///
 /// ```rust
 /// use std::net::{IpAddr, Ipv4Addr};
 /// use std::collections::HashSet;
@@ -28,7 +30,7 @@ use crate::{ConnectionType, TrustedPeer};
 ///     .unwrap();
 /// ```
 ///
-/// More pratically, known Bitcoin scripts to monitor for may be added
+/// Or, more pratically, known Bitcoin scripts to monitor for may be added
 /// as the node is built.
 ///
 /// ```rust
@@ -85,7 +87,8 @@ impl NodeBuilder {
         self
     }
 
-    /// Add a path to the directory where data should be stored.
+    /// Add a path to the directory where data should be stored. If none is provided, the current
+    /// working directory will be used.
     pub fn add_data_dir(mut self, path: PathBuf) -> Self {
         self.config.data_path = Some(path);
         self
@@ -93,7 +96,7 @@ impl NodeBuilder {
 
     /// Add the minimum number of peer connections that should be maintained by the node.
     /// Adding more connections increases the node's anonymity, but requires waiting for more responses,
-    /// higher bandwidth, and higher memory requirements.
+    /// higher bandwidth, and higher memory requirements. If none is provided, a single connection will be maintained.
     pub fn num_required_peers(mut self, num_peers: u8) -> Self {
         self.config.required_peers = num_peers;
         self
@@ -102,7 +105,7 @@ impl NodeBuilder {
     /// Set the desired number of peers for the database to keep track of. For limited or in-memory peer storage,
     /// this number may be small, however a sufficient margin of peers should be set so the node can try many options
     /// when downloading compact block filters. For nodes that store peers on disk, more peers will typically result in
-    /// fewer errors.
+    /// fewer errors. If none is provided, a limit of 4096 will be used.
     pub fn peer_db_size(mut self, target_num: u32) -> Self {
         self.config.target_peer_size = target_num;
         self
@@ -112,6 +115,7 @@ impl NodeBuilder {
     /// This may be from the same [`HeaderCheckpoint`] every time the node is ran, or from the last known sync height.
     /// In the case of a block reorganization, the node may scan for blocks below the given block height
     /// to accurately reflect which relevant blocks are in the best chain.
+    /// If none is provided, the _most recent_ checkpoint will be used.
     pub fn anchor_checkpoint(mut self, checkpoint: HeaderCheckpoint) -> Self {
         self.config.header_checkpoint = Some(checkpoint);
         self
