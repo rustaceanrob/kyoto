@@ -339,8 +339,8 @@ impl Chain {
             return Err(HeaderSyncError::PreCheckpointFork);
         }
 
-        // All the headers connect with each other
-        if !header_batch.all_connected().await {
+        // All the headers connect with each other and is the difficulty adjustment not absurd
+        if !header_batch.connected_with_valid_bits(&self.params).await {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
@@ -383,12 +383,6 @@ impl Chain {
             {
                 self.dialog
                     .send_dialog(format!("Found checkpoint, height: {}", checkpoint.height))
-                    .await;
-                self.dialog
-                    .send_dialog(format!(
-                        "Accumulated log base 2 chainwork: {:.2}",
-                        self.log2_work()
-                    ))
                     .await;
                 self.dialog
                     .send_dialog("Writing progress to disk...".into())

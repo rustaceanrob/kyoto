@@ -94,6 +94,10 @@ pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
         200000,
         "0000007d60f5ffc47975418ac8331c0ea52cf551730ef7ead7ff9082a536f13c",
     ),
+    (
+        210000,
+        "00000131de56604f752c0b072f468a2904e5d807e7ee79bd32a5be00bef17b2e",
+    ),
 ];
 
 /// Known block hashes on the Bitcoin blockchain.

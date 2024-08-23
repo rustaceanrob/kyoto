@@ -1,4 +1,4 @@
-use bitcoin::block::Header;
+use bitcoin::{block::Header, params::Params, Target};
 
 use crate::{
     impl_sourceless_error,
@@ -20,11 +20,15 @@ impl HeadersBatch {
     }
 
     // Are they all logically connected?
-    pub(crate) async fn all_connected(&self) -> bool {
+    pub(crate) async fn connected_with_valid_bits(&self, params: &Params) -> bool {
         self.batch
             .iter()
             .zip(self.batch.iter().skip(1))
-            .all(|(first, second)| first.block_hash().eq(&second.prev_blockhash))
+            .all(|(first, second)| {
+                let transition = Target::from_compact(first.bits).max_transition_threshold(params);
+                first.block_hash().eq(&second.prev_blockhash)
+                    && Target::from_compact(second.bits).le(&transition)
+            })
     }
 
     // Are all the blocks of sufficient work and meet their own target?
