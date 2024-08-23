@@ -12,21 +12,23 @@ use super::node::NodeState;
 /// Messages receivable by a running node.
 #[derive(Debug, Clone)]
 pub enum NodeMessage {
-    /// Human readable dialog of what the node is currently doing
+    /// Human readable dialog of what the node is currently doing.
     Dialog(String),
-    /// A warning that may effect the function of the node
+    /// A warning that may effect the function of the node.
     Warning(Warning),
-    /// The current state of the node in the syncing process
+    /// The current state of the node in the syncing process.
     StateChange(NodeState),
-    /// The node is connected to all required peers
+    /// The node is connected to all required peers.
     ConnectionsMet,
-    /// A relevant transaction based on the user provided scripts
+    /// A relevant transaction based on the user provided scripts.
     Transaction(IndexedTransaction),
-    /// A relevant [`crate::Block`] based on the user provided scripts
+    /// A relevant [`crate::Block`] based on the user provided scripts.
+    /// Note that the block may not contain any transactions contained in the script set.
+    /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
-    /// The node is fully synced, having scanned the requested range
+    /// The node is fully synced, having scanned the requested range.
     Synced(SyncUpdate),
-    /// Blocks were reorganized out of the chain
+    /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A transaction was sent to one or more connected peers.
     /// This does not guarentee the transaction will be relayed or accepted by the peers,
@@ -103,17 +105,18 @@ pub enum Warning {
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
+    /// Recoverable by deleting the headers from the database or starting from a higher point in the chain.
     UnlinkableAnchor,
-    /// The headers in the database do not link together.
+    /// The headers in the database do not link together. Recoverable by deleting the database.
     CorruptedHeaders,
-    /// A transaction got rejected.
+    /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
     TransactionRejected,
     /// A database failed to persist some data.
     FailedPersistance {
         /// Additional context for the persistance failure.
         warning: String,
     },
-    /// The peer sent us a potential fork
+    /// The peer sent us a potential fork.
     EvaluatingFork,
     /// The peer database has no values.
     EmptyPeerDatabase,

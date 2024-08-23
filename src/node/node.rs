@@ -55,11 +55,11 @@ pub enum NodeState {
     Behind,
     /// We may start downloading compact block filter headers.
     HeadersSynced,
-    /// We may start scanning compact block filters
+    /// We may start scanning compact block filters.
     FilterHeadersSynced,
-    /// We may start asking for blocks with matches
+    /// We may start asking for blocks with matches.
     FiltersSynced,
-    /// We found all known transactions to the wallet
+    /// We found all known transactions to the wallet.
     TransactionsSynced,
 }
 

@@ -14,8 +14,6 @@
 
 ## About
 
-⚠️ **Warning**: This project is under development and is not currently suitable for use ⚠️
-
 Kyoto is aiming to be a simple, memory-conservative, and private Bitcoin client for developers to build wallet applications. To read more about the scope, usage recommendations, and implementation details, see [DETAILS.md](./doc/DETAILS.md).
 
 ## Running an example
@@ -31,9 +29,16 @@ cargo run --example signet
 The following snippet demonstrates how to build a Kyoto node. See the docs for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
 ```rust
-use kyoto::NodeBuilder;
-use kyoto::TrustedPeer;
+use std::collections::HashSet;
+use kyoto::{NodeBuilder, NodeMessage, Address, Network, HeaderCheckpoint, BlockHash, TrustedPeer};
 
+let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+    .unwrap()
+    .require_network(Network::Signet)
+    .unwrap()
+    .into();
+let mut addresses = HashSet::new();
+addresses.insert(address);
 let builder = NodeBuilder::new(bitcoin::Network::Signet);
 // Add node preferences and build the node/client
 let (mut node, mut client) = builder
@@ -51,12 +56,12 @@ let (mut node, mut client) = builder
     .num_required_peers(2)
     // Create the node and client
     .build_node()
-    .unwrap()
+    .unwrap();
 ```
 
 #### Minimum Supported Rust Version (MSRV) Policy
 
-The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`. 
+The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`.
 
 While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
 
@@ -75,3 +80,8 @@ To run the unit tests, `cargo fmt`, `clippy`, and an example:
 sh scripts/pr.sh
 ```
 
+#### Contributing
+
+Please read [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
