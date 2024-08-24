@@ -22,6 +22,7 @@ impl Broadcaster {
         core::mem::take(&mut self.queue)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn next(&mut self) -> Option<TxBroadcast> {
         self.queue.pop()
     }

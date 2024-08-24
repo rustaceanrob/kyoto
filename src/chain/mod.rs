@@ -4,6 +4,7 @@ pub(crate) mod chain;
 /// Expected block header checkpoints and corresponding structure.
 pub mod checkpoints;
 /// Errors associated with the blockchain representation.
+#[allow(dead_code)]
 pub mod error;
 pub(crate) mod header_batch;
 pub(crate) mod header_chain;

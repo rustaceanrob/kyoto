@@ -56,6 +56,7 @@ pub(crate) struct Chain {
     dialog: Dialog,
 }
 
+#[allow(dead_code)]
 impl Chain {
     pub(crate) fn new(
         network: &Network,
@@ -712,6 +713,7 @@ impl Chain {
     }
 
     // Should we care about this block
+    #[allow(dead_code)]
     fn scan_outputs(&mut self, inputs: &[TxOut]) -> bool {
         inputs
             .iter()

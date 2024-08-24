@@ -42,6 +42,7 @@ impl QueuedCFHeader {
         (self.block_hash, self.filter_hash)
     }
 
+    #[allow(dead_code)]
     fn header_and_hash(&self) -> (FilterHeader, FilterHash) {
         (self.filter_header, self.filter_hash)
     }
@@ -65,11 +66,12 @@ pub(crate) struct CFHeaderChain {
     current_quorum: usize,
 }
 
+#[allow(dead_code)]
 impl CFHeaderChain {
     pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint, quorum_required: usize) -> Self {
         Self {
             anchor_checkpoint,
-            hash_chain: HashMap::new(),
+            hash_chain: HashMap::with_capacity(INITIAL_BUFFER_SIZE),
             merged_queue: None,
             prev_stophash_request: None,
             prev_header: None,

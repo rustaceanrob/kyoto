@@ -35,7 +35,6 @@ const INITIAL_HEADER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
 /// Header storage implementation with SQL Lite.
 #[derive(Debug)]
 pub struct SqliteHeaderDb {
-    network: Network,
     conn: Arc<Mutex<Connection>>,
 }
 
@@ -67,7 +66,6 @@ impl SqliteHeaderDb {
         Self::migrate(&conn)?;
 
         Ok(Self {
-            network,
             conn: Arc::new(Mutex::new(conn)),
         })
     }

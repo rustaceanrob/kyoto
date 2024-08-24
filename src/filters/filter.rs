@@ -12,6 +12,7 @@ pub(crate) struct Filter {
     block_filter: BlockFilter,
 }
 
+#[allow(dead_code)]
 impl Filter {
     pub fn new(contents: Vec<u8>, block_hash: BlockHash) -> Self {
         let hash = sha256d::Hash::hash(&contents);

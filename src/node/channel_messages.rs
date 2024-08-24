@@ -53,6 +53,7 @@ pub(crate) enum PeerMessage {
     Disconnect,
     Verack,
     Ping(u64),
+    #[allow(dead_code)]
     Pong(u64),
 }
 

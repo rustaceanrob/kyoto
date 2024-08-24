@@ -68,6 +68,7 @@ pub(crate) struct PeerMap {
     net_groups: HashSet<String>,
 }
 
+#[allow(dead_code)]
 impl PeerMap {
     pub fn new(
         mtx: Sender<PeerThreadMessage>,

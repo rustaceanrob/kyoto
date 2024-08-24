@@ -61,7 +61,6 @@
 //! }
 //! ```
 
-#![allow(dead_code)]
 #![warn(missing_docs)]
 /// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
@@ -113,6 +112,7 @@ pub struct IndexedTransaction {
     pub hash: BlockHash,
 }
 
+#[allow(dead_code)]
 impl IndexedTransaction {
     pub(crate) fn new(transaction: Transaction, height: u32, hash: BlockHash) -> Self {
         Self {
