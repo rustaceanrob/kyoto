@@ -2,6 +2,7 @@ use core::{future::Future, pin::Pin};
 
 use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, params::Params, Network};
 
+#[allow(dead_code)]
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
 pub const MEDIAN_TIME_PAST: usize = 11;
 

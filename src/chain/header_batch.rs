@@ -68,6 +68,7 @@ impl HeadersBatch {
             .expect("headers have at least one element by construction")
     }
 
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.batch.len()
     }

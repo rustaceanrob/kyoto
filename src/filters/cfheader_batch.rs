@@ -37,6 +37,7 @@ impl CFHeaderBatch {
         self.inner.len()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner(&self) -> Vec<(FilterHeader, FilterHash)> {
         self.inner.clone()
     }

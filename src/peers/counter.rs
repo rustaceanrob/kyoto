@@ -37,10 +37,6 @@ impl MessageCounter {
         self.verack -= 1;
     }
 
-    pub(crate) fn got_header(&mut self) {
-        self.header -= 1;
-    }
-
     pub(crate) fn got_filter_header(&mut self) {
         self.filter_header -= 1;
     }
@@ -59,10 +55,6 @@ impl MessageCounter {
 
     pub(crate) fn got_reject(&mut self) {
         self.tx -= 1;
-    }
-
-    pub(crate) fn sent_header(&mut self) {
-        self.header += 1;
     }
 
     pub(crate) fn sent_filter_header(&mut self) {

@@ -7,10 +7,12 @@ use bitcoin::{
 pub(crate) mod counter;
 #[cfg(feature = "dns")]
 pub(crate) mod dns;
+#[allow(dead_code)]
 pub(crate) mod error;
 pub(crate) mod outbound_messages;
 pub(crate) mod parsers;
 pub(crate) mod peer;
+#[allow(dead_code)]
 pub(crate) mod reader;
 #[cfg(feature = "tor")]
 pub(crate) mod tor;

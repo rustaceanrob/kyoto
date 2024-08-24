@@ -57,6 +57,7 @@ impl HeaderChain {
     }
 
     // All the headers of the chain
+    #[allow(dead_code)]
     pub(crate) fn values(&self) -> Vec<Header> {
         self.headers.values().copied().collect()
     }
@@ -245,6 +246,7 @@ impl HeaderChain {
     }
 
     // Clear all the headers from our chain. Only to be used when a peer has feed us faulty checkpoints
+    #[allow(dead_code)]
     pub(crate) fn clear_all(&mut self) {
         self.headers.clear()
     }
