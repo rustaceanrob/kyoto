@@ -2,7 +2,7 @@ use crate::{
     chain::error::HeaderPersistenceError, db::error::PeerManagerError, impl_sourceless_error,
 };
 
-use super::messages::RejectPayload;
+use super::messages::FailurePayload;
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
@@ -43,7 +43,7 @@ pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
     SendError,
     /// The transaction was not broadcast to any peers.
-    BroadcastFailure(RejectPayload),
+    BroadcastFailure(FailurePayload),
 }
 
 impl core::fmt::Display for ClientError {

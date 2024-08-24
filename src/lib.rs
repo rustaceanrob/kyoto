@@ -98,7 +98,7 @@ pub use db::traits::{HeaderStore, PeerStore};
 pub use node::builder::NodeBuilder;
 pub use node::client::{Client, ClientSender};
 pub use node::error::{ClientError, NodeError};
-pub use node::messages::{ClientMessage, NodeMessage, RejectPayload, SyncUpdate, Warning};
+pub use node::messages::{ClientMessage, FailurePayload, NodeMessage, SyncUpdate, Warning};
 pub use node::node::{Node, NodeState};
 pub use tokio::sync::broadcast::Receiver;
 
