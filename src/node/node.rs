@@ -28,7 +28,7 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
     node::peer_map::PeerMap,
-    ConnectionType, TrustedPeer, TxBroadcastPolicy,
+    ConnectionType, FailurePayload, TrustedPeer, TxBroadcastPolicy,
 };
 
 use super::{
@@ -353,7 +353,7 @@ impl Node {
         if peer_map.live().ge(&self.required_peers) {
             for transaction in broadcaster.queue() {
                 let txid = transaction.tx.compute_txid();
-                match transaction.broadcast_policy {
+                let did_broadcast = match transaction.broadcast_policy {
                     TxBroadcastPolicy::AllPeers => {
                         self.dialog
                             .send_dialog(format!(
@@ -363,7 +363,7 @@ impl Node {
                             .await;
                         peer_map
                             .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await;
+                            .await
                     }
                     TxBroadcastPolicy::RandomPeer => {
                         self.dialog
@@ -371,10 +371,18 @@ impl Node {
                             .await;
                         peer_map
                             .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await;
+                            .await
                     }
+                };
+                if did_broadcast {
+                    self.dialog.send_data(NodeMessage::TxSent(txid)).await;
+                } else {
+                    self.dialog
+                        .send_data(NodeMessage::TxBroadcastFailure(FailurePayload::from_txid(
+                            txid,
+                        )))
+                        .await;
                 }
-                self.dialog.send_data(NodeMessage::TxSent(txid)).await;
             }
         }
     }

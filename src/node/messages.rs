@@ -34,8 +34,8 @@ pub enum NodeMessage {
     /// This does not guarentee the transaction will be relayed or accepted by the peers,
     /// only that the message was sent over the wire.
     TxSent(Txid),
-    /// A problem occured sending a transaction.
-    TxBroadcastFailure(RejectPayload),
+    /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
+    TxBroadcastFailure(FailurePayload),
 }
 
 /// The node has synced to a new tip of the chain.
@@ -73,11 +73,17 @@ impl SyncUpdate {
 
 /// An attempt to broadcast a tranasction failed.
 #[derive(Debug, Clone, Copy)]
-pub struct RejectPayload {
+pub struct FailurePayload {
     /// An enumeration of the reason for the transaction failure.
-    pub reason: RejectReason,
+    pub reason: Option<RejectReason>,
     /// The transaction that was rejected.
     pub txid: Txid,
+}
+
+impl FailurePayload {
+    pub(crate) fn from_txid(txid: Txid) -> Self {
+        Self { reason: None, txid }
+    }
 }
 
 /// Commands to issue a node.

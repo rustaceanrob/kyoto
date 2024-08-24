@@ -9,7 +9,7 @@ use bitcoin::{
     Block, BlockHash, Transaction,
 };
 
-use crate::node::messages::RejectPayload;
+use crate::node::messages::FailurePayload;
 
 #[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {
@@ -49,7 +49,7 @@ pub(crate) enum PeerMessage {
     Filter(CFilter),
     Block(Block),
     NewBlocks(Vec<BlockHash>),
-    Reject(RejectPayload),
+    Reject(FailurePayload),
     Disconnect,
     Verack,
     Ping(u64),

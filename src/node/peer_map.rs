@@ -219,20 +219,25 @@ impl PeerMap {
         }
     }
 
-    // Broadcast to all connected peers
-    pub async fn broadcast(&mut self, message: MainThreadMessage) {
+    // Broadcast to all connected peers, returning if at least one peer received the message.
+    pub async fn broadcast(&mut self, message: MainThreadMessage) -> bool {
         let active = self.map.values().filter(|peer| !peer.handle.is_finished());
+        let mut sends = Vec::new();
         for peer in active {
-            let _ = peer.ptx.send(message.clone()).await;
+            let res = peer.ptx.send(message.clone()).await;
+            sends.push(res.is_ok());
         }
+        sends.into_iter().any(|res| res)
     }
 
-    // Send to a random peer
-    pub async fn send_random(&mut self, message: MainThreadMessage) {
+    // Send to a random peer, returning true if the message was sent.
+    pub async fn send_random(&mut self, message: MainThreadMessage) -> bool {
         let mut rng = StdRng::from_entropy();
         if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
-            let _ = peer.ptx.send(message).await;
+            let res = peer.ptx.send(message).await;
+            return res.is_ok();
         }
+        false
     }
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
