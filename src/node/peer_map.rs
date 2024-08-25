@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use bitcoin::{
@@ -66,10 +66,12 @@ pub(crate) struct PeerMap {
     dialog: Dialog,
     target_db_size: u32,
     net_groups: HashSet<String>,
+    response_timeout: Duration,
 }
 
 #[allow(dead_code)]
 impl PeerMap {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
         network: Network,
@@ -78,6 +80,7 @@ impl PeerMap {
         dialog: Dialog,
         connection_type: ConnectionType,
         target_db_size: u32,
+        response_timeout: Duration,
     ) -> Self {
         let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
             ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
@@ -99,6 +102,7 @@ impl PeerMap {
             dialog,
             target_db_size,
             net_groups: HashSet::new(),
+            response_timeout,
         }
     }
 
@@ -160,6 +164,7 @@ impl PeerMap {
             prx,
             loaded_peer.services,
             self.dialog.clone(),
+            self.response_timeout,
         );
         let mut connector = self.connector.lock().await;
         if !connector.can_connect(&loaded_peer.addr) {

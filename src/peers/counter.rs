@@ -1,8 +1,9 @@
+use std::time::Duration;
+
 use tokio::time::Instant;
 
 // A peer cannot send 100,000 ADDR messages in one connection.
 const ADDR_HARD_LIMIT: i32 = 100_000;
-const FIVE_SEC: u64 = 5;
 
 // Very simple denial of service protection so a peer cannot spam us with unsolicited messages.
 #[derive(Debug, Clone)]
@@ -19,9 +20,9 @@ pub(crate) struct MessageCounter {
 }
 
 impl MessageCounter {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(timeout: Duration) -> Self {
         Self {
-            timer: MessageTimer::new(),
+            timer: MessageTimer::new(timeout),
             version: 1,
             verack: 1,
             header: 0,
@@ -120,11 +121,15 @@ impl MessageCounter {
 #[derive(Debug, Clone)]
 pub(crate) struct MessageTimer {
     tracked_time: Option<Instant>,
+    timeout: Duration,
 }
 
 impl MessageTimer {
-    pub(crate) fn new() -> Self {
-        Self { tracked_time: None }
+    pub(crate) fn new(timeout: Duration) -> Self {
+        Self {
+            tracked_time: None,
+            timeout,
+        }
     }
 
     pub(crate) fn track(&mut self) {
@@ -137,7 +142,7 @@ impl MessageTimer {
 
     pub(crate) fn unresponsive(&self) -> bool {
         match self.tracked_time {
-            Some(time) => Instant::now().duration_since(time).as_secs() > FIVE_SEC,
+            Some(time) => Instant::now().duration_since(time) > self.timeout,
             None => false,
         }
     }
@@ -154,7 +159,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "time wasting"]
     async fn test_timer_works() {
-        let mut timer = MessageTimer::new();
+        let mut timer = MessageTimer::new(Duration::from_secs(3));
         assert!(!timer.unresponsive());
         timer.track();
         assert!(!timer.unresponsive());
@@ -170,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_counter_works() {
-        let mut counter = MessageCounter::new();
+        let mut counter = MessageCounter::new(Duration::from_secs(3));
         counter.sent_version();
         counter.got_version();
         assert!(counter.timer.tracked_time.is_some());
