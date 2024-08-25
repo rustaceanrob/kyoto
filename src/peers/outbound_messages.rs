@@ -21,7 +21,7 @@ use crate::{node::channel_messages::GetBlockConfig, prelude::default_port_from_n
 
 use super::{error::PeerError, traits::MessageGenerator};
 
-pub const PROTOCOL_VERSION: u32 = 70016;
+pub const PROTOCOL_VERSION: u32 = 70002;
 
 pub(crate) struct V1OutboundMessage {
     network: Network,
