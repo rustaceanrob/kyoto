@@ -10,6 +10,7 @@ use tokio::{
         mpsc::{self, Receiver, Sender},
         Mutex,
     },
+    time::Instant,
 };
 
 use crate::{
@@ -36,6 +37,8 @@ use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 2;
+//                   sec  min  hour
+const ONE_DAY: u64 = 60 * 60 * 24;
 const MAX_RESPONSE: [u8; 4096] = [0; 4096];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
@@ -77,6 +80,7 @@ impl Peer {
         reader: StreamReader,
         writer: StreamWriter,
     ) -> Result<(), PeerError> {
+        let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
         let mut lock = writer.lock().await;
         let writer = lock.deref_mut();
@@ -142,6 +146,15 @@ impl Peer {
             }
             if self.message_counter.unresponsive() {
                 self.dialog.send_warning(Warning::PeerTimedOut).await;
+                return Ok(());
+            }
+            if Instant::now().duration_since(start_time) > Duration::from_secs(ONE_DAY) {
+                self.dialog
+                    .send_dialog(format!(
+                        "The connection to peer {} has been maintained for over 24 hours, finding a new peer",
+                        self.nonce
+                    ))
+                    .await;
                 return Ok(());
             }
             select! {
