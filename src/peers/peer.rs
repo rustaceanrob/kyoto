@@ -34,7 +34,7 @@ use super::outbound_messages::V2OutboundMessage;
 #[cfg(not(feature = "tor"))]
 use super::parsers::V2MessageParser;
 
-const CONNECTION_TIMEOUT: u64 = 2;
+const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 2;
 const MAX_RESPONSE: [u8; 4096] = [0; 4096];
 
@@ -58,8 +58,9 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
         services: ServiceFlags,
         dialog: Dialog,
+        timeout: Duration,
     ) -> Self {
-        let message_counter = MessageCounter::new();
+        let message_counter = MessageCounter::new(timeout);
         Self {
             nonce,
             main_thread_sender,
@@ -145,7 +146,7 @@ impl Peer {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(Duration::from_secs(CONNECTION_TIMEOUT), rx.recv()) => {
+                peer_message = tokio::time::timeout(Duration::from_secs(MESSAGE_TIMEOUT), rx.recv()) => {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {

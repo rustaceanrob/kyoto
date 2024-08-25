@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 use bitcoin::{Network, ScriptBuf};
 
@@ -124,6 +124,15 @@ impl NodeBuilder {
     /// Set the desired communication channel. Either directly over TCP or over the Tor network.
     pub fn set_connection_type(mut self, connection_type: ConnectionType) -> Self {
         self.config.connection_type = connection_type;
+        self
+    }
+
+    /// Set the time duration a peer has to respond to a message from the local node.
+    /// Note that, on test networks, new block propagation is empirically faster than
+    /// the Bitcoin network. Longer durations may allow blocks to propagate and for
+    /// new `inv` messages to be sent. If none is provided, a timeout of 5 seconds will be used.
+    pub fn set_response_timeout(mut self, timeout: Duration) -> Self {
+        self.config.response_timeout = timeout;
         self
     }
 

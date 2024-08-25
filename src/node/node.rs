@@ -87,6 +87,7 @@ impl Node {
         required_peers: usize,
         target_peer_size: u32,
         connection_type: ConnectionType,
+        timeout: Duration,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> (Self, Client) {
@@ -108,6 +109,7 @@ impl Node {
             dialog.clone(),
             connection_type,
             target_peer_size,
+            timeout,
         )));
         // Set up the transaction broadcaster
         let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
@@ -156,6 +158,7 @@ impl Node {
             config.required_peers as usize,
             config.target_peer_size,
             config.connection_type,
+            config.response_timeout,
             peer_store,
             header_store,
         )
