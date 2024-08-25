@@ -71,6 +71,9 @@ impl Reader {
                         addr
                     })
                     .collect();
+                if addresses.is_empty() {
+                    return None;
+                }
                 Some(PeerMessage::Addr(addresses))
             }
             NetworkMessage::Inv(inventory) => {
@@ -147,6 +150,9 @@ impl Reader {
                         ip
                     })
                     .collect();
+                if addresses.is_empty() {
+                    return None;
+                }
                 Some(PeerMessage::Addr(addresses))
             }
             NetworkMessage::SendAddrV2 => None,
