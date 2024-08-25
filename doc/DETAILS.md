@@ -9,8 +9,8 @@ This document outlines some miscellaneous information about the project and some
 ### Functional Goals
 
 - [x] Provide an archival index for blocks and transactions related to a set of `scriptPubKey`, presumably because the user is interested in transactions with these scripts involved.
-- [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Once BIP-324 is integrated, communication over the P2P network will also be encrypted.
-- [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network.
+- [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Messages will be encrypted if remote nodes advertise support for BIP324. Kyoto also offers experimental support for Tor routing.
+- [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network. Particularly in tradeoffs between finding reliable peers, trying new peers, and eclipse attacks.
 - [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
 
 ### Out of Scope
@@ -23,11 +23,23 @@ While Kyoto is configurable, there are tradeoffs to each configuration, and some
 
 ### Privacy
 
-Under the assumption that only a few connections should be maintained, broadcasting transactions in a privacy-focused way presents a challenge. Reliable, seeded peers speed up the syncing process, but broadcasting transactions to seeded peers does not offer a significant privacy benefit compared to simply using a server. As such, it is recommended to use one or two seeded peers, but to allow connections for one or more random peers found by network gossip. When broadcasting a transaction, you may then broadcast your transaction to a random peer. When reaching out to nodes, the Kyoto version message does not contain your users' IP addresses, only _127.0.0.1_, so packet association by nodes you connect is made harder. When downloading blocks, requests are always made to random peers, so scanning for outputs associated with your scripts has a great anonymity set.
+Under the assumption that only a few connections should be maintained, broadcasting transactions in a privacy-focused way presents a challenge. Reliable, seeded peers speed up the syncing process, but broadcasting transactions to seeded peers does not offer a significant privacy benefit compared to simply using a server. As such, it is recommended to use a seeded peer, but to allow connections for one or more random peers found by network gossip. When broadcasting a transaction, you may then broadcast your transaction to a random peer. When reaching out to nodes, the Kyoto version message does not contain your users' IP addresses, only _127.0.0.1_, so packet association by nodes you connect is made harder. When downloading blocks, requests are always made to random peers, so scanning for outputs associated with your scripts has a great anonymity set.
 
 ### Runtime
 
 Kyoto does not require a large memory overhead like a modern video game for instance. From experience in experimentation, Kyoto is able to perform well with a single operating system thread which spawns a _multithreaded_ `tokio` runtime. The runtime must be multithreaded as Kyoto internally uses `tokio::task::spawn`, however, there is no limitation in first using `std::thread::spawn` and building a `tokio` multithreaded runtime within that handle.
+
+```rust
+std::thread::spawn(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            node.run().await;
+        })
+});
+```
 
 ### Hosting a Full Archival Node
 
@@ -43,21 +55,23 @@ The wallet required 12 block downloads, and took 5 minutes.
 
 #### Network
 
-- Received 1.1 GB of data from the remote node
-- Sent 34.4 KB
-- Averaged 5 MB/s downloads
+| Received | Sent    | Average     |
+| -------- | ------- | ----------- |
+| 1.1 GB   | 34.4 KB | 5 MB/second |
 
 #### Energy Impact
 
-- Very high
-- 32.9% "overhead"
-- 30.4% CPU
-- 36.5% Network
+| Battery usage    |
+| ---------------- |
+| 32.9% "overhead" |
+| 30.4% CPU        |
+| 36.5% Network    |
 
 #### Memory
 
-- Maximum of 37.7 MB
-- Average of 35.5 MB
+| Maximum | Average |
+| ------- | ------- |
+| 37.7 MB | 35.5 MD |
 
 #### CPU
 
@@ -69,7 +83,7 @@ This section details what behavior to expect when using Kyoto, and why such deci
 
 ### Peer Selection
 
-Kyoto will first connect to all of the configured peers to maintain the connection requirement, and will use peers gleaned from the peer-to-peer gossip thereafter. If no peers are configured when building the node, and no peers are in the database, Kyoto will resort to DNS. Kyoto will not select a peer of the same netgroup (/16) as a previously connected peer.
+Kyoto will first connect to all of the configured peers to maintain the connection requirement, and will use peers gleaned from the peer-to-peer gossip thereafter. If no peers are configured when building the node, and no peers are in the database, Kyoto will resort to DNS. Kyoto will not select a peer of the same netgroup (`/16`) as a previously connected peer. When selecting a new peer from the database, a random preference will be selected between a "new" peer and a peer that has been "tried." Rational is derived from [this research](https://www.ethanheilman.com/p/eclipse/index.html)
 
 ### Block Headers and Storage
 
