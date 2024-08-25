@@ -35,6 +35,7 @@ use super::outbound_messages::V2OutboundMessage;
 use super::parsers::V2MessageParser;
 
 const CONNECTION_TIMEOUT: u64 = 2;
+const HANDSHAKE_TIMEOUT: u64 = 2;
 const MAX_RESPONSE: [u8; 4096] = [0; 4096];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
@@ -87,7 +88,12 @@ impl Peer {
         let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
             let mut lock = reader.lock().await;
             let read_lock = lock.deref_mut();
-            let handshake_result = self.try_handshake(writer, read_lock).await;
+            let handshake_result = tokio::time::timeout(
+                Duration::from_secs(HANDSHAKE_TIMEOUT),
+                self.try_handshake(writer, read_lock),
+            )
+            .await
+            .map_err(|_| PeerError::HandshakeFailed)?;
             if let Err(ref e) = handshake_result {
                 self.dialog
                     .send_dialog(format!("Failed to establish an encrypted connection: {e}"))
