@@ -1,10 +1,13 @@
 use tokio::time::Instant;
 
+// A peer cannot send 100,000 ADDR messages in one connection.
+const ADDR_HARD_LIMIT: i32 = 100_000;
 const FIVE_SEC: u64 = 5;
 
 // Very simple denial of service protection so a peer cannot spam us with unsolicited messages.
 #[derive(Debug, Clone)]
 pub(crate) struct MessageCounter {
+    timer: MessageTimer,
     version: i8,
     verack: i8,
     header: i32,
@@ -18,6 +21,7 @@ pub(crate) struct MessageCounter {
 impl MessageCounter {
     pub(crate) fn new() -> Self {
         Self {
+            timer: MessageTimer::new(),
             version: 1,
             verack: 1,
             header: 0,
@@ -34,14 +38,21 @@ impl MessageCounter {
     }
 
     pub(crate) fn got_verack(&mut self) {
+        self.timer.untrack();
         self.verack -= 1;
     }
 
+    pub(crate) fn got_header(&mut self) {
+        self.timer.untrack();
+    }
+
     pub(crate) fn got_filter_header(&mut self) {
+        self.timer.untrack();
         self.filter_header -= 1;
     }
 
     pub(crate) fn got_filter(&mut self) {
+        self.timer.untrack();
         self.filters -= 1;
     }
 
@@ -50,6 +61,7 @@ impl MessageCounter {
     }
 
     pub(crate) fn got_block(&mut self) {
+        self.timer.untrack();
         self.block -= 1;
     }
 
@@ -57,19 +69,30 @@ impl MessageCounter {
         self.tx -= 1;
     }
 
+    pub(crate) fn sent_version(&mut self) {
+        self.timer.track();
+    }
+
+    pub(crate) fn sent_header(&mut self) {
+        self.timer.track();
+    }
+
     pub(crate) fn sent_filter_header(&mut self) {
+        self.timer.track();
         self.filter_header += 1;
     }
 
     pub(crate) fn sent_filters(&mut self) {
+        self.timer.track();
         self.filters += 1000;
     }
 
     pub(crate) fn sent_addrs(&mut self) {
-        self.addrs += 5;
+        self.addrs += ADDR_HARD_LIMIT;
     }
 
     pub(crate) fn sent_block(&mut self) {
+        self.timer.track();
         self.block += 1;
     }
 
@@ -86,6 +109,10 @@ impl MessageCounter {
             || self.addrs < 0
             || self.block < 0
             || self.tx < 0
+    }
+
+    pub(crate) fn unresponsive(&self) -> bool {
+        self.timer.unresponsive()
     }
 }
 
@@ -122,7 +149,7 @@ mod tests {
 
     use tokio::time;
 
-    use super::MessageTimer;
+    use super::*;
 
     #[tokio::test]
     #[ignore = "time wasting"]
@@ -139,5 +166,36 @@ mod tests {
         assert!(!timer.unresponsive());
         time::sleep(Duration::from_secs(6)).await;
         assert!(timer.unresponsive());
+    }
+
+    #[test]
+    fn test_counter_works() {
+        let mut counter = MessageCounter::new();
+        counter.sent_version();
+        counter.got_version();
+        assert!(counter.timer.tracked_time.is_some());
+        counter.got_verack();
+        assert!(counter.timer.tracked_time.is_none());
+        counter.sent_header();
+        assert!(counter.timer.tracked_time.is_some());
+        counter.got_header();
+        assert!(counter.timer.tracked_time.is_none());
+        counter.sent_addrs();
+        counter.sent_filter_header();
+        assert!(counter.timer.tracked_time.is_some());
+        counter.got_filter_header();
+        assert!(counter.timer.tracked_time.is_none());
+        counter.sent_filters();
+        assert!(counter.timer.tracked_time.is_some());
+        counter.got_filter();
+        assert!(counter.timer.tracked_time.is_none());
+        counter.sent_block();
+        assert!(counter.timer.tracked_time.is_some());
+        counter.got_block();
+        assert!(counter.timer.tracked_time.is_none());
+        counter.got_addrs();
+        assert!(!counter.unsolicited());
+        counter.got_verack();
+        assert!(counter.unsolicited());
     }
 }
