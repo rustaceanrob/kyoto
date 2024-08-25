@@ -110,6 +110,8 @@ pub enum Warning {
     CouldNotConnect,
     /// A connection was maintained, but the peer does not signal for compact block filers.
     NoCompactFilters,
+    /// The node has been waiting for new `inv` and will request block headers.
+    PotentialStaleTip,
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
@@ -150,6 +152,12 @@ impl core::fmt::Display for Warning {
             }
             Warning::NoCompactFilters => {
                 write!(f, "A connected peer does not serve compact block filters.")
+            }
+            Warning::PotentialStaleTip => {
+                write!(
+                    f,
+                    "The node has been running for a long duration without receiving new blocks."
+                )
             }
             Warning::TransactionRejected => write!(f, "A transaction got rejected."),
             Warning::FailedPersistance { warning } => {

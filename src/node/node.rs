@@ -42,9 +42,11 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
+    LastBlockMonitor,
 };
 
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
+const LOOP_TIMEOUT: u64 = 1;
 
 type Whitelist = Option<Vec<TrustedPeer>>;
 
@@ -179,18 +181,19 @@ impl Node {
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.fetch_headers().await?;
+        let mut last_block = LastBlockMonitor::new();
         loop {
             // Try to advance the state of the node
-            self.advance_state().await;
+            self.advance_state(&last_block).await;
             // Connect to more peers if we need them and remove old connections
             self.dispatch().await?;
-            // If there are blocks in the queue, we should request them of a random peer
+            // If there are blocks we need in the queue, we should request them of a random peer
             self.get_blocks().await;
             // If we have a transaction to broadcast and we are connected to peers, we should broadcast them
             self.broadcast_transactions().await;
             // Either handle a message from a remote peer or from our client
             select! {
-                peer = tokio::time::timeout(Duration::from_secs(1), self.peer_recv.recv()) => {
+                peer = tokio::time::timeout(Duration::from_secs(LOOP_TIMEOUT), self.peer_recv.recv()) => {
                     match peer {
                         Ok(Some(peer_thread)) => {
                             match peer_thread.message {
@@ -209,6 +212,7 @@ impl Node {
                                 }
                                 PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                                 PeerMessage::Headers(headers) => {
+                                    last_block.update();
                                     self.dialog.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
                                         .await;
                                     match self.handle_headers(peer_thread.nonce, headers).await {
@@ -389,7 +393,7 @@ impl Node {
     }
 
     // Try to continue with the syncing process
-    async fn advance_state(&mut self) {
+    async fn advance_state(&mut self, last_block: &LastBlockMonitor) {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
@@ -434,7 +438,20 @@ impl Node {
                     let _ = self.dialog.send_data(NodeMessage::Synced(update)).await;
                 }
             }
-            NodeState::TransactionsSynced => (),
+            NodeState::TransactionsSynced => {
+                if last_block.stale() {
+                    self.dialog.send_warning(Warning::PotentialStaleTip).await;
+                    let next_headers = {
+                        let mut chain = self.chain.lock().await;
+                        GetHeaderConfig {
+                            locators: chain.locators().await,
+                            stop_hash: None,
+                        }
+                    };
+                    self.broadcast(MainThreadMessage::GetHeaders(next_headers))
+                        .await;
+                }
+            }
         }
     }
 
