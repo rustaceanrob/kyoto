@@ -74,9 +74,9 @@ impl SyncUpdate {
 /// An attempt to broadcast a tranasction failed.
 #[derive(Debug, Clone, Copy)]
 pub struct FailurePayload {
-    /// An enumeration of the reason for the transaction failure.
+    /// An enumeration of the reason for the transaction failure. If none is provided, the message could not be sent over the wire.
     pub reason: Option<RejectReason>,
-    /// The transaction that was rejected.
+    /// The transaction that was rejected or failed to broadcast.
     pub txid: Txid,
 }
 
@@ -88,7 +88,7 @@ impl FailurePayload {
 
 /// Commands to issue a node.
 #[derive(Debug, Clone)]
-pub enum ClientMessage {
+pub(crate) enum ClientMessage {
     /// Stop the node.
     Shutdown,
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
@@ -108,6 +108,8 @@ pub enum Warning {
     PeerTimedOut,
     /// The node was unable to connect to a peer in the database.
     CouldNotConnect,
+    /// A connection was maintained, but the peer does not signal for compact block filers.
+    NoCompactFilters,
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
@@ -145,6 +147,9 @@ impl core::fmt::Display for Warning {
             ),
             Warning::CouldNotConnect => {
                 write!(f, "An attempted connection failed or timed out.")
+            }
+            Warning::NoCompactFilters => {
+                write!(f, "A connected peer does not serve compact block filters.")
             }
             Warning::TransactionRejected => write!(f, "A transaction got rejected."),
             Warning::FailedPersistance { warning } => {

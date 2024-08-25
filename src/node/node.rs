@@ -458,12 +458,7 @@ impl Node {
                 if !version_message.services.has(ServiceFlags::COMPACT_FILTERS)
                     || !version_message.services.has(ServiceFlags::NETWORK)
                 {
-                    self.dialog
-                        .send_warning(Warning::UnexpectedSyncError {
-                            warning: "Connected peer does not serve compact filters or blocks"
-                                .into(),
-                        })
-                        .await;
+                    self.dialog.send_warning(Warning::NoCompactFilters).await;
                     return Ok(MainThreadMessage::Disconnect);
                 }
             }
