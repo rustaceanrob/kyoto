@@ -1,13 +1,15 @@
 [package]
 name = "kyoto-cbf"
 version = "0.1.0"
+authors = ["Rob <rustaceanrob@protonmail.com>"]
 edition = "2021"
-license-file = "LICENSE"
+license-file = "MIT OR Apache-2.0"
 description = "A Bitcoin light-client according to the BIP-157/BIP-158 specifications"
 repository = "https://github.com/rustaceanrob/kyoto"
 readme = "README.md"
+keywords = ["bitcoin", "cryptography", "network", "peer-to-peer"]
+categories = ["cryptography::cryptocurrencies"]
 resolver = "2"
-# members = ["example", "src"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
