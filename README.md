@@ -5,9 +5,10 @@
   </p>
 
   <p>
+    <a href="https://crates.io/crates/kyoto-cbf"><img alt="Crate Info" src="https://img.shields.io/crates/v/kyoto-cbf.svg"/></a>
     <a href="https://github.com/bitcoindevkit/bdk/blob/master/LICENSE"><img alt="MIT or Apache-2.0 Licensed" src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg"/></a>
     <a href="https://github.com/rustaceanrob/kyoto/actions?query=workflow%3ACI"><img alt="CI Status" src="https://github.com/bitcoindevkit/bdk/workflows/CI/badge.svg"></a>
-    <!-- <a href="https://docs.rs/bdk_wallet"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bdk_wallet-green"/></a> -->
+    <a href="https://docs.rs/kyoto-cbf"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-kyoto_cbf-green"/></a>
     <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
   </p>
 </div>
@@ -26,7 +27,7 @@ cargo run --example signet
 
 #### Getting Started
 
-The following snippet demonstrates how to build a Kyoto node. See the docs for more details on the `NodeBuilder`, `Node`, `Client`, and more.
+The following snippet demonstrates how to build a Kyoto node. See the [docs](https://docs.rs/kyoto-cbf) for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
 ```rust
 use std::collections::HashSet;
