@@ -59,6 +59,42 @@ impl Client {
             .map_err(|_| ClientError::SendError)
     }
 
+    /// Broadcast a new transaction to the network.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::Broadcast(tx))
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
+    /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::AddScripts(scripts))
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
+    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn rescan(&self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::Rescan)
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
     /// Collect the blocks received from the node into an in-memory cache,
     /// returning once the node is synced to its peers.
     /// Only recommended for machines that can tolerate such a memory allocation,
@@ -187,5 +223,43 @@ impl ClientSender {
             .send(ClientMessage::Rescan)
             .await
             .map_err(|_| ClientError::SendError)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{consensus::deserialize, Transaction};
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_client_works() {
+        let transaction: Transaction = deserialize(&hex::decode("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000").unwrap()).unwrap();
+        let (ntx, _) = broadcast::channel::<NodeMessage>(32);
+        let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
+        let client = Client::new(ntx.clone(), ctx);
+        let mut recv = client.receiver();
+        let send_res = ntx.send(NodeMessage::Dialog("An important message".into()));
+        assert!(send_res.is_ok());
+        let message = recv.recv().await;
+        assert!(message.is_ok());
+        tokio::task::spawn(async move {
+            ntx.send(NodeMessage::Dialog("Another important message".into()))
+        });
+        assert!(send_res.is_ok());
+        let message = recv.recv().await;
+        assert!(message.is_ok());
+        drop(recv);
+        let broadcast = client
+            .broadcast_tx(TxBroadcast::new(
+                transaction.clone(),
+                crate::TxBroadcastPolicy::AllPeers,
+            ))
+            .await;
+        assert!(broadcast.is_ok());
+        drop(crx);
+        let broadcast = client.shutdown().await;
+        assert!(broadcast.is_err());
     }
 }
