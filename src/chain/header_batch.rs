@@ -51,7 +51,7 @@ impl HeadersBatch {
         median_times
             .iter()
             .zip(&self.batch)
-            .all(|(median, header)| header.time > *median)
+            .all(|(median, header)| header.time >= *median)
     }
 
     // The tip of the list
