@@ -269,3 +269,75 @@ impl HeaderStore for SqliteHeaderDb {
         Box::pin(self.hash_at(height))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::consensus::deserialize;
+
+    #[tokio::test]
+    async fn test_sql_header_store_normal_use() {
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
+        let mut db = SqliteHeaderDb::new(Network::Regtest, Some(path.into())).unwrap();
+        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
+        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
+        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert(8, block_8);
+        map.insert(9, block_9);
+        map.insert(10, block_10);
+        let block_hash_8 = block_8.block_hash();
+        let block_hash_9 = block_9.block_hash();
+        let w = db.write(&map).await;
+        assert!(w.is_ok());
+        let get_hash_9 = db.hash_at(9).await.unwrap().unwrap();
+        assert_eq!(get_hash_9, block_hash_9);
+        let get_height_8 = db.height_of(&block_hash_8).await.unwrap().unwrap();
+        assert_eq!(get_height_8, 8);
+        let load = db.load_after(7).await.unwrap();
+        assert_eq!(map, load);
+        drop(db);
+        binding.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sql_header_loads_with_fork() {
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
+        let mut db = SqliteHeaderDb::new(Network::Regtest, Some(path.into())).unwrap();
+        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
+        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
+        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert(8, block_8);
+        map.insert(9, block_9);
+        map.insert(10, block_10);
+        let w = db.write(&map).await;
+        assert!(w.is_ok());
+        let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
+        let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert(10, new_block_10);
+        map.insert(11, block_11);
+        let w = db.write_over(&map, 10).await;
+        assert!(w.is_ok());
+        let block_hash_11 = block_11.block_hash();
+        let block_hash_10 = new_block_10.block_hash();
+        let w = db.write(&map).await;
+        assert!(w.is_ok());
+        let get_hash_10 = db.hash_at(10).await.unwrap().unwrap();
+        assert_eq!(get_hash_10, block_hash_10);
+        let get_height_11 = db.height_of(&block_hash_11).await.unwrap().unwrap();
+        assert_eq!(get_height_11, 11);
+        let mut map = BTreeMap::new();
+        map.insert(8, block_8);
+        map.insert(9, block_9);
+        map.insert(10, new_block_10);
+        map.insert(11, block_11);
+        let load = db.load_after(7).await.unwrap();
+        assert_eq!(map, load);
+        drop(db);
+        binding.close().unwrap();
+    }
+}
