@@ -165,9 +165,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "no tmp file"]
     async fn test_sql_peer_store() {
-        let mut peer_store = SqlitePeerDb::new(bitcoin::Network::Testnet, None).unwrap();
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
+        let mut peer_store =
+            SqlitePeerDb::new(bitcoin::Network::Testnet, Some(path.into())).unwrap();
         let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
         let ip_2 = Ipv4Addr::new(2, 2, 2, 2);
         let tor = AddrV2::TorV2([8; 10]);
@@ -197,5 +199,7 @@ mod tests {
         let _ = peer_store.random().await.unwrap();
         let random = peer_store.random().await.unwrap();
         assert_ne!(ban_peer_1.addr, random.addr);
+        drop(peer_store);
+        binding.close().unwrap();
     }
 }
