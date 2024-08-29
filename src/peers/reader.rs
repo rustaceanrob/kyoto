@@ -49,6 +49,7 @@ impl Reader {
     }
 
     fn parse_message(&self, message: NetworkMessage) -> Option<PeerMessage> {
+        // Supported messages are protocol version 70002 and below
         match message {
             NetworkMessage::Version(version) => Some(PeerMessage::Version(version)),
             NetworkMessage::Verack => Some(PeerMessage::Verack),
@@ -108,24 +109,27 @@ impl Reader {
                 }
                 Some(PeerMessage::Headers(headers))
             }
-            NetworkMessage::SendHeaders => None,
+            // 70012
+            NetworkMessage::SendHeaders => Some(PeerMessage::Disconnect),
             NetworkMessage::GetAddr => None,
             NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(nonce)),
             NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(nonce)),
             NetworkMessage::MerkleBlock(_) => None,
-            NetworkMessage::FilterLoad(_) => None,
-            NetworkMessage::FilterAdd(_) => None,
-            NetworkMessage::FilterClear => None,
+            // Bloom Filters are enabled by 70011
+            NetworkMessage::FilterLoad(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::FilterAdd(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::FilterClear => Some(PeerMessage::Disconnect),
             NetworkMessage::GetCFilters(_) => None,
             NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter)),
             NetworkMessage::GetCFHeaders(_) => None,
             NetworkMessage::CFHeaders(cf_headers) => Some(PeerMessage::FilterHeaders(cf_headers)),
             NetworkMessage::GetCFCheckpt(_) => None,
             NetworkMessage::CFCheckpt(_) => None,
-            NetworkMessage::SendCmpct(_) => None,
-            NetworkMessage::CmpctBlock(_) => None,
-            NetworkMessage::GetBlockTxn(_) => None,
-            NetworkMessage::BlockTxn(_) => None,
+            // Compact Block Relay is enabled with 70014
+            NetworkMessage::SendCmpct(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::CmpctBlock(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::GetBlockTxn(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::BlockTxn(_) => Some(PeerMessage::Disconnect),
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
                 let txid = Txid::from(rejection.hash);
@@ -134,8 +138,10 @@ impl Reader {
                     txid,
                 }))
             }
-            NetworkMessage::FeeFilter(_) => None,
-            NetworkMessage::WtxidRelay => None,
+            // 70013
+            NetworkMessage::FeeFilter(_) => Some(PeerMessage::Disconnect),
+            // 70016
+            NetworkMessage::WtxidRelay => Some(PeerMessage::Disconnect),
             NetworkMessage::AddrV2(addresses) => {
                 if addresses.len() > MAX_ADDR {
                     return Some(PeerMessage::Disconnect);
