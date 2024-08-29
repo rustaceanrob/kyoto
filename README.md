@@ -25,7 +25,13 @@ To run the Signet example, in the root directory:
 cargo run --example signet
 ```
 
-#### Getting Started
+Or, with `just`:
+
+```
+just example
+```
+
+## Getting Started
 
 The following snippet demonstrates how to build a Kyoto node. See the [docs](https://docs.rs/kyoto-cbf) for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
@@ -60,28 +66,37 @@ let (mut node, mut client) = builder
     .unwrap();
 ```
 
-#### Minimum Supported Rust Version (MSRV) Policy
+## Minimum Supported Rust Version (MSRV) Policy
 
 The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`.
 
 While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
 
-#### Integration Testing
+## Integration Testing
 
-To run the integrations against your `bitcoind` instance, in the root of the project:
+The preferred workflow is by using `just`. If you do not have `just` installed, check out the [installation page](https://just.systems/man/en/chapter_4.html).
 
+To run the unit tests:
 ```
-chmod +x scripts/integration.sh
-sh scripts/integration.sh "path/to/bitcoin/folder"
-```
-
-To run the unit tests, `cargo fmt`, `clippy`, and an example:
-
-```
-sh scripts/pr.sh
+just test
 ```
 
-#### Contributing
+To sync with a live Signet node:
+```
+just sync
+```
+
+And to run scenarios against your `bitcoind` instance:
+```
+just integrate
+```
+
+The default path to the `.bitcoin` directory is for Linux. To set this path to another operating system or location:
+```
+just bitcoindir=/path/to/bitcoin/folder/ integrate
+```
+
+## Contributing
 
 Please read [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
 
