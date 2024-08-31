@@ -54,14 +54,14 @@ impl SqliteHeaderDb {
             "CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN} TEXT PRIMARY KEY, {VERSION_COLUMN} INTEGER NOT NULL)");
         // Update the schema version
         conn.execute(&schema_table_query, [])
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         let schema_init_version = format!(
             "INSERT OR REPLACE INTO {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN}, {VERSION_COLUMN}) VALUES (?1, ?2)");
         conn.execute(&schema_init_version, params![SCHEMA_KEY, SCHEMA_VERSION])
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         // Build the table if it doesn't exist
         conn.execute(INITIAL_HEADER_SCHEMA, [])
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         // Migrate to any new schema versions
         Self::migrate(&conn)?;
 
@@ -77,7 +77,7 @@ impl SqliteHeaderDb {
             format!("SELECT {VERSION_COLUMN} FROM {SCHEMA_TABLE_NAME} WHERE {SCHEMA_COLUMN} = ?1");
         let _current_version: u8 = conn
             .query_row(&version_query, [SCHEMA_KEY], |row| row.get(0))
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         // Match on the version and migrate to new schemas in the future
         Ok(())
     }
@@ -89,21 +89,28 @@ impl SqliteHeaderDb {
         let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
-        let mut query = write_lock.prepare(stmt).map_err(|_| DatabaseError::Load)?;
-        let mut rows = query.query([]).map_err(|_| DatabaseError::Load)?;
-        while let Some(row) = rows.next().map_err(|_| DatabaseError::Load)? {
-            let height: u32 = row.get(0).map_err(|_| DatabaseError::Load)?;
+        let mut query = write_lock
+            .prepare(stmt)
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
+        let mut rows = query
+            .query([])
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| DatabaseError::Load(e.to_string()))?
+        {
+            let height: u32 = row.get(0).map_err(|e| DatabaseError::Load(e.to_string()))?;
             // The anchor height should not be included in the chain, as the anchor is non-inclusive
             if height.le(&anchor_height) {
                 continue;
             }
-            let hash: String = row.get(1).map_err(|_| DatabaseError::Load)?;
-            let version: i32 = row.get(2).map_err(|_| DatabaseError::Load)?;
-            let prev_hash: String = row.get(3).map_err(|_| DatabaseError::Load)?;
-            let merkle_root: String = row.get(4).map_err(|_| DatabaseError::Load)?;
-            let time: u32 = row.get(5).map_err(|_| DatabaseError::Load)?;
-            let bits: u32 = row.get(6).map_err(|_| DatabaseError::Load)?;
-            let nonce: u32 = row.get(7).map_err(|_| DatabaseError::Load)?;
+            let hash: String = row.get(1).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let version: i32 = row.get(2).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let prev_hash: String = row.get(3).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let merkle_root: String = row.get(4).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let time: u32 = row.get(5).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let bits: u32 = row.get(6).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let nonce: u32 = row.get(7).map_err(|e| DatabaseError::Load(e.to_string()))?;
 
             let next_header = Header {
                 version: Version::from_consensus(version),
@@ -136,10 +143,12 @@ impl SqliteHeaderDb {
         header_chain: &'a BTreeMap<u32, Header>,
     ) -> Result<(), DatabaseError> {
         let mut write_lock = self.conn.lock().await;
-        let tx = write_lock.transaction().map_err(|_| DatabaseError::Load)?;
+        let tx = write_lock
+            .transaction()
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         let best_height: Option<u32> = tx
             .query_row("SELECT MAX(height) FROM headers", [], |row| row.get(0))
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         for (height, header) in header_chain {
             if height.ge(&(best_height.unwrap_or(0))) {
                 let hash: String = header.block_hash().to_string();
@@ -163,10 +172,11 @@ impl SqliteHeaderDb {
                         nonce
                     ],
                 )
-                .map_err(|_| DatabaseError::Write)?;
+                .map_err(|e| DatabaseError::Write(e.to_string()))?;
             }
         }
-        tx.commit().map_err(|_| DatabaseError::Write)?;
+        tx.commit()
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         Ok(())
     }
 
@@ -176,7 +186,9 @@ impl SqliteHeaderDb {
         height: u32,
     ) -> Result<(), DatabaseError> {
         let mut write_lock = self.conn.lock().await;
-        let tx = write_lock.transaction().map_err(|_| DatabaseError::Write)?;
+        let tx = write_lock
+            .transaction()
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         for (new_height, header) in header_chain {
             if new_height.ge(&height) {
                 let hash: String = header.block_hash().to_string();
@@ -200,10 +212,11 @@ impl SqliteHeaderDb {
                         nonce
                     ],
                 )
-                .map_err(|_| DatabaseError::Write)?;
+                .map_err(|e| DatabaseError::Write(e.to_string()))?;
             }
         }
-        tx.commit().map_err(|_| DatabaseError::Write)?;
+        tx.commit()
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         Ok(())
     }
 
@@ -215,7 +228,7 @@ impl SqliteHeaderDb {
         let stmt = "SELECT height FROM headers WHERE block_hash = ?1";
         let row: Option<u32> = write_lock
             .query_row(stmt, params![block_hash.to_string()], |row| row.get(0))
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         Ok(row)
     }
 
@@ -224,7 +237,7 @@ impl SqliteHeaderDb {
         let stmt = "SELECT block_hash FROM headers WHERE height = ?1";
         let row: Option<String> = write_lock
             .query_row(stmt, params![height], |row| row.get(0))
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         match row {
             Some(row) => match BlockHash::from_str(&row) {
                 Ok(hash) => Ok(Some(hash)),

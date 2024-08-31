@@ -4,9 +4,9 @@ use crate::impl_sourceless_error;
 #[derive(Debug)]
 pub enum DatabaseError {
     /// Loading a query or data from the database failed.
-    Load,
+    Load(String),
     /// Writing a query or data from the database failed.
-    Write,
+    Write(String),
     /// The data loading is corrupted.
     Corruption,
     /// Serializing an object to write to the database failed.
@@ -20,8 +20,12 @@ pub enum DatabaseError {
 impl core::fmt::Display for DatabaseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            DatabaseError::Load => write!(f, "loading a query or data from the database failed."),
-            DatabaseError::Write => write!(f, "writing a query or data from the database failed."),
+            DatabaseError::Load(e) => {
+                write!(f, "loading a query or data from the database failed: {e}")
+            }
+            DatabaseError::Write(e) => {
+                write!(f, "writing a query or data from the database failed: {e}")
+            }
             DatabaseError::Corruption => write!(f, "loaded data has been corrupted."),
             DatabaseError::Serialization => {
                 write!(f, "serializing an object to write to the database failed.")
