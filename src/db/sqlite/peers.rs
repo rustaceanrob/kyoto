@@ -53,14 +53,14 @@ impl SqlitePeerDb {
         let schema_table_query = format!("CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN} TEXT PRIMARY KEY, {VERSION_COLUMN} INTEGER NOT NULL)");
         // Update the schema version
         conn.execute(&schema_table_query, [])
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         let schema_init_version = format!(
             "INSERT OR REPLACE INTO {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN}, {VERSION_COLUMN}) VALUES (?1, ?2)");
         conn.execute(&schema_init_version, params![SCHEMA_KEY, SCHEMA_VERSION])
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         // Build the table if it doesn't exist
         conn.execute(INITIAL_PEER_SCHEMA, [])
-            .map_err(|_| DatabaseError::Write)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
         // Migrate to any new schema versions
         Self::migrate(&conn)?;
         Ok(Self {
@@ -75,7 +75,7 @@ impl SqlitePeerDb {
             format!("SELECT {VERSION_COLUMN} FROM {SCHEMA_TABLE_NAME} WHERE {SCHEMA_COLUMN} = ?1");
         let _current_version: u8 = conn
             .query_row(&version_query, [SCHEMA_KEY], |row| row.get(0))
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         // Match on the version and migrate to new schemas in the future
         Ok(())
     }
@@ -102,7 +102,7 @@ impl SqlitePeerDb {
             stmt,
             params![blob, peer.port, services.to_u64(), tried, banned,],
         )
-        .map_err(|_| DatabaseError::Write)?;
+        .map_err(|e| DatabaseError::Write(e.to_string()))?;
         Ok(())
     }
 
@@ -110,13 +110,18 @@ impl SqlitePeerDb {
         let lock = self.conn.lock().await;
         let mut stmt = lock
             .prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")
-            .map_err(|_| DatabaseError::Write)?;
-        let mut rows = stmt.query([]).map_err(|_| DatabaseError::Load)?;
-        if let Some(row) = rows.next().map_err(|_| DatabaseError::Load)? {
-            let ip_addr: Vec<u8> = row.get(0).map_err(|_| DatabaseError::Load)?;
-            let port: u16 = row.get(1).map_err(|_| DatabaseError::Load)?;
-            let service_flags: u64 = row.get(2).map_err(|_| DatabaseError::Load)?;
-            let tried: bool = row.get(3).map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| DatabaseError::Load(e.to_string()))?
+        {
+            let ip_addr: Vec<u8> = row.get(0).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let port: u16 = row.get(1).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let service_flags: u64 = row.get(2).map_err(|e| DatabaseError::Load(e.to_string()))?;
+            let tried: bool = row.get(3).map_err(|e| DatabaseError::Load(e.to_string()))?;
             let status = if tried {
                 PeerStatus::Tried
             } else {
@@ -126,7 +131,7 @@ impl SqlitePeerDb {
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             Ok(PersistedPeer::new(ip, port, services, status))
         } else {
-            Err(DatabaseError::Load)
+            Err(DatabaseError::Load("No peers in the datastore".into()))
         }
     }
 
@@ -134,7 +139,7 @@ impl SqlitePeerDb {
         let lock = self.conn.lock().await;
         let mut stmt = lock
             .prepare("SELECT COUNT(*) FROM peers WHERE banned = false")
-            .map_err(|_| DatabaseError::Load)?;
+            .map_err(|e| DatabaseError::Load(e.to_string()))?;
         let count: u32 = stmt
             .query_row([], |row| row.get(0))
             .map_err(|_| DatabaseError::Deserialization)?;

@@ -110,7 +110,7 @@ impl PeerStore for () {
 
     fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
         async fn do_random() -> Result<PersistedPeer, DatabaseError> {
-            Err(DatabaseError::Load)
+            Err(DatabaseError::Load("No peers in Unit PeerStore".into()))
         }
         Box::pin(do_random())
     }

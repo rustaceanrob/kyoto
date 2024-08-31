@@ -51,8 +51,11 @@ impl StatelessPeerStore {
             iter.choose(&mut rng).map(|(key, _)| key.clone())
         };
         match random_peer {
-            Some(ip) => self.list.remove(&ip).ok_or(DatabaseError::Load),
-            None => Err(DatabaseError::Load),
+            Some(ip) => self
+                .list
+                .remove(&ip)
+                .ok_or(DatabaseError::Load("No peers exist in the database".into())),
+            None => Err(DatabaseError::Load("No peers exist in the database".into())),
         }
     }
 
