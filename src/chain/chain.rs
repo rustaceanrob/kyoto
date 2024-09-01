@@ -695,8 +695,8 @@ impl Chain {
         self.block_queue.complete()
     }
 
-    // Scan an incoming block for transactions with our scripts
-    pub(crate) async fn scan_block(&mut self, block: Block) -> Result<(), BlockScanError> {
+    // Make sure we have this hash in our chain and pass the block
+    pub(crate) async fn check_send_block(&mut self, block: Block) -> Result<(), BlockScanError> {
         if self.block_queue.received(&block.block_hash()) {
             match self.height_of_hash(block.block_hash()).await {
                 Some(height) => {
