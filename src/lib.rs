@@ -75,7 +75,7 @@ mod prelude;
 #[cfg(feature = "silent-payments")]
 pub mod sp;
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 #[cfg(feature = "tor")]
 pub use arti_client::{TorClient, TorClientConfig};
@@ -250,6 +250,19 @@ impl TrustedPeer {
         Self {
             address,
             port: None,
+            known_services: ServiceFlags::NONE,
+        }
+    }
+
+    /// Create a new peer from a known address and port.
+    pub fn from_socket_addr(socket_addr: SocketAddr) -> Self {
+        let address = match socket_addr {
+            SocketAddr::V4(ip) => AddrV2::Ipv4(*ip.ip()),
+            SocketAddr::V6(ip) => AddrV2::Ipv6(*ip.ip()),
+        };
+        Self {
+            address,
+            port: Some(socket_addr.port()),
             known_services: ServiceFlags::NONE,
         }
     }
