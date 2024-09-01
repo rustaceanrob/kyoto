@@ -71,6 +71,9 @@ mod filters;
 pub mod node;
 mod peers;
 mod prelude;
+/// Additional tools for BIP352 silent payments.
+#[cfg(feature = "silent-payments")]
+pub mod sp;
 
 use std::net::IpAddr;
 

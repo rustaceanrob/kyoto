@@ -38,12 +38,16 @@ arti-client = { version = "0.21.0", features = [
     "experimental-api",
 ], default-features = false, optional = true }
 tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
+silentpayments = { version = "0.3.0", default-features = false, features = [
+    "receiving",
+], optional = true }
 
 [features]
 default = ["database", "dns"]
 database = ["rusqlite"]
 dns = []
 tor = ["arti-client", "tor-rtcompat"]
+silent-payments = ["silentpayments"]
 
 [dev-dependencies]
 bitcoincore-rpc = "0.19.0"
