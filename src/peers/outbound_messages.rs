@@ -51,9 +51,17 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         receiver: from_and_recv.clone(),
         sender: from_and_recv,
         nonce: 1,
-        user_agent: "Kyoto Light Client / 0.1.0 / rust-bitcoin 0.32".to_string(),
+        user_agent: "Kyoto Light Client / 0.2.0 / rust-bitcoin 0.32".to_string(),
         start_height: 0,
         relay: false,
+    }
+}
+
+fn get_block_from_cfg(config: GetBlockConfig) -> Inventory {
+    if cfg!(feature = "silent-payments") {
+        Inventory::WitnessBlock(config.locator)
+    } else {
+        Inventory::Block(config.locator)
     }
 }
 
@@ -103,7 +111,7 @@ impl MessageGenerator for V1OutboundMessage {
     }
 
     fn block(&mut self, config: GetBlockConfig) -> Result<Vec<u8>, PeerError> {
-        let inv = Inventory::Block(config.locator);
+        let inv = get_block_from_cfg(config);
         let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::GetData(vec![inv]));
         Ok(serialize(&data))
     }
@@ -186,7 +194,7 @@ impl MessageGenerator for V2OutboundMessage {
     }
 
     fn block(&mut self, config: GetBlockConfig) -> Result<Vec<u8>, PeerError> {
-        let inv = Inventory::Block(config.locator);
+        let inv = get_block_from_cfg(config);
         let plaintext = self.serialize_network_message(NetworkMessage::GetData(vec![inv]))?;
         self.encrypt_plaintext(plaintext)
     }
