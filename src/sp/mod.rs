@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use bitcoin::{Script, ScriptBuf};
+use bitcoin::{Block, Script, ScriptBuf, Transaction};
 use silentpayments::receiving::Receiver;
 use silentpayments::utils::receiving::calculate_ecdh_shared_secret;
 use silentpayments::utils::Network;
@@ -14,6 +14,7 @@ pub use silentpayments::Error;
 pub struct SilentPaymentsScanner {
     scan_secret_key: SecretKey,
     receiver: Receiver,
+    script_to_tweak: HashMap<ScriptBuf, PublicKey>,
 }
 
 impl SilentPaymentsScanner {
@@ -40,6 +41,7 @@ impl SilentPaymentsScanner {
         Ok(Self {
             scan_secret_key,
             receiver,
+            script_to_tweak: HashMap::new(),
         })
     }
 
@@ -50,7 +52,7 @@ impl SilentPaymentsScanner {
     ///
     /// `input_hash = hash_0352(outpoint_L || A)` where `A` is the sum of all input public keys and `outpoint_L` is the smallest outpoint sorted lexographically.
     /// `tweak = input_hash * A`
-    pub fn scripts_from_tweak_data(&self, tweaks: &[PublicKey]) -> HashSet<ScriptBuf> {
+    pub fn scripts_from_tweak_data(&mut self, tweaks: &[PublicKey]) -> HashSet<ScriptBuf> {
         // Are these input_hash * A?
         let mut scripts = HashSet::new();
         for tweak in tweaks {
@@ -62,11 +64,59 @@ impl SilentPaymentsScanner {
                     .into_iter()
                     .map(|buf| Script::from_bytes(buf).to_owned())
                     .for_each(|script| {
-                        scripts.insert(script);
+                        scripts.insert(script.clone());
+                        self.script_to_tweak.insert(script, shared_secret);
                     });
             }
         }
         scripts
+    }
+
+    /// Scan a block for incoming silent payments transactions.
+    pub fn scan_block(&self, block: Block) -> Vec<SilentPaymentTransaction> {
+        let mut found = Vec::new();
+        for transaction in block.txdata.into_iter() {
+            if !transaction
+                .output
+                .iter()
+                .any(|out| out.script_pubkey.is_p2tr())
+            {
+                continue;
+            }
+            for output in &transaction.output {
+                let key_match = self
+                    .script_to_tweak
+                    .keys()
+                    .find(|&key| output.script_pubkey.eq(key));
+                if let Some(key_match) = key_match {
+                    let tweak = self.script_to_tweak.get(key_match).expect("key matches");
+                    found.push(SilentPaymentTransaction::new(tweak.clone(), transaction));
+                    break;
+                }
+            }
+        }
+        found
+    }
+}
+
+/// A transaction with additional context for silent payments validation.
+///
+/// `shared_secret`: the necessary secret to recompute the output scripts that received bitcoins.
+///
+/// `transaction`: typical bitcoin transaction.
+pub struct SilentPaymentTransaction {
+    /// The tweaked public key after ECDH with the scan key.
+    pub shared_secret: PublicKey,
+    /// The transaction with matches.
+    pub transaction: Transaction,
+}
+
+impl SilentPaymentTransaction {
+    fn new(shared_secret: PublicKey, transaction: Transaction) -> Self {
+        Self {
+            shared_secret,
+            transaction,
+        }
     }
 }
 

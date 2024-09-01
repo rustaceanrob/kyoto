@@ -671,7 +671,7 @@ impl Node {
     // Scan a block for transactions.
     async fn handle_block(&mut self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        if let Err(e) = chain.scan_block(block).await {
+        if let Err(e) = chain.check_send_block(block).await {
             self.dialog
                 .send_warning(Warning::UnexpectedSyncError {
                     warning: format!("Unexpected block scanning error: {}", e),
