@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    ops::DerefMut,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -464,6 +465,27 @@ impl Node {
         }
     }
 
+    // After we receiving some chain-syncing message, we decide what chain of data needs to be
+    // requested next.
+    async fn next_stateful_message(&self, chain: &mut Chain) -> Option<MainThreadMessage> {
+        if !chain.is_synced() {
+            let headers = GetHeaderConfig {
+                locators: chain.locators().await,
+                stop_hash: None,
+            };
+            return Some(MainThreadMessage::GetHeaders(headers));
+        } else if !chain.is_cf_headers_synced() {
+            return Some(MainThreadMessage::GetFilterHeaders(
+                chain.next_cf_header_message().await,
+            ));
+        } else if !chain.is_filters_synced() {
+            return Some(MainThreadMessage::GetFilters(
+                chain.next_filter_message().await,
+            ));
+        }
+        None
+    }
+
     // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
         &mut self,
@@ -544,16 +566,8 @@ impl Node {
                 HeaderSyncError::EmptyMessage => {
                     if !chain.is_synced() {
                         return Some(MainThreadMessage::Disconnect);
-                    } else if !chain.is_cf_headers_synced() {
-                        return Some(MainThreadMessage::GetFilterHeaders(
-                            chain.next_cf_header_message().await,
-                        ));
-                    } else if !chain.is_filters_synced() {
-                        return Some(MainThreadMessage::GetFilters(
-                            chain.next_filter_message().await,
-                        ));
                     }
-                    return None;
+                    return self.next_stateful_message(chain.deref_mut()).await;
                 }
                 HeaderSyncError::LessWorkFork => {
                     self.dialog
@@ -561,6 +575,7 @@ impl Node {
                             warning: "A peer sent us a fork with less work.".into(),
                         })
                         .await;
+                    return Some(MainThreadMessage::Disconnect);
                 }
                 _ => {
                     self.dialog
@@ -574,22 +589,7 @@ impl Node {
                 }
             }
         }
-        if !chain.is_synced() {
-            let next_headers = GetHeaderConfig {
-                locators: chain.locators().await,
-                stop_hash: None,
-            };
-            return Some(MainThreadMessage::GetHeaders(next_headers));
-        } else if !chain.is_cf_headers_synced() {
-            return Some(MainThreadMessage::GetFilterHeaders(
-                chain.next_cf_header_message().await,
-            ));
-        } else if !chain.is_filters_synced() {
-            return Some(MainThreadMessage::GetFilters(
-                chain.next_filter_message().await,
-            ));
-        }
-        None
+        self.next_stateful_message(chain.deref_mut()).await
     }
 
     // Compact filter headers may result in a number of outcomes, including the need to audit filters.
@@ -602,22 +602,7 @@ impl Node {
         match chain.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
                 AppendAttempt::AddedToQueue => None,
-                AppendAttempt::Extended => {
-                    // We added a batch to the queue and still are not at the required height
-                    if !chain.is_cf_headers_synced() {
-                        Some(MainThreadMessage::GetFilterHeaders(
-                            chain.next_cf_header_message().await,
-                        ))
-                    } else if !chain.is_filters_synced() {
-                        // The header chain and filter header chain are in sync, but we need filters still
-                        Some(MainThreadMessage::GetFilters(
-                            chain.next_filter_message().await,
-                        ))
-                    } else {
-                        // Should be unreachable if we just added filter headers
-                        None
-                    }
-                }
+                AppendAttempt::Extended => self.next_stateful_message(chain.deref_mut()).await,
                 AppendAttempt::Conflict(_) => {
                     // TODO: Request the filter and block from the peer
                     self.dialog
