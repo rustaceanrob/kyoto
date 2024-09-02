@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use bitcoin::ScriptBuf;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
-pub use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::Sender;
 
 use crate::{IndexedBlock, TxBroadcast};
 
@@ -45,67 +45,6 @@ impl Client {
     /// data differently. For example, a Lightning Network node implementation.
     pub fn receiver(&self) -> Receiver<NodeMessage> {
         self.nrx.subscribe()
-    }
-
-    /// Tell the node to stop running.
-    ///
-    /// # Errors
-    ///
-    /// Errors if the node has already stopped.
-    pub async fn shutdown(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Shutdown)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Broadcast a new transaction to the network.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Broadcast(tx))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::AddScripts(scripts))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn rescan(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Rescan)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
-    /// filters unless the policy is to expilictly halt.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn continue_download(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::ContinueDownload)
-            .await
-            .map_err(|_| ClientError::SendError)
     }
 
     /// Collect the blocks received from the node into an in-memory cache,
@@ -189,68 +128,80 @@ impl ClientSender {
     fn new(ntx: Sender<ClientMessage>) -> Self {
         Self { ntx }
     }
-
-    /// Tell the node to shut down.
-    ///
-    /// # Errors
-    ///
-    /// If the node has already stopped running.
-    pub async fn shutdown(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Shutdown)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Broadcast a new transaction to the network.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Broadcast(tx))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::AddScripts(scripts))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn rescan(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::Rescan)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
-    /// filters unless the policy is to expilictly halt.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub async fn continue_download(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::ContinueDownload)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
 }
+
+macro_rules! impl_core_client {
+    ($client:ident) => {
+        impl $client {
+            /// Tell the node to shut down.
+            ///
+            /// # Errors
+            ///
+            /// If the node has already stopped running.
+            pub async fn shutdown(&self) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::Shutdown)
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Broadcast a new transaction to the network.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::Broadcast(tx))
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn add_scripts(
+                &self,
+                scripts: HashSet<ScriptBuf>,
+            ) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::AddScripts(scripts))
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn rescan(&self) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::Rescan)
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
+            /// filters unless the policy is to explicitly halt.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn continue_download(&self) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::ContinueDownload)
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+        }
+    };
+}
+
+impl_core_client!(Client);
+impl_core_client!(ClientSender);
 
 #[cfg(test)]
 mod tests {
