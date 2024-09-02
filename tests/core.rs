@@ -657,6 +657,58 @@ async fn test_sql_stale_anchor() {
 }
 
 #[tokio::test]
+#[allow(clippy::collapsible_match)]
+async fn test_halting_works() {
+    let rpc_result = initialize_client();
+    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
+    if rpc_result.is_err() {
+        println!("Bitcoin Core is not running. Skipping this test...");
+        return;
+    }
+    let rpc = rpc_result.unwrap();
+
+    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
+    mine_blocks(&rpc, &miner, 10, 1).await;
+    let best = rpc.get_best_block_hash().unwrap();
+    let mut scripts = HashSet::new();
+    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    scripts.insert(other.into());
+
+    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let (mut node, client) = builder
+        .add_peers(vec![host.into()])
+        .add_scripts(scripts)
+        .halt_filter_download()
+        .build_with_databases((), ());
+
+    tokio::task::spawn(async move { node.run().await });
+    let (_, mut recv) = client.split();
+    // Ensure SQL is able to catch the fork by loading in headers from the database
+    while let Ok(message) = recv.recv().await {
+        match message {
+            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::node::messages::NodeMessage::StateChange(s) => {
+                if let kyoto::NodeState::FilterHeadersSynced = s {
+                    println!("Sleeping for one second...");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    client.continue_download().await.unwrap();
+                }
+            }
+            kyoto::node::messages::NodeMessage::Synced(update) => {
+                println!("Done");
+                assert_eq!(update.tip().hash, best);
+                break;
+            }
+            _ => {}
+        }
+    }
+    client.shutdown().await.unwrap();
+    rpc.stop().unwrap();
+}
+
+#[tokio::test]
 async fn test_signet_syncs() {
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()

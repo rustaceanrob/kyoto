@@ -95,6 +95,19 @@ impl Client {
             .map_err(|_| ClientError::SendError)
     }
 
+    /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
+    /// filters unless the policy is to expilictly halt.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn continue_download(&self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::ContinueDownload)
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
     /// Collect the blocks received from the node into an in-memory cache,
     /// returning once the node is synced to its peers.
     /// Only recommended for machines that can tolerate such a memory allocation,
@@ -221,6 +234,19 @@ impl ClientSender {
     pub async fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Rescan)
+            .await
+            .map_err(|_| ClientError::SendError)
+    }
+
+    /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
+    /// filters unless the policy is to expilictly halt.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn continue_download(&self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::ContinueDownload)
             .await
             .map_err(|_| ClientError::SendError)
     }

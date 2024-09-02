@@ -97,6 +97,10 @@ pub(crate) enum ClientMessage {
     AddScripts(HashSet<ScriptBuf>),
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
     Rescan,
+    /// If the [`FilterSyncPolicy`](crate) is set to `Halt`, issuing this command will
+    /// start the filter download and checking process. Otherwise, this command will not have any effect
+    /// on node operation.
+    ContinueDownload,
 }
 
 /// Warnings a node may issue while running.

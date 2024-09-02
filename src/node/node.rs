@@ -43,7 +43,7 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
-    LastBlockMonitor,
+    FilterSyncPolicy, LastBlockMonitor,
 };
 
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
@@ -78,6 +78,7 @@ pub struct Node {
     client_recv: Receiver<ClientMessage>,
     peer_recv: Receiver<PeerThreadMessage>,
     is_running: AtomicBool,
+    filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
 
 impl Node {
@@ -91,6 +92,7 @@ impl Node {
         target_peer_size: u32,
         connection_type: ConnectionType,
         timeout: Duration,
+        filter_sync_policy: FilterSyncPolicy,
         peer_store: impl PeerStore + Send + Sync + 'static,
         header_store: impl HeaderStore + Send + Sync + 'static,
     ) -> (Self, Client) {
@@ -142,6 +144,7 @@ impl Node {
                 client_recv: crx,
                 peer_recv: mrx,
                 is_running: AtomicBool::new(false),
+                filter_sync_policy: Arc::new(RwLock::new(filter_sync_policy)),
             },
             client,
         )
@@ -162,6 +165,7 @@ impl Node {
             config.target_peer_size,
             config.connection_type,
             config.response_timeout,
+            config.filter_sync_policy,
             peer_store,
             header_store,
         )
@@ -290,6 +294,11 @@ impl Node {
                                     self.broadcast(response).await;
                                 }
                             },
+                            ClientMessage::ContinueDownload => {
+                                if let Some(response) = self.start_filter_download().await {
+                                    self.broadcast(response).await
+                                }
+                            }
                         }
                     }
                 }
@@ -479,9 +488,12 @@ impl Node {
                 chain.next_cf_header_message().await,
             ));
         } else if !chain.is_filters_synced() {
-            return Some(MainThreadMessage::GetFilters(
-                chain.next_filter_message().await,
-            ));
+            let filter_download = self.filter_sync_policy.read().await;
+            if matches!(*filter_download, FilterSyncPolicy::Continue) {
+                return Some(MainThreadMessage::GetFilters(
+                    chain.next_filter_message().await,
+                ));
+            }
         }
         None
     }
@@ -739,6 +751,22 @@ impl Node {
                 Some(MainThreadMessage::GetFilters(
                     chain.next_filter_message().await,
                 ))
+            }
+        }
+    }
+
+    // Continue the filter syncing process by explicit command
+    async fn start_filter_download(&self) -> Option<MainThreadMessage> {
+        let mut download_policy = self.filter_sync_policy.write().await;
+        *download_policy = FilterSyncPolicy::Continue;
+        drop(download_policy);
+        let current_state = self.state.read().await;
+        match *current_state {
+            NodeState::Behind => None,
+            NodeState::HeadersSynced => None,
+            _ => {
+                let mut chain = self.chain.lock().await;
+                self.next_stateful_message(chain.deref_mut()).await
             }
         }
     }
