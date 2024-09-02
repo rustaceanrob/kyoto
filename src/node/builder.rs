@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 use bitcoin::{Network, ScriptBuf};
 
-use super::{client::Client, config::NodeConfig, node::Node};
+use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
 #[cfg(feature = "database")]
 use crate::db::error::DatabaseError;
 use crate::{
@@ -133,6 +133,14 @@ impl NodeBuilder {
     /// new `inv` messages to be sent. If none is provided, a timeout of 5 seconds will be used.
     pub fn set_response_timeout(mut self, timeout: Duration) -> Self {
         self.config.response_timeout = timeout;
+        self
+    }
+
+    /// Stop the node from downloading and checking compact block filters until an explicit command by the client is made.
+    /// This is only useful if the scripts to check for may not be known do to some expensive computation, like in a silent
+    /// payments context.
+    pub fn halt_filter_download(mut self) -> Self {
+        self.config.filter_sync_policy = FilterSyncPolicy::Halt;
         self
     }
 
