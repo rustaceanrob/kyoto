@@ -672,25 +672,25 @@ impl Node {
     // The block queue holds all the block hashes we may be interested in
     async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
         let state = self.state.read().await;
-        let mut chain = self.chain.lock().await;
-        // Do we actually need to wait for the headers to sync?
-        match *state {
-            NodeState::FiltersSynced => {
-                let next_block_hash = chain.next_block();
-                match next_block_hash {
-                    Some(block_hash) => {
-                        self.dialog
-                            .send_dialog(format!("Next block in queue: {}", block_hash))
-                            .await;
-                        Some(MainThreadMessage::GetBlock(GetBlockConfig {
-                            locator: block_hash,
-                        }))
-                    }
-                    None => None,
+        if matches!(
+            *state,
+            NodeState::FilterHeadersSynced | NodeState::FiltersSynced
+        ) {
+            let mut chain = self.chain.lock().await;
+            let next_block_hash = chain.next_block();
+            return match next_block_hash {
+                Some(block_hash) => {
+                    self.dialog
+                        .send_dialog(format!("Next block in queue: {}", block_hash))
+                        .await;
+                    Some(MainThreadMessage::GetBlock(GetBlockConfig {
+                        locator: block_hash,
+                    }))
                 }
-            }
-            _ => None,
+                None => None,
+            };
         }
+        None
     }
 
     // If new inventory came in, we need to download the headers and update the node state
