@@ -4,8 +4,8 @@
 
 use bitcoin::BlockHash;
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
-use kyoto::node::messages::NodeMessage;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::core::messages::NodeMessage;
+use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{AddrV2, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{

@@ -26,9 +26,9 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
+    core::peer_map::PeerMap,
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    node::peer_map::PeerMap,
     ConnectionType, FailurePayload, TrustedPeer, TxBroadcastPolicy,
 };
 
@@ -451,15 +451,12 @@ impl Node {
             NodeState::TransactionsSynced => {
                 if last_block.stale() {
                     self.dialog.send_warning(Warning::PotentialStaleTip).await;
-                    let next_headers = {
-                        let mut chain = self.chain.lock().await;
-                        GetHeaderConfig {
-                            locators: chain.locators().await,
-                            stop_hash: None,
-                        }
-                    };
-                    self.broadcast(MainThreadMessage::GetHeaders(next_headers))
+                    self.dialog
+                        .send_dialog(
+                            "Disconnecting from remote nodes to find new connections".into(),
+                        )
                         .await;
+                    self.broadcast(MainThreadMessage::Disconnect).await;
                 }
             }
         }

@@ -17,7 +17,7 @@ use bitcoin::{
     BlockHash, Network, Transaction,
 };
 
-use crate::{node::channel_messages::GetBlockConfig, prelude::default_port_from_network};
+use crate::{core::channel_messages::GetBlockConfig, prelude::default_port_from_network};
 
 use super::{error::PeerError, traits::MessageGenerator};
 

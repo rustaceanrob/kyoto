@@ -64,11 +64,11 @@
 #![warn(missing_docs)]
 /// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
+/// Tools to build and run a compact block filters node.
+pub mod core;
 /// Traits and structures that define the data persistence required for a node.
 pub mod db;
 mod filters;
-/// Tools to build and run a compact block filters node.
-pub mod node;
 mod peers;
 mod prelude;
 /// Additional tools for BIP352 silent payments.
@@ -83,6 +83,11 @@ pub use arti_client::{TorClient, TorClientConfig};
 use tor_rtcompat::PreferredRuntime;
 
 // Re-exports
+pub use crate::core::builder::NodeBuilder;
+pub use crate::core::client::{Client, ClientSender};
+pub use crate::core::error::{ClientError, NodeError};
+pub use crate::core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
+pub use crate::core::node::{Node, NodeState};
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::address::AddrV2;
 pub use bitcoin::p2p::message_network::RejectReason;
@@ -97,11 +102,6 @@ pub use db::memory::peers::StatelessPeerStore;
 #[cfg(feature = "database")]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 pub use db::traits::{HeaderStore, PeerStore};
-pub use node::builder::NodeBuilder;
-pub use node::client::{Client, ClientSender};
-pub use node::error::{ClientError, NodeError};
-pub use node::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
-pub use node::node::{Node, NodeState};
 pub use tokio::sync::broadcast::Receiver;
 
 /// A Bitcoin [`Transaction`] with additional context.

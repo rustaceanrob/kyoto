@@ -5,8 +5,8 @@ use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, Servic
 use bitcoin::Txid;
 use tokio::sync::mpsc::Sender;
 
-use crate::node::channel_messages::{CombinedAddr, PeerMessage};
-use crate::node::messages::FailurePayload;
+use crate::core::channel_messages::{CombinedAddr, PeerMessage};
+use crate::core::messages::FailurePayload;
 
 use super::error::PeerReadError;
 use super::traits::MessageParser;

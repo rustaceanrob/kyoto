@@ -20,6 +20,10 @@ use super::{
 };
 use crate::{
     chain::header_batch::HeadersBatch,
+    core::{
+        dialog::Dialog,
+        messages::{NodeMessage, Warning},
+    },
     db::traits::HeaderStore,
     filters::{
         cfheader_batch::CFHeaderBatch,
@@ -28,10 +32,6 @@ use crate::{
         filter::Filter,
         filter_chain::FilterChain,
         CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
-    },
-    node::{
-        dialog::Dialog,
-        messages::{NodeMessage, Warning},
     },
     prelude::{params_from_network, MEDIAN_TIME_PAST},
     IndexedBlock,
@@ -762,8 +762,8 @@ mod tests {
             checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
             error::HeaderSyncError,
         },
+        core::{dialog::Dialog, messages::NodeMessage},
         filters::cfheader_chain::AppendAttempt,
-        node::{dialog::Dialog, messages::NodeMessage},
     };
 
     use super::Chain;

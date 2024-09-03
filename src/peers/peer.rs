@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use crate::{
-    node::{
+    core::{
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,

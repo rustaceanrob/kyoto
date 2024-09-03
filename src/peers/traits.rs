@@ -15,7 +15,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::{node::channel_messages::GetBlockConfig, prelude::FutureResult};
+use crate::{core::channel_messages::GetBlockConfig, prelude::FutureResult};
 
 use super::error::{PeerError, PeerReadError};
 
