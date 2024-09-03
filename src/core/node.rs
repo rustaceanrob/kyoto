@@ -325,7 +325,7 @@ impl Node {
     }
 
     // Connect to a new peer if we are not connected to enough
-    async fn dispatch(&mut self) -> Result<(), NodeError> {
+    async fn dispatch(&self) -> Result<(), NodeError> {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.clean().await;
         // Find more peers when lower than the desired threshold.
@@ -349,7 +349,7 @@ impl Node {
     }
 
     // If there are blocks in the queue, we should request them of a random peer
-    async fn get_blocks(&mut self) {
+    async fn get_blocks(&self) {
         if let Some(block_request) = self.pop_block_queue().await {
             self.dialog
                 .send_dialog("Sending block request to a random peer".into())
@@ -359,7 +359,7 @@ impl Node {
     }
 
     // Broadcast transactions according to the configured policy
-    async fn broadcast_transactions(&mut self) {
+    async fn broadcast_transactions(&self) {
         let mut broadcaster = self.tx_broadcaster.lock().await;
         if broadcaster.is_empty() {
             return;
@@ -403,7 +403,7 @@ impl Node {
     }
 
     // Try to continue with the syncing process
-    async fn advance_state(&mut self, last_block: &LastBlockMonitor) {
+    async fn advance_state(&self, last_block: &LastBlockMonitor) {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
@@ -497,7 +497,7 @@ impl Node {
 
     // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
-        &mut self,
+        &self,
         nonce: &u32,
         version_message: VersionMessage,
         best_height: u32,
@@ -552,7 +552,7 @@ impl Node {
     }
 
     // Handle new addresses gossiped over the p2p network
-    async fn handle_new_addrs(&mut self, new_peers: Vec<CombinedAddr>) {
+    async fn handle_new_addrs(&self, new_peers: Vec<CombinedAddr>) {
         self.dialog
             .send_dialog(format!(
                 "Adding {} new peers to the peer database",
@@ -565,7 +565,7 @@ impl Node {
 
     // We always send headers to our peers, so our next message depends on our state
     async fn handle_headers(
-        &mut self,
+        &self,
         peer_id: u32,
         headers: Vec<Header>,
     ) -> Option<MainThreadMessage> {
@@ -603,7 +603,7 @@ impl Node {
 
     // Compact filter headers may result in a number of outcomes, including the need to audit filters.
     async fn handle_cf_headers(
-        &mut self,
+        &self,
         peer_id: u32,
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
@@ -640,7 +640,7 @@ impl Node {
     }
 
     // Handle a new compact block filter
-    async fn handle_filter(&mut self, peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
+    async fn handle_filter(&self, peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter).await {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
@@ -663,7 +663,7 @@ impl Node {
     }
 
     // Scan a block for transactions.
-    async fn handle_block(&mut self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
+    async fn handle_block(&self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.check_send_block(block).await {
             self.dialog
@@ -679,7 +679,7 @@ impl Node {
     }
 
     // The block queue holds all the block hashes we may be interested in
-    async fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
+    async fn pop_block_queue(&self) -> Option<MainThreadMessage> {
         let state = self.state.read().await;
         if matches!(
             *state,
@@ -703,7 +703,7 @@ impl Node {
     }
 
     // If new inventory came in, we need to download the headers and update the node state
-    async fn handle_inventory_blocks(&mut self, new_height: u32) -> Option<MainThreadMessage> {
+    async fn handle_inventory_blocks(&self, new_height: u32) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => None,
@@ -727,13 +727,13 @@ impl Node {
     }
 
     // Add more scripts to the chain to look for. Does not imply a rescan.
-    async fn add_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
+    async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) {
         let mut chain = self.chain.lock().await;
         chain.put_scripts(scripts);
     }
 
     // Clear the filter hash cache and redownload the filters.
-    async fn rescan(&mut self) -> Option<MainThreadMessage> {
+    async fn rescan(&self) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
         let mut chain = self.chain.lock().await;
         match *state {
@@ -769,7 +769,7 @@ impl Node {
     }
 
     // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&mut self) -> Result<(), NodeError> {
+    async fn fetch_headers(&self) -> Result<(), NodeError> {
         self.dialog
             .send_dialog("Attempting to load headers from the database.".into())
             .await;
