@@ -83,6 +83,11 @@ pub use arti_client::{TorClient, TorClientConfig};
 use tor_rtcompat::PreferredRuntime;
 
 // Re-exports
+pub use crate::core::builder::NodeBuilder;
+pub use crate::core::client::{Client, ClientSender};
+pub use crate::core::error::{ClientError, NodeError};
+pub use crate::core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
+pub use crate::core::node::{Node, NodeState};
 pub use bitcoin::block::Header;
 pub use bitcoin::p2p::address::AddrV2;
 pub use bitcoin::p2p::message_network::RejectReason;
@@ -91,11 +96,6 @@ pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Tx
 pub use chain::checkpoints::HeaderCheckpoint;
 pub use chain::checkpoints::MAINNET_HEADER_CP;
 pub use chain::checkpoints::SIGNET_HEADER_CP;
-pub use core::builder::NodeBuilder;
-pub use core::client::{Client, ClientSender};
-pub use core::error::{ClientError, NodeError};
-pub use core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
-pub use core::node::{Node, NodeState};
 #[cfg(feature = "database")]
 pub use db::error::DatabaseError;
 pub use db::memory::peers::StatelessPeerStore;
