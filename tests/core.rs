@@ -9,12 +9,12 @@ use bitcoin::{address::NetworkChecked, consensus::serialize, Amount, ScriptBuf};
 use bitcoincore_rpc::{json::CreateRawTransactionInput, RpcApi};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
-    db::memory::peers::StatelessPeerStore,
-    node::{
+    core::{
         client::{Client, Receiver},
         messages::NodeMessage,
         node::Node,
     },
+    db::memory::peers::StatelessPeerStore,
     ServiceFlags, TrustedPeer, TxBroadcast,
 };
 
@@ -42,7 +42,7 @@ fn initialize_client() -> Result<bitcoincore_rpc::Client, bitcoincore_rpc::Error
 
 async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
-    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(addrs)
@@ -54,7 +54,7 @@ async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peers(vec![trusted])
         .add_scripts(addrs)
@@ -70,7 +70,7 @@ async fn new_node_anchor_sql(
     let addr = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let mut trusted: TrustedPeer = addr.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peers(vec![trusted])
         .add_scripts(addrs)
@@ -98,9 +98,9 @@ async fn invalidate_block(rpc: &bitcoincore_rpc::Client, hash: &bitcoin::BlockHa
 async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut Receiver<NodeMessage>) {
     while let Ok(message) = channel.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 assert_eq!(update.tip().hash, *best);
                 println!("Correct sync");
                 break;
@@ -145,14 +145,14 @@ async fn test_reorg() {
     // Make sure the reorg was caught
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 sender.shutdown().await.unwrap();
                 break;
@@ -199,14 +199,14 @@ async fn test_mine_after_reorg() {
     // Make sure the reorg was caught
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 break;
             }
@@ -291,13 +291,13 @@ async fn test_broadcast_success() {
         .unwrap();
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::TxSent(t) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::TxSent(t) => {
                 println!("Sent transaction: {t}");
                 break;
             }
-            kyoto::node::messages::NodeMessage::TxBroadcastFailure(_) => {
+            kyoto::core::messages::NodeMessage::TxBroadcastFailure(_) => {
                 panic!()
             }
             _ => {}
@@ -372,13 +372,13 @@ async fn test_broadcast_fail() {
         .unwrap();
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::TxSent(t) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::TxSent(t) => {
                 println!("Sent transaction: {t}");
                 break;
             }
-            kyoto::node::messages::NodeMessage::TxBroadcastFailure(_) => {
+            kyoto::core::messages::NodeMessage::TxBroadcastFailure(_) => {
                 panic!()
             }
             _ => {}
@@ -458,14 +458,14 @@ async fn test_sql_reorg() {
     // Make sure the reorganization is caught after a cold start
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -529,14 +529,14 @@ async fn test_two_deep_reorg() {
     let (_, mut recv) = client.split();
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 2);
                 assert_eq!(blocks.last().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.last().unwrap().height);
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -606,14 +606,14 @@ async fn test_sql_stale_anchor() {
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -675,7 +675,7 @@ async fn test_halting_works() {
     scripts.insert(other.into());
 
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
-    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (mut node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(scripts)
@@ -687,16 +687,16 @@ async fn test_halting_works() {
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Ok(message) = recv.recv().await {
         match message {
-            kyoto::node::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::node::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::node::messages::NodeMessage::StateChange(s) => {
+            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
+            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
+            kyoto::core::messages::NodeMessage::StateChange(s) => {
                 if let kyoto::NodeState::FilterHeadersSynced = s {
                     println!("Sleeping for one second...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     client.continue_download().await.unwrap();
                 }
             }
-            kyoto::node::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::NodeMessage::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -718,7 +718,7 @@ async fn test_signet_syncs() {
     let mut set = HashSet::new();
     set.insert(address);
     let host = (IpAddr::from(Ipv4Addr::new(68, 47, 229, 218)), None);
-    let builder = kyoto::node::builder::NodeBuilder::new(bitcoin::Network::Signet);
+    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Signet);
     let (mut node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(set)

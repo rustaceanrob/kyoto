@@ -26,9 +26,9 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
+    core::peer_map::PeerMap,
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    node::peer_map::PeerMap,
     ConnectionType, FailurePayload, TrustedPeer, TxBroadcastPolicy,
 };
 

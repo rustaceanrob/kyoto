@@ -64,11 +64,11 @@
 #![warn(missing_docs)]
 /// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
+/// Tools to build and run a compact block filters node.
+pub mod core;
 /// Traits and structures that define the data persistence required for a node.
 pub mod db;
 mod filters;
-/// Tools to build and run a compact block filters node.
-pub mod node;
 mod peers;
 mod prelude;
 /// Additional tools for BIP352 silent payments.
@@ -91,17 +91,17 @@ pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Tx
 pub use chain::checkpoints::HeaderCheckpoint;
 pub use chain::checkpoints::MAINNET_HEADER_CP;
 pub use chain::checkpoints::SIGNET_HEADER_CP;
+pub use core::builder::NodeBuilder;
+pub use core::client::{Client, ClientSender};
+pub use core::error::{ClientError, NodeError};
+pub use core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
+pub use core::node::{Node, NodeState};
 #[cfg(feature = "database")]
 pub use db::error::DatabaseError;
 pub use db::memory::peers::StatelessPeerStore;
 #[cfg(feature = "database")]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 pub use db::traits::{HeaderStore, PeerStore};
-pub use node::builder::NodeBuilder;
-pub use node::client::{Client, ClientSender};
-pub use node::error::{ClientError, NodeError};
-pub use node::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
-pub use node::node::{Node, NodeState};
 pub use tokio::sync::broadcast::Receiver;
 
 /// A Bitcoin [`Transaction`] with additional context.

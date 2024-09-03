@@ -3,8 +3,8 @@
 //! blocks.
 
 use bitcoin::BlockHash;
-use kyoto::node::messages::NodeMessage;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::core::messages::NodeMessage;
+use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use std::collections::HashSet;
 use std::str::FromStr;
 

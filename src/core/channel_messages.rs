@@ -9,7 +9,7 @@ use bitcoin::{
     Block, BlockHash, Transaction,
 };
 
-use crate::node::messages::FailurePayload;
+use crate::core::messages::FailurePayload;
 
 #[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {
