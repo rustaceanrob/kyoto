@@ -75,8 +75,8 @@ pub struct Node {
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: usize,
     dialog: Dialog,
-    client_recv: Receiver<ClientMessage>,
-    peer_recv: Receiver<PeerThreadMessage>,
+    client_recv: Arc<Mutex<Receiver<ClientMessage>>>,
+    peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
     is_running: AtomicBool,
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
@@ -141,8 +141,8 @@ impl Node {
                 tx_broadcaster,
                 required_peers,
                 dialog,
-                client_recv: crx,
-                peer_recv: mrx,
+                client_recv: Arc::new(Mutex::new(crx)),
+                peer_recv: Arc::new(Mutex::new(mrx)),
                 is_running: AtomicBool::new(false),
                 filter_sync_policy: Arc::new(RwLock::new(filter_sync_policy)),
             },
@@ -181,12 +181,14 @@ impl Node {
     /// # Errors
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
-    pub async fn run(&mut self) -> Result<(), NodeError> {
+    pub async fn run(&self) -> Result<(), NodeError> {
         self.dialog.send_dialog("Starting node".into()).await;
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
+        let mut peer_recv = self.peer_recv.lock().await;
+        let mut client_recv = self.client_recv.lock().await;
         loop {
             // Try to advance the state of the node
             self.advance_state(&last_block).await;
@@ -198,7 +200,7 @@ impl Node {
             self.broadcast_transactions().await;
             // Either handle a message from a remote peer or from our client
             select! {
-                peer = tokio::time::timeout(Duration::from_secs(LOOP_TIMEOUT), self.peer_recv.recv()) => {
+                peer = tokio::time::timeout(Duration::from_secs(LOOP_TIMEOUT), peer_recv.recv()) => {
                     match peer {
                         Ok(Some(peer_thread)) => {
                             match peer_thread.message {
@@ -283,7 +285,7 @@ impl Node {
                         _ => continue,
                     }
                 },
-                message = self.client_recv.recv() => {
+                message = client_recv.recv() => {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
