@@ -24,7 +24,7 @@ async fn main() {
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
-    let (mut node, client) = builder
+    let (node, client) = builder
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint

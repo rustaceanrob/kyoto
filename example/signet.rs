@@ -39,7 +39,7 @@ async fn main() {
     // Create a new node builder
     let builder = NodeBuilder::new(bitcoin::Network::Signet);
     // Add node preferences and build the node/client
-    let (mut node, client) = builder
+    let (node, client) = builder
         // Add the peers
         .add_peers(vec![(peer_1, None).into(), peer_2])
         // The Bitcoin scripts to monitor
