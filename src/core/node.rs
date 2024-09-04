@@ -300,7 +300,12 @@ impl Node {
                                 if let Some(response) = self.start_filter_download().await {
                                     self.broadcast(response).await
                                 }
-                            }
+                            },
+                            #[cfg(feature = "silent-payments")]
+                            ClientMessage::GetBlock(hash) => {
+                                let mut chain = self.chain.lock().await;
+                                chain.get_block(hash);
+                            },
                         }
                     }
                 }

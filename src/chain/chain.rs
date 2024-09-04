@@ -18,6 +18,8 @@ use super::{
     error::{BlockScanError, HeaderPersistenceError, HeaderSyncError},
     header_chain::HeaderChain,
 };
+#[cfg(feature = "silent-payments")]
+use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
     core::{
@@ -626,6 +628,20 @@ impl Chain {
                 return Err(CFilterSyncError::UnknownFilterHash);
             }
         }
+
+        #[cfg(feature = "silent-payments")]
+        {
+            let height = self
+                .height_of_hash(filter_message.block_hash)
+                .await
+                .ok_or(CFilterSyncError::UnrequestedStophash)?;
+            let indexed_filter = IndexedFilter::new(height, filter);
+            self.dialog
+                .send_data(NodeMessage::IndexedFilter(indexed_filter))
+                .await;
+        }
+
+        #[cfg(not(feature = "silent-payments"))]
         if !self.block_queue.contains(&filter_message.block_hash)
             && filter
                 .contains_any(&self.scripts)
@@ -641,6 +657,7 @@ impl Chain {
                 ))
                 .await;
         }
+
         self.filter_chain.put_hash(filter_message.block_hash).await;
         let stop_hash = self
             .filter_chain
@@ -725,6 +742,12 @@ impl Chain {
         for script in scripts {
             self.scripts.insert(script);
         }
+    }
+
+    // Explicitly request a block
+    #[cfg(feature = "silent-payments")]
+    pub(crate) fn get_block(&mut self, hash: BlockHash) {
+        self.block_queue.add(hash)
     }
 
     // Reset the compact filter queue because we received a new block

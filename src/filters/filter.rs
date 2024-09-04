@@ -29,7 +29,7 @@ impl Filter {
         &self.filter_hash
     }
 
-    fn block_hash(&self) -> &BlockHash {
+    pub fn block_hash(&self) -> &BlockHash {
         &self.block_hash
     }
 
@@ -45,7 +45,7 @@ impl Filter {
             .map_err(|_| FilterError::IORead)
     }
 
-    pub async fn is_filter_for_block(&mut self, block: Block) -> Result<bool, FilterError> {
+    async fn is_filter_for_block(&mut self, block: Block) -> Result<bool, FilterError> {
         // Skip the coinbase transaction
         for tx in block.txdata.into_iter().skip(1) {
             let scripts = tx

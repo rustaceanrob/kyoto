@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+#[cfg(feature = "silent-payments")]
+use bitcoin::BlockHash;
 use bitcoin::ScriptBuf;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
@@ -162,6 +164,7 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
+            #[cfg(not(feature = "silent-payments"))]
             pub async fn add_scripts(
                 &self,
                 scripts: HashSet<ScriptBuf>,
@@ -193,6 +196,19 @@ macro_rules! impl_core_client {
             pub async fn continue_download(&self) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::ContinueDownload)
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Request a block be fetched.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            #[cfg(feature = "silent-payments")]
+            pub async fn get_block(&self, block_hash: BlockHash) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::GetBlock(block_hash))
                     .await
                     .map_err(|_| ClientError::SendError)
             }
