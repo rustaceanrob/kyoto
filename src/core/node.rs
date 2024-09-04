@@ -212,7 +212,7 @@ impl Node {
                                         peer_map.set_height(peer_thread.nonce, version.start_height as u32);
                                         *peer_map.best_height().unwrap_or(&0)
                                     };
-                                    let response = self.handle_version(&peer_thread.nonce, version, best).await?;
+                                    let response = self.handle_version(peer_thread.nonce, version, best).await?;
                                     self.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
                                         .await;
@@ -500,7 +500,7 @@ impl Node {
     // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
         &self,
-        nonce: &u32,
+        nonce: u32,
         version_message: VersionMessage,
         best_height: u32,
     ) -> Result<MainThreadMessage, NodeError> {
@@ -526,11 +526,11 @@ impl Node {
         // First we signal for ADDRV2 support
         if version_message.version.gt(&ADDR_V2_VERSION) && needs_peers {
             peer_map
-                .send_message(*nonce, MainThreadMessage::GetAddrV2)
+                .send_message(nonce, MainThreadMessage::GetAddrV2)
                 .await;
         }
         peer_map
-            .send_message(*nonce, MainThreadMessage::Verack)
+            .send_message(nonce, MainThreadMessage::Verack)
             .await;
         // Now we may request peers if required
         if needs_peers {
@@ -538,7 +538,7 @@ impl Node {
                 .send_dialog("Requesting new addresses".into())
                 .await;
             peer_map
-                .send_message(*nonce, MainThreadMessage::GetAddr)
+                .send_message(nonce, MainThreadMessage::GetAddr)
                 .await;
         }
         // Inform the user we are connected to all required peers
@@ -595,7 +595,7 @@ impl Node {
                         })
                         .await;
                     let mut lock = self.peer_map.lock().await;
-                    lock.ban(&peer_id).await;
+                    lock.ban(peer_id).await;
                     return Some(MainThreadMessage::Disconnect);
                 }
             }
@@ -635,7 +635,7 @@ impl Node {
                     })
                     .await;
                 let mut lock = self.peer_map.lock().await;
-                lock.ban(&peer_id).await;
+                lock.ban(peer_id).await;
                 Some(MainThreadMessage::Disconnect)
             }
         }
@@ -656,7 +656,7 @@ impl Node {
                     CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
                     _ => {
                         let mut lock = self.peer_map.lock().await;
-                        lock.ban(&peer_id).await;
+                        lock.ban(peer_id).await;
                         Some(MainThreadMessage::Disconnect)
                     }
                 }
@@ -674,7 +674,7 @@ impl Node {
                 })
                 .await;
             let mut lock = self.peer_map.lock().await;
-            lock.ban(&peer_id).await;
+            lock.ban(peer_id).await;
             return Some(MainThreadMessage::Disconnect);
         }
         None

@@ -331,8 +331,8 @@ impl PeerMap {
     }
 
     // We tried this peer and successfully connected.
-    pub async fn tried(&mut self, nonce: &u32) {
-        if let Some(peer) = self.map.get(nonce) {
+    pub async fn tried(&mut self, nonce: u32) {
+        if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
@@ -358,8 +358,8 @@ impl PeerMap {
     }
 
     // This peer misbehaved in some way.
-    pub async fn ban(&mut self, nonce: &u32) {
-        if let Some(peer) = self.map.get(nonce) {
+    pub async fn ban(&mut self, nonce: u32) {
+        if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
             if let Err(e) = db
                 .update(PersistedPeer::new(
