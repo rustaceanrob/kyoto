@@ -50,6 +50,7 @@ pub(crate) const ADDR_V2_VERSION: u32 = 70015;
 const LOOP_TIMEOUT: u64 = 1;
 
 type Whitelist = Option<Vec<TrustedPeer>>;
+type PeerRequirement = usize;
 
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +74,7 @@ pub struct Node {
     chain: Arc<Mutex<Chain>>,
     peer_map: Arc<Mutex<PeerMap>>,
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
-    required_peers: usize,
+    required_peers: PeerRequirement,
     dialog: Dialog,
     client_recv: Arc<Mutex<Receiver<ClientMessage>>>,
     peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
@@ -88,7 +89,7 @@ impl Node {
         white_list: Whitelist,
         scripts: HashSet<ScriptBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
-        required_peers: usize,
+        required_peers: PeerRequirement,
         target_peer_size: u32,
         connection_type: ConnectionType,
         timeout: Duration,
@@ -161,7 +162,7 @@ impl Node {
             config.white_list,
             config.addresses,
             config.header_checkpoint,
-            config.required_peers as usize,
+            config.required_peers as PeerRequirement,
             config.target_peer_size,
             config.connection_type,
             config.response_timeout,
@@ -465,7 +466,7 @@ impl Node {
     }
 
     // When syncing headers we are only interested in one peer to start
-    async fn next_required_peers(&self) -> usize {
+    async fn next_required_peers(&self) -> PeerRequirement {
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => 1,

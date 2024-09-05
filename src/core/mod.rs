@@ -15,7 +15,6 @@ pub(crate) mod dialog;
 pub mod error;
 /// Messages the node may send a client.
 pub mod messages;
-#[allow(clippy::module_inception)]
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
 mod peer_map;
