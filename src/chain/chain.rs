@@ -634,7 +634,7 @@ impl Chain {
             let height = self
                 .height_of_hash(filter_message.block_hash)
                 .await
-                .ok_or(CFilterSyncError::UnrequestedStophash)?;
+                .ok_or(CFilterSyncError::UnknownFilterHash)?;
             let indexed_filter = IndexedFilter::new(height, filter);
             self.dialog
                 .send_data(NodeMessage::IndexedFilter(indexed_filter))

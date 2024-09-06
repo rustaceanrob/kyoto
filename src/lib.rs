@@ -71,9 +71,6 @@ pub mod db;
 mod filters;
 mod peers;
 mod prelude;
-/// Additional tools for BIP352 silent payments.
-#[cfg(feature = "silent-payments")]
-pub mod sp;
 #[cfg(feature = "silent-payments")]
 use filters::filter::Filter;
 #[cfg(feature = "silent-payments")]
