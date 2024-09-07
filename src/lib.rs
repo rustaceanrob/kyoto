@@ -71,9 +71,10 @@ pub mod db;
 mod filters;
 mod peers;
 mod prelude;
-/// Additional tools for BIP352 silent payments.
 #[cfg(feature = "silent-payments")]
-pub mod sp;
+use filters::filter::Filter;
+#[cfg(feature = "silent-payments")]
+use std::collections::HashSet;
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -153,6 +154,36 @@ pub struct IndexedBlock {
 impl IndexedBlock {
     pub(crate) fn new(height: u32, block: Block) -> Self {
         Self { height, block }
+    }
+}
+
+#[cfg(feature = "silent-payments")]
+/// A compact block filter with associated height.
+#[derive(Debug, Clone)]
+pub struct IndexedFilter {
+    height: u32,
+    filter: Filter,
+}
+
+#[cfg(feature = "silent-payments")]
+impl IndexedFilter {
+    fn new(height: u32, filter: Filter) -> Self {
+        Self { height, filter }
+    }
+
+    /// The height in the chain.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Return the [`BlockHash`] associated with this filer
+    pub fn block_hash(&self) -> &BlockHash {
+        self.filter.block_hash()
+    }
+
+    /// Does the filter contain a positive match for any of the provided scripts
+    pub async fn contains_any(&mut self, scripts: &HashSet<ScriptBuf>) -> bool {
+        self.filter.contains_any(scripts).await.unwrap()
     }
 }
 

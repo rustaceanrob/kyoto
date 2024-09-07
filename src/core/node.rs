@@ -301,7 +301,17 @@ impl Node {
                                 if let Some(response) = self.start_filter_download().await {
                                     self.broadcast(response).await
                                 }
-                            }
+                            },
+                            #[cfg(feature = "silent-payments")]
+                            ClientMessage::GetBlock(hash) => {
+                                let mut state = self.state.write().await;
+                                if matches!(*state, NodeState::TransactionsSynced) {
+                                    *state = NodeState::FiltersSynced
+                                }
+                                drop(state);
+                                let mut chain = self.chain.lock().await;
+                                chain.get_block(hash);
+                            },
                         }
                     }
                 }

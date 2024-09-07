@@ -1,7 +1,11 @@
 use std::collections::{BTreeMap, HashSet};
 
+#[cfg(feature = "silent-payments")]
+use bitcoin::BlockHash;
 use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid};
 
+#[cfg(feature = "silent-payments")]
+use crate::IndexedFilter;
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
     TxBroadcast,
@@ -22,7 +26,7 @@ pub enum NodeMessage {
     ConnectionsMet,
     /// A relevant transaction based on the user provided scripts.
     Transaction(IndexedTransaction),
-    /// A relevant [`crate::Block`] based on the user provided scripts.
+    /// A relevant [`Block`](crate) based on the user provided scripts.
     /// Note that the block may not contain any transactions contained in the script set.
     /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
@@ -36,6 +40,9 @@ pub enum NodeMessage {
     TxSent(Txid),
     /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
     TxBroadcastFailure(FailurePayload),
+    /// A compact block filter with associated height and block hash.
+    #[cfg(feature = "silent-payments")]
+    IndexedFilter(IndexedFilter),
 }
 
 /// The node has synced to a new tip of the chain.
@@ -101,6 +108,9 @@ pub(crate) enum ClientMessage {
     /// start the filter download and checking process. Otherwise, this command will not have any effect
     /// on node operation.
     ContinueDownload,
+    /// Explicitly request a block from the node.
+    #[cfg(feature = "silent-payments")]
+    GetBlock(BlockHash),
 }
 
 /// Warnings a node may issue while running.

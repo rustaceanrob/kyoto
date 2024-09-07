@@ -82,6 +82,7 @@ impl NodeBuilder {
     }
 
     /// Add Bitcoin scripts to monitor for. You may add more later with the [`Client`].
+    #[cfg(not(feature = "silent-payments"))]
     pub fn add_scripts(mut self, addresses: HashSet<ScriptBuf>) -> Self {
         self.config.addresses = addresses;
         self

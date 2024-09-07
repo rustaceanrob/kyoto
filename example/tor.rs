@@ -2,10 +2,10 @@
 //! Note that, without DNS enabled, at least one peer must be provided when building the node.
 
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
+use kyoto::core::messages::NodeMessage;
 use kyoto::db::memory::peers::StatelessPeerStore;
 use kyoto::db::sqlite::headers::SqliteHeaderDb;
-use kyoto::node::messages::NodeMessage;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, node::builder::NodeBuilder};
+use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{BlockHash, ConnectionType, TorClient, TorClientConfig, TrustedPeer};
 use std::collections::HashSet;
 use std::str::FromStr;
