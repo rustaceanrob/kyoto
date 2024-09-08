@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 #[cfg(feature = "silent-payments")]
 use bitcoin::BlockHash;
 use bitcoin::ScriptBuf;
@@ -160,17 +158,18 @@ macro_rules! impl_core_client {
             }
 
             /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
+            /// If the script was already present in the node's collection, no change will occur.
             ///
             /// # Errors
             ///
             /// If the node has stopped running.
             #[cfg(not(feature = "silent-payments"))]
-            pub async fn add_scripts(
+            pub async fn add_script(
                 &self,
-                scripts: HashSet<ScriptBuf>,
+                script: impl Into<ScriptBuf>,
             ) -> Result<(), ClientError> {
                 self.ntx
-                    .send(ClientMessage::AddScripts(scripts))
+                    .send(ClientMessage::AddScript(script.into()))
                     .await
                     .map_err(|_| ClientError::SendError)
             }

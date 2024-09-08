@@ -58,16 +58,13 @@ async fn main() {
         }
     }
     // Add new scripts to the node.
-    let mut new_scripts = HashSet::new();
     let new_script = bitcoin::Address::from_str(
         "tb1par6ufhp0t448t908kyyvkp3a48r42qcjmg0z9p6a0zuakc44nn2seh63jr",
     )
     .unwrap()
     .require_network(bitcoin::Network::Signet)
-    .unwrap()
-    .into();
-    new_scripts.insert(new_script);
-    sender.add_scripts(new_scripts).await.unwrap();
+    .unwrap();
+    sender.add_script(new_script).await.unwrap();
     // // Tell the node to look for these new scripts
     sender.rescan().await.unwrap();
     tracing::info!("Starting rescan");
