@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[cfg(feature = "silent-payments")]
 use bitcoin::BlockHash;
@@ -101,7 +101,7 @@ pub(crate) enum ClientMessage {
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(TxBroadcast),
     /// Add more Bitcoin [`ScriptBuf`] to look for.
-    AddScripts(HashSet<ScriptBuf>),
+    AddScript(ScriptBuf),
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
     Rescan,
     /// If the [`FilterSyncPolicy`](crate) is set to `Halt`, issuing this command will

@@ -737,11 +737,9 @@ impl Chain {
             .any(|out| self.scripts.contains(&out.script_pubkey))
     }
 
-    // Add more scripts to our list
-    pub(crate) fn put_scripts(&mut self, scripts: HashSet<ScriptBuf>) {
-        for script in scripts {
-            self.scripts.insert(script);
-        }
+    // Add a script to our list
+    pub(crate) fn put_script(&mut self, script: ScriptBuf) {
+        self.scripts.insert(script);
     }
 
     // Explicitly request a block

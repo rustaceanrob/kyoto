@@ -291,7 +291,7 @@ impl Node {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
                             ClientMessage::Broadcast(transaction) => self.tx_broadcaster.lock().await.add(transaction),
-                            ClientMessage::AddScripts(scripts) =>  self.add_scripts(scripts).await,
+                            ClientMessage::AddScript(script) =>  self.add_script(script).await,
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan().await {
                                     self.broadcast(response).await;
@@ -740,9 +740,9 @@ impl Node {
     }
 
     // Add more scripts to the chain to look for. Does not imply a rescan.
-    async fn add_scripts(&self, scripts: HashSet<ScriptBuf>) {
+    async fn add_script(&self, script: ScriptBuf) {
         let mut chain = self.chain.lock().await;
-        chain.put_scripts(scripts);
+        chain.put_script(script);
     }
 
     // Clear the filter hash cache and redownload the filters.
