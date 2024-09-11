@@ -6,7 +6,8 @@ use crate::{prelude::MEDIAN_TIME_PAST, DisconnectedHeader};
 
 use super::checkpoints::HeaderCheckpoint;
 
-pub(crate) type Headers = BTreeMap<u32, Header>;
+type Height = u32;
+pub(crate) type Headers = BTreeMap<Height, Header>;
 
 const LOCATOR_LOOKBACKS: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const MAX_LOOKBACK: usize = 1025;
@@ -42,8 +43,8 @@ impl HeaderChain {
     }
 
     // The canoncial height of the chain, one less than the length
-    pub(crate) fn height(&self) -> u32 {
-        self.headers.len() as u32 + self.anchor_checkpoint.height
+    pub(crate) fn height(&self) -> Height {
+        self.headers.len() as Height + self.anchor_checkpoint.height
     }
 
     // The length of the chain we have interally
@@ -71,7 +72,7 @@ impl HeaderChain {
     }
 
     // The height of the blockhash in the chain
-    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
+    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<Height> {
         if blockhash.eq(&self.anchor_checkpoint.hash) {
             return Some(self.anchor_checkpoint.height);
         }
@@ -84,7 +85,7 @@ impl HeaderChain {
     }
 
     // This header chain contains a block hash
-    pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
+    pub(crate) fn header_at_height(&self, height: Height) -> Option<&Header> {
         self.headers.get(&height)
     }
 
@@ -111,7 +112,7 @@ impl HeaderChain {
     }
 
     // Calculate the chainwork after a fork height to evalutate the fork
-    pub(crate) fn chainwork_after_height(&self, height: u32) -> Work {
+    pub(crate) fn chainwork_after_height(&self, height: Height) -> Work {
         let work = self
             .headers
             .iter()
@@ -167,7 +168,7 @@ impl HeaderChain {
     }
 
     // The last ten heights and headers in chronological order
-    pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
+    pub(crate) fn last_ten(&self) -> BTreeMap<Height, Header> {
         self.headers
             .iter()
             .rev()
@@ -204,7 +205,7 @@ impl HeaderChain {
             let current_anchor = self.height();
             for (index, header) in batch.iter().enumerate() {
                 self.headers
-                    .insert(current_anchor + 1 + index as u32, *header);
+                    .insert(current_anchor + 1 + index as Height, *header);
             }
         } else {
             // Panic if we don't contain the hash. Something went wrong further up the call stack.
@@ -235,13 +236,13 @@ impl HeaderChain {
             let current_anchor = self.height();
             for (index, header) in batch.iter().enumerate() {
                 self.headers
-                    .insert(current_anchor + 1 + index as u32, *header);
+                    .insert(current_anchor + 1 + index as Height, *header);
             }
         }
         reorged.into_iter().rev().collect()
     }
 
-    fn remove(&mut self, height: &u32) {
+    fn remove(&mut self, height: &Height) {
         self.headers.remove(height);
     }
 

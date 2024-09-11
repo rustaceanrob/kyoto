@@ -2,14 +2,15 @@ use std::{collections::VecDeque, str::FromStr};
 
 use bitcoin::{BlockHash, Network};
 
+type Height = u32;
 /// Known block hashes for Regtest. Only the genesis hash.
-pub const REGTEST_HEADER_CP: &[(u32, &str)] = &[(
+pub const REGTEST_HEADER_CP: &[(Height, &str)] = &[(
     0,
     "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
 )];
 
 /// Known block hashes for Signet.
-pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
+pub const SIGNET_HEADER_CP: &[(Height, &str)] = &[
     (
         0,
         "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
@@ -101,7 +102,7 @@ pub const SIGNET_HEADER_CP: &[(u32, &str)] = &[
 ];
 
 /// Known block hashes on the Bitcoin blockchain.
-pub const MAINNET_HEADER_CP: &[(u32, &str)] = &[
+pub const MAINNET_HEADER_CP: &[(Height, &str)] = &[
     (
         0,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
@@ -452,14 +453,14 @@ pub const MAINNET_HEADER_CP: &[(u32, &str)] = &[
 #[derive(Debug, Clone, Copy)]
 pub struct HeaderCheckpoint {
     /// The index of the block hash.
-    pub height: u32,
+    pub height: Height,
     /// The Bitcoin block hash expected at this height
     pub hash: BlockHash,
 }
 
 impl HeaderCheckpoint {
     /// Create a new checkpoint from a known checkpoint of significant work.
-    pub fn new(height: u32, hash: BlockHash) -> Self {
+    pub fn new(height: Height, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }
 }
