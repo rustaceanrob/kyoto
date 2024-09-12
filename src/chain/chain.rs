@@ -256,17 +256,8 @@ impl Chain {
             .load_after(self.height())
             .await
             .map_err(HeaderPersistenceError::Database)?;
-        if loaded_headers.len().gt(&0) {
-            if loaded_headers
-                .values()
-                .take(1)
-                .copied()
-                .collect::<Vec<Header>>()
-                .first()
-                .unwrap()
-                .prev_blockhash
-                .ne(&self.tip())
-            {
+        if let Some(first) = loaded_headers.values().next() {
+            if first.prev_blockhash.ne(&self.tip()) {
                 self.dialog.send_warning(Warning::UnlinkableAnchor).await;
                 // The header chain did not align, so just start from the anchor
                 return Err(HeaderPersistenceError::CannotLocateHistory);
@@ -285,7 +276,7 @@ impl Chain {
                     }
                 }
             })
-        };
+        }
         self.header_chain.set_headers(loaded_headers);
         Ok(())
     }
