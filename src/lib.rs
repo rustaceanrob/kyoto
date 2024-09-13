@@ -1,9 +1,9 @@
-//! Kyoto is a conservative, private, and cohesive Bitcoin client built in accordance
+//! Kyoto is a conservative, private, and vetted Bitcoin client built in accordance
 //! with the [BIP157](https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki) and [BIP158](https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki)
 //! standards. _Conservative_, as in Kyoto makes very little assumptions about the underlying memory requirements of the
 //! device running the software. _Private_, as in the Bitcoin nodes that serve Kyoto nodes data do not know what transactions the
-//! client is querying for, only the entire Bitcoin block. _Cohesive_, as in the dependencies of the core library are meant to remain limited
-//! and vetted.
+//! client is querying for, only the entire Bitcoin block. _Vetted_, as in the dependencies of the core library are meant to remain limited,
+//! rigorously tested, and absolutely necessary.
 //!
 //! # Example usage
 //!
@@ -60,14 +60,16 @@
 //!     sender.shutdown().await;
 //! }
 //! ```
+//!
+//! # Getting started
+//!
+//! The [`core`] module documentation is likely the best place to start when developing an application with Kyoto.
 
 #![warn(missing_docs)]
-/// Strucutres and checkpoints related to the blockchain.
 pub mod chain;
-/// Tools to build and run a compact block filters node.
 pub mod core;
-/// Traits and structures that define the data persistence required for a node.
 pub mod db;
+
 mod filters;
 mod peers;
 mod prelude;

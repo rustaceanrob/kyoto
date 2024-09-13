@@ -1,3 +1,9 @@
+//! Traits and structures that define the data persistence required for a node.
+//!
+//! All nodes require a [`HeaderStore`](traits::HeaderStore) and a [`PeerStore`](traits::PeerStore). Unless
+//! your application dependency tree is particularly strict, SQL-based storage will be sufficient for the majority of
+//! applications.
+
 use bitcoin::key::rand::distributions::Standard;
 use bitcoin::key::rand::prelude::Distribution;
 use bitcoin::key::rand::{thread_rng, Rng};
