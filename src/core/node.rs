@@ -67,7 +67,7 @@ pub enum NodeState {
     TransactionsSynced,
 }
 
-/// A compact block filter client
+/// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
 pub struct Node {
     state: Arc<RwLock<NodeState>>,
