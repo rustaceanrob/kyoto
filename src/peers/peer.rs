@@ -37,8 +37,8 @@ use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 2;
-//                   sec  min  hour
-const ONE_DAY: u64 = 60 * 60 * 24;
+//                    sec  min  hour
+const TWO_HOUR: u64 = 60 * 60 * 2;
 const MAX_RESPONSE: [u8; 4096] = [0; 4096];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
@@ -148,11 +148,11 @@ impl Peer {
                 self.dialog.send_warning(Warning::PeerTimedOut).await;
                 return Ok(());
             }
-            if Instant::now().duration_since(start_time) > Duration::from_secs(ONE_DAY) {
+            if Instant::now().duration_since(start_time) > Duration::from_secs(TWO_HOUR) {
                 self.dialog
                     .send_dialog(format!(
-                        "The connection to peer {} has been maintained for over 24 hours, finding a new peer",
-                        self.nonce
+                        "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
+                        self.nonce, TWO_HOUR,
                     ))
                     .await;
                 return Ok(());
