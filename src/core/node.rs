@@ -12,7 +12,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, Network, ScriptBuf,
+    Block, BlockHash, Network, ScriptBuf,
 };
 use tokio::sync::{broadcast, mpsc::Receiver, Mutex, RwLock};
 use tokio::{
@@ -256,16 +256,7 @@ impl Node {
                                 PeerMessage::NewBlocks(blocks) => {
                                     self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
                                         .await;
-                                    let best = {
-                                        let mut peer_map = self.peer_map.lock().await;
-                                        for block in blocks {
-                                            peer_map.add_one_height(peer_thread.nonce);
-                                            self.dialog.send_dialog(format!("New block: {}", block))
-                                                .await;
-                                        }
-                                        *peer_map.best_height().unwrap_or(&0)
-                                    };
-                                    match self.handle_inventory_blocks(best).await {
+                                    match self.handle_inventory_blocks(peer_thread.nonce, blocks).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
                                         }
@@ -716,25 +707,43 @@ impl Node {
     }
 
     // If new inventory came in, we need to download the headers and update the node state
-    async fn handle_inventory_blocks(&self, new_height: u32) -> Option<MainThreadMessage> {
+    async fn handle_inventory_blocks(
+        &self,
+        nonce: u32,
+        blocks: Vec<BlockHash>,
+    ) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;
+        let mut chain = self.chain.lock().await;
+        let mut peer_map = self.peer_map.lock().await;
+        for block in blocks.iter() {
+            peer_map.add_one_height(nonce);
+            if !chain.contains_hash(*block) {
+                self.dialog
+                    .send_dialog(format!("New block: {}", block))
+                    .await;
+            }
+        }
+        let best_peer_height = *peer_map.best_height().unwrap_or(&0);
+        if chain.height() < best_peer_height {
+            chain.set_best_known_height(best_peer_height).await;
+        }
         match *state {
             NodeState::Behind => None,
             _ => {
-                self.dialog
-                    .send_data(NodeMessage::StateChange(NodeState::Behind))
-                    .await;
-                *state = NodeState::Behind;
-                let mut chain = self.chain.lock().await;
-                let next_headers = GetHeaderConfig {
-                    locators: chain.locators().await,
-                    stop_hash: None,
-                };
-                chain.clear_compact_filter_queue();
-                if chain.height().le(&new_height) {
-                    chain.set_best_known_height(new_height).await;
+                if blocks.into_iter().any(|block| !chain.contains_hash(block)) {
+                    self.dialog
+                        .send_data(NodeMessage::StateChange(NodeState::Behind))
+                        .await;
+                    *state = NodeState::Behind;
+                    let next_headers = GetHeaderConfig {
+                        locators: chain.locators().await,
+                        stop_hash: None,
+                    };
+                    chain.clear_compact_filter_queue();
+                    Some(MainThreadMessage::GetHeaders(next_headers))
+                } else {
+                    None
                 }
-                Some(MainThreadMessage::GetHeaders(next_headers))
             }
         }
     }
