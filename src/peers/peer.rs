@@ -39,7 +39,7 @@ const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 2;
 //                    sec  min  hour
 const TWO_HOUR: u64 = 60 * 60 * 2;
-const MAX_RESPONSE: [u8; 4096] = [0; 4096];
+const MAX_RESPONSE: [u8; 4111] = [0; 4111];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
 
