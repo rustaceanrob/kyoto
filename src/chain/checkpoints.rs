@@ -447,6 +447,10 @@ pub const MAINNET_HEADER_CP: &[(Height, &str)] = &[
         850000,
         "00000000000000000002a0b5db2a7f8d9087464c2586b546be7bce8eb53b8187",
     ),
+    (
+        860000,
+        "0000000000000000000095dd5c0c8e176a6498eb335c491b96df1a1ae178bfbd",
+    ),
 ];
 
 /// A known block hash in the chain of most work.
