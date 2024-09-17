@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::{peers::error::DnsBootstrapError, prelude::encode_qname};
+use crate::{network::error::DnsBootstrapError, prelude::encode_qname};
 use bitcoin::{
     key::rand::{thread_rng, RngCore},
     Network,
