@@ -28,7 +28,7 @@ impl BlockQueue {
     }
 
     pub(crate) fn contains(&mut self, block: &BlockHash) -> bool {
-        self.queue.contains(block)
+        self.queue.contains(block) || self.want.map_or(false, |hash| hash.eq(block))
     }
 
     pub(crate) fn pop(&mut self) -> Option<BlockHash> {
