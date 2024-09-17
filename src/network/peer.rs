@@ -19,7 +19,7 @@ use crate::{
         dialog::Dialog,
         messages::Warning,
     },
-    peers::outbound_messages::V1OutboundMessage,
+    network::outbound_messages::V1OutboundMessage,
 };
 
 use super::{

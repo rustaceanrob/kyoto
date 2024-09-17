@@ -20,7 +20,7 @@ use tokio::{
 
 use crate::{
     db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
-    peers::{
+    network::{
         error::PeerError,
         peer::Peer,
         traits::{ClearNetConnection, NetworkConnector},
@@ -86,7 +86,7 @@ impl PeerMap {
             ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
             #[cfg(feature = "tor")]
             ConnectionType::Tor(client) => {
-                use crate::peers::tor::TorConnection;
+                use crate::network::tor::TorConnection;
                 Arc::new(Mutex::new(TorConnection::new(client)))
             }
         };
@@ -386,7 +386,7 @@ impl PeerMap {
 
     #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
-        use crate::peers::dns::Dns;
+        use crate::network::dns::Dns;
         use std::net::IpAddr;
         self.dialog
             .send_dialog("Bootstraping peers with DNS".into())

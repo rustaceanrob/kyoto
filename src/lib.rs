@@ -71,7 +71,7 @@ pub mod core;
 pub mod db;
 
 mod filters;
-mod peers;
+mod network;
 mod prelude;
 #[cfg(feature = "silent-payments")]
 use filters::filter::Filter;
