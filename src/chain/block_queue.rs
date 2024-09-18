@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use bitcoin::BlockHash;
 use tokio::time::Instant;
 
-const SPAM_LIMIT: u64 = 2;
+const SPAM_LIMIT: u64 = 5;
 
 #[derive(Debug)]
 pub(crate) struct BlockQueue {
@@ -37,6 +37,7 @@ impl BlockQueue {
                 if Instant::now().duration_since(self.last_req).as_secs() < SPAM_LIMIT {
                     None
                 } else {
+                    self.last_req = Instant::now();
                     Some(block)
                 }
             }
