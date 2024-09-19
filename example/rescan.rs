@@ -34,7 +34,7 @@ async fn main() {
                 .unwrap(),
         ))
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .num_required_peers(1)
         .build_node()
         .unwrap();
     // Run the node and wait for the sync message;
