@@ -87,6 +87,7 @@ impl std::error::Error for HeaderPersistenceError {
 #[derive(Debug)]
 pub(crate) enum BlockScanError {
     NoBlockHash,
+    InvalidMerkleRoot,
 }
 
 impl Display for BlockScanError {
@@ -94,6 +95,9 @@ impl Display for BlockScanError {
         match self {
             BlockScanError::NoBlockHash => {
                 write!(f, "the block sent to us does not have a known hash.")
+            }
+            BlockScanError::InvalidMerkleRoot => {
+                write!(f, "the block sent to us does not have a merkle root that matches its header commitment.")
             }
         }
     }

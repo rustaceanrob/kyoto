@@ -703,18 +703,20 @@ impl Chain {
         self.block_queue.complete()
     }
 
-    // Make sure we have this hash in our chain and pass the block
+    // Make sure we have this hash in our chain, check the merkle root, and pass the block
     pub(crate) async fn check_send_block(&mut self, block: Block) -> Result<(), BlockScanError> {
+        let height = self
+            .height_of_hash(block.block_hash())
+            .await
+            .ok_or(BlockScanError::NoBlockHash)?;
+        if !block.check_merkle_root() {
+            return Err(BlockScanError::InvalidMerkleRoot);
+        }
         if self.block_queue.received(&block.block_hash()) {
-            match self.height_of_hash(block.block_hash()).await {
-                Some(height) => {
-                    self.dialog
-                        .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
-                        .await;
-                    Ok(())
-                }
-                None => Err(BlockScanError::NoBlockHash),
-            }
+            self.dialog
+                .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
+                .await;
+            Ok(())
         } else {
             Ok(())
         }
