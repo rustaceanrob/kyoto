@@ -50,16 +50,15 @@ impl BlockQueue {
         }
     }
 
-    pub(crate) fn received(&mut self, hash: &BlockHash) -> bool {
-        match self.want {
-            Some(want) => {
-                if want.eq(hash) {
-                    self.want = None;
-                    return true;
-                }
-                false
+    pub(crate) fn need(&self, block: &BlockHash) -> bool {
+        self.want.map_or(false, |hash| hash.eq(block))
+    }
+
+    pub(crate) fn receive(&mut self, hash: &BlockHash) {
+        if let Some(want) = self.want {
+            if want.eq(hash) {
+                self.want = None;
             }
-            None => false,
         }
     }
 
@@ -103,19 +102,24 @@ mod test {
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(queue.pop(), None);
         assert_eq!(queue.want, Some(hash_1));
-        queue.received(&hash_1);
+        assert!(queue.need(&hash_1));
+        queue.receive(&hash_1);
         assert_eq!(queue.want, None);
         assert_eq!(queue.pop(), Some(hash_2));
         assert_eq!(queue.want, Some(hash_2));
-        queue.received(&hash_2);
+        assert!(queue.need(&hash_2));
+        queue.receive(&hash_2);
         assert_eq!(queue.pop(), Some(hash_3));
         assert!(!queue.complete());
         assert_eq!(queue.pop(), None);
         assert!(!queue.complete());
-        queue.received(&hash_2);
+        assert!(queue.need(&hash_3));
+        queue.receive(&hash_2);
+        assert!(queue.need(&hash_3));
         assert!(!queue.complete());
-        queue.received(&hash_3);
+        queue.receive(&hash_3);
         assert!(queue.complete());
+        assert!(!queue.need(&hash_3));
         assert_eq!(queue.pop(), None);
     }
 
@@ -139,24 +143,28 @@ mod test {
         queue.add(hash_1);
         assert_eq!(queue.queue.len(), 3);
         assert_eq!(queue.pop(), Some(hash_1));
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_secs(6)).await;
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(queue.want, Some(hash_1));
-        queue.received(&hash_1);
+        assert!(queue.need(&hash_1));
+        queue.receive(&hash_1);
+        assert!(!queue.need(&hash_1));
         assert_eq!(queue.want, None);
         assert_eq!(queue.pop(), Some(hash_2));
         assert_eq!(queue.want, Some(hash_2));
-        queue.received(&hash_2);
+        assert!(queue.need(&hash_2));
+        queue.receive(&hash_2);
         assert_eq!(queue.pop(), Some(hash_3));
         assert!(!queue.complete());
         assert_eq!(queue.pop(), None);
         assert!(!queue.complete());
-        queue.received(&hash_2);
+        queue.receive(&hash_2);
         assert!(!queue.complete());
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_secs(6)).await;
         assert_eq!(queue.pop(), Some(hash_3));
+        assert!(queue.need(&hash_3));
         assert!(!queue.complete());
-        queue.received(&hash_3);
+        queue.receive(&hash_3);
         assert!(queue.complete());
         assert_eq!(queue.pop(), None);
     }
@@ -181,6 +189,7 @@ mod test {
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(queue.want, Some(hash_1));
         queue.remove(&[hash_1]);
+        assert!(!queue.need(&hash_1));
         assert_eq!(queue.want, None);
         queue.remove(&[hash_2]);
         assert_eq!(queue.queue.len(), 1);
