@@ -184,6 +184,12 @@ impl Node {
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
     pub async fn run(&self) -> Result<(), NodeError> {
         self.dialog.send_dialog("Starting node".into()).await;
+        self.dialog
+            .send_dialog(format!(
+                "Configured connection requirement: {} peers",
+                self.required_peers
+            ))
+            .await;
         self.is_running
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.fetch_headers().await?;
@@ -334,13 +340,6 @@ impl Node {
         peer_map.clean().await;
         // Find more peers when lower than the desired threshold.
         if peer_map.live() < self.next_required_peers().await {
-            self.dialog
-                .send_dialog(format!(
-                    "Required peers: {}, connected peers: {}",
-                    self.required_peers,
-                    peer_map.live()
-                ))
-                .await;
             self.dialog
                 .send_warning(Warning::NotEnoughConnections)
                 .await;
@@ -793,7 +792,7 @@ impl Node {
     // When the application starts, fetch any headers we know about from the database.
     async fn fetch_headers(&self) -> Result<(), NodeError> {
         self.dialog
-            .send_dialog("Attempting to load headers from the database.".into())
+            .send_dialog("Attempting to load headers from the database".into())
             .await;
         let mut chain = self.chain.lock().await;
         chain
