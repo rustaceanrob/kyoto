@@ -347,6 +347,19 @@ impl From<TrustedPeer> for (AddrV2, Option<u16>) {
         (value.address(), value.port())
     }
 }
+
+impl From<IpAddr> for TrustedPeer {
+    fn from(value: IpAddr) -> Self {
+        TrustedPeer::from_ip(value)
+    }
+}
+
+impl From<SocketAddr> for TrustedPeer {
+    fn from(value: SocketAddr) -> Self {
+        TrustedPeer::from_socket_addr(value)
+    }
+}
+
 /// How to connect to peers on the peer-to-peer network
 #[derive(Default, Clone)]
 #[non_exhaustive]
