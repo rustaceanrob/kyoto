@@ -5,6 +5,35 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.0
+
+## Added
+
+- `just` and `justfile` for local development
+- Additional SQL tests with `tempfile`
+- Additional context to database read and write errors
+- Support for a new silent payments feature-flag:
+  - Receive block filters directly
+  - Request blocks directly
+  - Pause the node state before downloading filters
+
+## Changed
+
+- Disconnect peers if no block is found after 30 minutes
+- Find new peers after 3 hour connections
+- `Node::run` is an immutable method
+- Check block merkle root
+- Download blocks in parallel with filters
+- Single `ScriptBuf` may be added at a time
+- `Client` and `ClientSender` share methods
+
+## Fixes
+
+- Only request headers for `inv` the node does not have
+- Max v2 handshake buffer size increased
+- Changes to `BlockQueue` to not spam peers with requests
+- Internal module renames
+
 ## v0.1.0
 
 #### Added
