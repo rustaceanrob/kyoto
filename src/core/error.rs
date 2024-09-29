@@ -8,14 +8,14 @@ use super::messages::FailurePayload;
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
-pub enum NodeError<H: Debug + Display> {
+pub enum NodeError<H: Debug + Display, P: Debug + Display> {
     /// The persistence layer experienced a critical error.
     HeaderDatabase(HeaderPersistenceError<H>),
     /// The persistence layer experienced a critical error.
-    PeerDatabase(PeerManagerError),
+    PeerDatabase(PeerManagerError<P>),
 }
 
-impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
+impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(
@@ -30,12 +30,21 @@ impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
     }
 }
 
-impl<H: Debug + Display> std::error::Error for NodeError<H> {
+impl<H: Debug + Display, P: Debug + Display> std::error::Error for NodeError<H, P> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            NodeError::HeaderDatabase(_) => None,
-            NodeError::PeerDatabase(e) => Some(e),
-        }
+        None
+    }
+}
+
+impl<H: Debug + Display, P: Debug + Display> From<HeaderPersistenceError<H>> for NodeError<H, P> {
+    fn from(value: HeaderPersistenceError<H>) -> Self {
+        NodeError::HeaderDatabase(value)
+    }
+}
+
+impl<H: Debug + Display, P: Debug + Display> From<PeerManagerError<P>> for NodeError<H, P> {
+    fn from(value: PeerManagerError<P>) -> Self {
+        NodeError::PeerDatabase(value)
     }
 }
 

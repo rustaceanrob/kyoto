@@ -5,7 +5,8 @@ use bitcoin::{block::Header, BlockHash};
 
 use crate::prelude::FutureResult;
 
-use super::{error::DatabaseError, PersistedPeer};
+use super::error::UnitPeerStoreError;
+use super::PersistedPeer;
 
 /// Methods required to persist the chain of block headers.
 pub trait HeaderStore: Debug + Send + Sync {
@@ -93,42 +94,39 @@ impl HeaderStore for () {
 }
 
 /// Methods that define a list of peers on the Bitcoin P2P network.
-pub trait PeerStore {
+pub trait PeerStore: Debug + Send + Sync {
+    /// Errors that may occur within a [`PeerStore`].
+    type Error: Debug + Display;
     /// Add a peer to the database, defining if it should be replaced or not.
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError>;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error>;
 
     /// Get any peer from the database, selected at random. If no peers exist, an error is thrown.
-    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError>;
+    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error>;
 
     /// The number of peers in the database that are not marked as banned.
-    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError>;
+    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error>;
 }
 
 impl PeerStore for () {
-    fn update(&mut self, _peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
-        async fn do_update() -> Result<(), DatabaseError> {
+    type Error = UnitPeerStoreError;
+    fn update(&mut self, _peer: PersistedPeer) -> FutureResult<(), Self::Error> {
+        async fn do_update() -> Result<(), UnitPeerStoreError> {
             Ok(())
         }
         Box::pin(do_update())
     }
 
-    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
-        async fn do_random() -> Result<PersistedPeer, DatabaseError> {
-            Err(DatabaseError::Load("No peers in Unit PeerStore".into()))
+    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
+        async fn do_random() -> Result<PersistedPeer, UnitPeerStoreError> {
+            Err(UnitPeerStoreError::NoPeers)
         }
         Box::pin(do_random())
     }
 
-    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
-        async fn do_num_unbanned() -> Result<u32, DatabaseError> {
+    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
+        async fn do_num_unbanned() -> Result<u32, UnitPeerStoreError> {
             Ok(0)
         }
         Box::pin(do_num_unbanned())
-    }
-}
-
-impl std::fmt::Debug for dyn PeerStore + Send + Sync + 'static {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Result::Ok(())
     }
 }

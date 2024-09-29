@@ -7,13 +7,14 @@ use bitcoin::{
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
-    db::{error::DatabaseError, traits::PeerStore, PeerStatus, PersistedPeer},
+    db::{error::StatelessPeerStoreError, traits::PeerStore, PeerStatus, PersistedPeer},
     prelude::FutureResult,
 };
 
 /// A simple peer store that does not save state in between sessions.
 /// If DNS is not enabled, a node will require at least one peer to connect to.
 /// Thereafter, the node will find peers to connect to throughout the session.
+#[derive(Debug)]
 pub struct StatelessPeerStore {
     list: HashMap<AddrV2, PersistedPeer>,
 }
@@ -26,7 +27,7 @@ impl StatelessPeerStore {
         }
     }
 
-    async fn update(&mut self, peer: PersistedPeer) -> Result<(), DatabaseError> {
+    async fn update(&mut self, peer: PersistedPeer) -> Result<(), StatelessPeerStoreError> {
         // Don't add back peers we already connected to this session.
         match peer.status {
             PeerStatus::New => {
@@ -41,7 +42,7 @@ impl StatelessPeerStore {
         }
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
+    async fn random(&mut self) -> Result<PersistedPeer, StatelessPeerStoreError> {
         let mut rng = StdRng::from_entropy();
         let random_peer = {
             let iter = self
@@ -54,12 +55,12 @@ impl StatelessPeerStore {
             Some(ip) => self
                 .list
                 .remove(&ip)
-                .ok_or(DatabaseError::Load("No peers exist in the database".into())),
-            None => Err(DatabaseError::Load("No peers exist in the database".into())),
+                .ok_or(StatelessPeerStoreError::NoPeers),
+            None => Err(StatelessPeerStoreError::NoPeers),
         }
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
+    async fn num_unbanned(&mut self) -> Result<u32, StatelessPeerStoreError> {
         Ok(self
             .list
             .iter()
@@ -69,15 +70,16 @@ impl StatelessPeerStore {
 }
 
 impl PeerStore for StatelessPeerStore {
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+    type Error = StatelessPeerStoreError;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error> {
         Box::pin(self.update(peer))
     }
 
-    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
         Box::pin(self.random())
     }
 
-    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
         Box::pin(self.num_unbanned())
     }
 }

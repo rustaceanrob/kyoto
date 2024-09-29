@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::error::{DatabaseError, SqlInitializationError};
+use crate::db::error::{SqlError, SqlInitializationError};
 use crate::db::traits::PeerStore;
 use crate::db::{PeerStatus, PersistedPeer};
 use crate::prelude::FutureResult;
@@ -76,7 +76,7 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), DatabaseError> {
+    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), SqlError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
             PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -97,62 +97,52 @@ impl SqlitePeerDb {
         lock.execute(
             stmt,
             params![blob, peer.port, services.to_u64(), tried, banned,],
-        )
-        .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        )?;
         Ok(())
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
+    async fn random(&mut self) -> Result<PersistedPeer, SqlError> {
         let lock = self.conn.lock().await;
-        let mut stmt = lock
-            .prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")
-            .map_err(|e| DatabaseError::Write(e.to_string()))?;
-        let mut rows = stmt
-            .query([])
-            .map_err(|e| DatabaseError::Load(e.to_string()))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| DatabaseError::Load(e.to_string()))?
-        {
-            let ip_addr: Vec<u8> = row.get(0).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let port: u16 = row.get(1).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let service_flags: u64 = row.get(2).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let tried: bool = row.get(3).map_err(|e| DatabaseError::Load(e.to_string()))?;
+        let mut stmt =
+            lock.prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let ip_addr: Vec<u8> = row.get(0)?;
+            let port: u16 = row.get(1)?;
+            let service_flags: u64 = row.get(2)?;
+            let tried: bool = row.get(3)?;
             let status = if tried {
                 PeerStatus::Tried
             } else {
                 PeerStatus::New
             };
-            let ip = deserialize(&ip_addr).map_err(|_| DatabaseError::Deserialization)?;
+            let ip = deserialize(&ip_addr).map_err(|_| SqlError::Corruption)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             Ok(PersistedPeer::new(ip, port, services, status))
         } else {
-            Err(DatabaseError::Load("No peers in the datastore".into()))
+            Err(SqlError::Corruption)
         }
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
+    async fn num_unbanned(&mut self) -> Result<u32, SqlError> {
         let lock = self.conn.lock().await;
-        let mut stmt = lock
-            .prepare("SELECT COUNT(*) FROM peers WHERE banned = false")
-            .map_err(|e| DatabaseError::Load(e.to_string()))?;
-        let count: u32 = stmt
-            .query_row([], |row| row.get(0))
-            .map_err(|_| DatabaseError::Deserialization)?;
+        let mut stmt = lock.prepare("SELECT COUNT(*) FROM peers WHERE banned = false")?;
+        let count: u32 = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
     }
 }
 
 impl PeerStore for SqlitePeerDb {
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+    type Error = SqlError;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error> {
         Box::pin(self.update(peer))
     }
 
-    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
         Box::pin(self.random())
     }
 
-    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
         Box::pin(self.num_unbanned())
     }
 }

@@ -153,7 +153,9 @@ impl NodeBuilder {
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "database")]
-    pub fn build_node(&mut self) -> Result<(Node<SqliteHeaderDb>, Client), SqlInitializationError> {
+    pub fn build_node(
+        &mut self,
+    ) -> Result<(Node<SqliteHeaderDb, SqlitePeerDb>, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new_from_config(
@@ -165,11 +167,11 @@ impl NodeBuilder {
     }
 
     /// Consume the node builder by using custom database implementations, receiving a [`Node`] and [`Client`].
-    pub fn build_with_databases<H: HeaderStore + 'static>(
+    pub fn build_with_databases<H: HeaderStore + 'static, P: PeerStore + 'static>(
         &mut self,
-        peer_store: impl PeerStore + Send + Sync + 'static,
+        peer_store: P,
         header_store: H,
-    ) -> (Node<H>, Client) {
+    ) -> (Node<H, P>, Client) {
         Node::new_from_config(
             core::mem::take(&mut self.config),
             self.network,

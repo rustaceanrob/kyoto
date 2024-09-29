@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{Debug, Display},
-    marker::PhantomData,
+    fmt::Debug,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -34,7 +33,6 @@ use crate::{
 use super::{
     channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
-    error::NodeError,
     messages::Warning,
 };
 
@@ -56,29 +54,28 @@ pub(crate) struct ManagedPeer {
 
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
-pub(crate) struct PeerMap<H: Debug + Display> {
+pub(crate) struct PeerMap<P: PeerStore> {
     num_peers: u32,
     heights: HashMap<u32, u32>,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<u32, ManagedPeer>,
-    db: Arc<Mutex<dyn PeerStore + Send + Sync>>,
+    db: Arc<Mutex<P>>,
     connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
     whitelist: Whitelist,
     dialog: Dialog,
     target_db_size: u32,
     net_groups: HashSet<String>,
     response_timeout: Duration,
-    marker: PhantomData<H>,
 }
 
 #[allow(dead_code)]
-impl<H: Debug + Display> PeerMap<H> {
+impl<P: PeerStore> PeerMap<P> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
         network: Network,
-        db: impl PeerStore + Send + Sync + 'static,
+        db: P,
         whitelist: Whitelist,
         dialog: Dialog,
         connection_type: ConnectionType,
@@ -106,7 +103,6 @@ impl<H: Debug + Display> PeerMap<H> {
             target_db_size,
             net_groups: HashSet::new(),
             response_timeout,
-            marker: PhantomData,
         }
     }
 
@@ -252,7 +248,7 @@ impl<H: Debug + Display> PeerMap<H> {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<PersistedPeer, NodeError<H>> {
+    pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
         if let Some(whitelist) = &mut self.whitelist {
             if let Some(peer) = whitelist.pop() {
                 self.dialog
@@ -268,24 +264,18 @@ impl<H: Debug + Display> PeerMap<H> {
         }
         let current_count = {
             let mut peer_manager = self.db.lock().await;
-            peer_manager
-                .num_unbanned()
-                .await
-                .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?
+            peer_manager.num_unbanned().await?
         };
         if current_count < 1 {
             self.dialog.send_warning(Warning::EmptyPeerDatabase).await;
             #[cfg(feature = "dns")]
-            self.bootstrap().await.map_err(NodeError::PeerDatabase)?;
+            self.bootstrap().await?;
         }
         let mut peer_manager = self.db.lock().await;
         let mut tries = 0;
         let desired_status = PeerStatus::random();
         while tries < MAX_TRIES {
-            let peer = peer_manager
-                .random()
-                .await
-                .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?;
+            let peer = peer_manager.random().await?;
             if self.net_groups.contains(&peer.addr.netgroup()) || desired_status.ne(&peer.status) {
                 tries += 1;
                 continue;
@@ -293,19 +283,13 @@ impl<H: Debug + Display> PeerMap<H> {
                 return Ok(peer);
             }
         }
-        peer_manager
-            .random()
-            .await
-            .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))
+        peer_manager.random().await.map_err(From::from)
     }
 
     // Do we need peers
-    pub async fn need_peers(&mut self) -> Result<bool, NodeError<H>> {
+    pub async fn need_peers(&mut self) -> Result<bool, PeerManagerError<P::Error>> {
         let mut db = self.db.lock().await;
-        let num_unbanned = db
-            .num_unbanned()
-            .await
-            .map_err(|e| NodeError::PeerDatabase(PeerManagerError::Database(e)))?;
+        let num_unbanned = db.num_unbanned().await?;
         Ok(num_unbanned < self.target_db_size)
     }
 
@@ -389,7 +373,7 @@ impl<H: Debug + Display> PeerMap<H> {
     }
 
     #[cfg(feature = "dns")]
-    async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
+    async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
         use crate::network::dns::Dns;
         use std::net::IpAddr;
         self.dialog

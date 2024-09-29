@@ -99,8 +99,6 @@ pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Tx
 pub use chain::checkpoints::HeaderCheckpoint;
 pub use chain::checkpoints::MAINNET_HEADER_CP;
 pub use chain::checkpoints::SIGNET_HEADER_CP;
-#[cfg(feature = "database")]
-pub use db::error::DatabaseError;
 pub use db::memory::peers::StatelessPeerStore;
 #[cfg(feature = "database")]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};

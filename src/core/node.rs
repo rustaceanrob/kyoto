@@ -69,10 +69,10 @@ pub enum NodeState {
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
-pub struct Node<H: HeaderStore> {
+pub struct Node<H: HeaderStore, P: PeerStore> {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain<H>>>,
-    peer_map: Arc<Mutex<PeerMap<H::Error>>>,
+    peer_map: Arc<Mutex<PeerMap<P>>>,
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: PeerRequirement,
     dialog: Dialog,
@@ -82,7 +82,7 @@ pub struct Node<H: HeaderStore> {
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
 
-impl<H: HeaderStore> Node<H> {
+impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network: Network,
@@ -94,7 +94,7 @@ impl<H: HeaderStore> Node<H> {
         connection_type: ConnectionType,
         timeout: Duration,
         filter_sync_policy: FilterSyncPolicy,
-        peer_store: impl PeerStore + Send + Sync + 'static,
+        peer_store: P,
         header_store: H,
     ) -> (Self, Client) {
         // Set up a communication channel between the node and client
@@ -154,7 +154,7 @@ impl<H: HeaderStore> Node<H> {
     pub(crate) fn new_from_config(
         config: NodeConfig,
         network: Network,
-        peer_store: impl PeerStore + Send + Sync + 'static,
+        peer_store: P,
         header_store: H,
     ) -> (Self, Client) {
         Node::new(
@@ -182,7 +182,7 @@ impl<H: HeaderStore> Node<H> {
     /// # Errors
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
-    pub async fn run(&self) -> Result<(), NodeError<H::Error>> {
+    pub async fn run(&self) -> Result<(), NodeError<H::Error, P::Error>> {
         self.dialog.send_dialog("Starting node".into()).await;
         self.dialog
             .send_dialog(format!(
@@ -335,7 +335,7 @@ impl<H: HeaderStore> Node<H> {
     }
 
     // Connect to a new peer if we are not connected to enough
-    async fn dispatch(&self) -> Result<(), NodeError<H::Error>> {
+    async fn dispatch(&self) -> Result<(), NodeError<H::Error, P::Error>> {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.clean().await;
         // Find more peers when lower than the desired threshold.
@@ -504,7 +504,7 @@ impl<H: HeaderStore> Node<H> {
         nonce: u32,
         version_message: VersionMessage,
         best_height: u32,
-    ) -> Result<MainThreadMessage, NodeError<H::Error>> {
+    ) -> Result<MainThreadMessage, NodeError<H::Error, P::Error>> {
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
@@ -790,7 +790,7 @@ impl<H: HeaderStore> Node<H> {
     }
 
     // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&self) -> Result<(), NodeError<H::Error>> {
+    async fn fetch_headers(&self) -> Result<(), NodeError<H::Error, P::Error>> {
         self.dialog
             .send_dialog("Attempting to load headers from the database".into())
             .await;

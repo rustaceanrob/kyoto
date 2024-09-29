@@ -1,45 +1,4 @@
-use crate::impl_sourceless_error;
-
-/// Potential errors encountered by a persistence layer.
-#[derive(Debug)]
-pub enum DatabaseError {
-    /// Loading a query or data from the database failed.
-    Load(String),
-    /// Writing a query or data from the database failed.
-    Write(String),
-    /// The data loading is corrupted.
-    Corruption,
-    /// Serializing an object to write to the database failed.
-    Serialization,
-    /// Deserializing an object after loading from the database failed.
-    Deserialization,
-    /// Opening the database file failed.
-    Open,
-}
-
-impl core::fmt::Display for DatabaseError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            DatabaseError::Load(e) => {
-                write!(f, "loading a query or data from the database failed: {e}")
-            }
-            DatabaseError::Write(e) => {
-                write!(f, "writing a query or data from the database failed: {e}")
-            }
-            DatabaseError::Corruption => write!(f, "loaded data has been corrupted."),
-            DatabaseError::Serialization => {
-                write!(f, "serializing an object to write to the database failed.")
-            }
-            DatabaseError::Deserialization => write!(
-                f,
-                "deserializing an object after loading from the database failed."
-            ),
-            DatabaseError::Open => write!(f, "opening the database file failed."),
-        }
-    }
-}
-
-impl_sourceless_error!(DatabaseError);
+use std::fmt::{Debug, Display};
 
 /// Errors when initializing a SQL-based backend.
 #[cfg(feature = "database")]
@@ -137,16 +96,46 @@ impl From<rusqlite::Error> for SqlError {
     }
 }
 
+/// Errors for the [`PeerStore`](crate) of unit type.
+#[derive(Debug)]
+pub enum UnitPeerStoreError {
+    /// There were no peers found.
+    NoPeers,
+}
+
+impl core::fmt::Display for UnitPeerStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnitPeerStoreError::NoPeers => write!(f, "no peers in unit database."),
+        }
+    }
+}
+
+/// Errors for the in-memory [`PeerStore`](crate) implementation.
+#[derive(Debug)]
+pub enum StatelessPeerStoreError {
+    /// There were no peers found.
+    NoPeers,
+}
+
+impl core::fmt::Display for StatelessPeerStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StatelessPeerStoreError::NoPeers => write!(f, "no peers in the database."),
+        }
+    }
+}
+
 /// Errors when managing persisted peers.
 #[derive(Debug)]
-pub enum PeerManagerError {
+pub enum PeerManagerError<P: Debug + Display> {
     /// DNS failed to respond.
     Dns,
     /// Reading or writing from the database failed.
-    Database(DatabaseError),
+    Database(P),
 }
 
-impl core::fmt::Display for PeerManagerError {
+impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PeerManagerError::Dns => write!(f, "DNS servers failed to respond."),
@@ -157,11 +146,14 @@ impl core::fmt::Display for PeerManagerError {
     }
 }
 
-impl std::error::Error for PeerManagerError {
+impl<P: Debug + Display> std::error::Error for PeerManagerError<P> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            PeerManagerError::Database(e) => Some(e),
-            _ => None,
-        }
+        None
+    }
+}
+
+impl<P: Debug + Display> From<P> for PeerManagerError<P> {
+    fn from(value: P) -> Self {
+        PeerManagerError::Database(value)
     }
 }
