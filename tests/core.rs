@@ -15,7 +15,7 @@ use kyoto::{
         node::Node,
     },
     db::memory::peers::StatelessPeerStore,
-    ServiceFlags, TrustedPeer, TxBroadcast,
+    ServiceFlags, SqliteHeaderDb, TrustedPeer, TxBroadcast,
 };
 
 const RPC_USER: &str = "test";
@@ -40,7 +40,7 @@ fn initialize_client() -> Result<bitcoincore_rpc::Client, bitcoincore_rpc::Error
     }
 }
 
-async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
+async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node<()>, Client) {
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
@@ -50,7 +50,7 @@ async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
     (node, client)
 }
 
-async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
+async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node<SqliteHeaderDb>, Client) {
     let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
@@ -66,7 +66,7 @@ async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node, Client) {
 async fn new_node_anchor_sql(
     addrs: HashSet<ScriptBuf>,
     checkpoint: HeaderCheckpoint,
-) -> (Node, Client) {
+) -> (Node<SqliteHeaderDb>, Client) {
     let addr = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
     let mut trusted: TrustedPeer = addr.into();
     trusted.set_services(ServiceFlags::P2P_V2);

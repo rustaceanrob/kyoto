@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+
 use crate::{
     chain::error::HeaderPersistenceError, db::error::PeerManagerError, impl_sourceless_error,
 };
@@ -6,14 +8,14 @@ use super::messages::FailurePayload;
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
-pub enum NodeError {
+pub enum NodeError<H: Debug + Display> {
     /// The persistence layer experienced a critical error.
-    HeaderDatabase(HeaderPersistenceError),
+    HeaderDatabase(HeaderPersistenceError<H>),
     /// The persistence layer experienced a critical error.
     PeerDatabase(PeerManagerError),
 }
 
-impl core::fmt::Display for NodeError {
+impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(
@@ -28,10 +30,10 @@ impl core::fmt::Display for NodeError {
     }
 }
 
-impl std::error::Error for NodeError {
+impl<H: Debug + Display> std::error::Error for NodeError<H> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            NodeError::HeaderDatabase(e) => Some(e),
+            NodeError::HeaderDatabase(_) => None,
             NodeError::PeerDatabase(e) => Some(e),
         }
     }

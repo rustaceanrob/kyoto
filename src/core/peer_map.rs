@@ -1,5 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{Debug, Display},
+    marker::PhantomData,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -54,7 +56,7 @@ pub(crate) struct ManagedPeer {
 
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
-pub(crate) struct PeerMap {
+pub(crate) struct PeerMap<H: Debug + Display> {
     num_peers: u32,
     heights: HashMap<u32, u32>,
     network: Network,
@@ -67,10 +69,11 @@ pub(crate) struct PeerMap {
     target_db_size: u32,
     net_groups: HashSet<String>,
     response_timeout: Duration,
+    marker: PhantomData<H>,
 }
 
 #[allow(dead_code)]
-impl PeerMap {
+impl<H: Debug + Display> PeerMap<H> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
@@ -103,6 +106,7 @@ impl PeerMap {
             target_db_size,
             net_groups: HashSet::new(),
             response_timeout,
+            marker: PhantomData,
         }
     }
 
@@ -248,7 +252,7 @@ impl PeerMap {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<PersistedPeer, NodeError> {
+    pub async fn next_peer(&mut self) -> Result<PersistedPeer, NodeError<H>> {
         if let Some(whitelist) = &mut self.whitelist {
             if let Some(peer) = whitelist.pop() {
                 self.dialog
@@ -296,7 +300,7 @@ impl PeerMap {
     }
 
     // Do we need peers
-    pub async fn need_peers(&mut self) -> Result<bool, NodeError> {
+    pub async fn need_peers(&mut self) -> Result<bool, NodeError<H>> {
         let mut db = self.db.lock().await;
         let num_unbanned = db
             .num_unbanned()

@@ -1,5 +1,6 @@
-use crate::{db::error::DatabaseError, impl_sourceless_error};
+use crate::impl_sourceless_error;
 use core::fmt::Display;
+use std::fmt::Debug;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum HeaderSyncError {
@@ -53,7 +54,7 @@ impl_sourceless_error!(HeaderSyncError);
 
 /// Errors with the block header representation that prevent the node from operating.
 #[derive(Debug)]
-pub enum HeaderPersistenceError {
+pub enum HeaderPersistenceError<H: Debug + Display> {
     /// The block headers do not point to each other in a list.
     HeadersDoNotLink,
     /// Some predefined checkpoint does not match.
@@ -61,10 +62,10 @@ pub enum HeaderPersistenceError {
     /// A user tried to retrieve headers too far in the past for what is in their database.
     CannotLocateHistory,
     /// A database error.
-    Database(DatabaseError),
+    Database(H),
 }
 
-impl core::fmt::Display for HeaderPersistenceError {
+impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
@@ -75,12 +76,9 @@ impl core::fmt::Display for HeaderPersistenceError {
     }
 }
 
-impl std::error::Error for HeaderPersistenceError {
+impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            HeaderPersistenceError::Database(e) => Some(e),
-            _ => None,
-        }
+        None
     }
 }
 

@@ -69,10 +69,10 @@ pub enum NodeState {
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
-pub struct Node {
+pub struct Node<H: HeaderStore> {
     state: Arc<RwLock<NodeState>>,
-    chain: Arc<Mutex<Chain>>,
-    peer_map: Arc<Mutex<PeerMap>>,
+    chain: Arc<Mutex<Chain<H>>>,
+    peer_map: Arc<Mutex<PeerMap<H::Error>>>,
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: PeerRequirement,
     dialog: Dialog,
@@ -82,7 +82,7 @@ pub struct Node {
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
 
-impl Node {
+impl<H: HeaderStore> Node<H> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network: Network,
@@ -95,7 +95,7 @@ impl Node {
         timeout: Duration,
         filter_sync_policy: FilterSyncPolicy,
         peer_store: impl PeerStore + Send + Sync + 'static,
-        header_store: impl HeaderStore + Send + Sync + 'static,
+        header_store: H,
     ) -> (Self, Client) {
         // Set up a communication channel between the node and client
         let (ntx, _) = broadcast::channel::<NodeMessage>(32);
@@ -155,7 +155,7 @@ impl Node {
         config: NodeConfig,
         network: Network,
         peer_store: impl PeerStore + Send + Sync + 'static,
-        header_store: impl HeaderStore + Send + Sync + 'static,
+        header_store: H,
     ) -> (Self, Client) {
         Node::new(
             network,
@@ -182,7 +182,7 @@ impl Node {
     /// # Errors
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
-    pub async fn run(&self) -> Result<(), NodeError> {
+    pub async fn run(&self) -> Result<(), NodeError<H::Error>> {
         self.dialog.send_dialog("Starting node".into()).await;
         self.dialog
             .send_dialog(format!(
@@ -335,7 +335,7 @@ impl Node {
     }
 
     // Connect to a new peer if we are not connected to enough
-    async fn dispatch(&self) -> Result<(), NodeError> {
+    async fn dispatch(&self) -> Result<(), NodeError<H::Error>> {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.clean().await;
         // Find more peers when lower than the desired threshold.
@@ -476,7 +476,7 @@ impl Node {
 
     // After we receiving some chain-syncing message, we decide what chain of data needs to be
     // requested next.
-    async fn next_stateful_message(&self, chain: &mut Chain) -> Option<MainThreadMessage> {
+    async fn next_stateful_message(&self, chain: &mut Chain<H>) -> Option<MainThreadMessage> {
         if !chain.is_synced() {
             let headers = GetHeaderConfig {
                 locators: chain.locators().await,
@@ -504,7 +504,7 @@ impl Node {
         nonce: u32,
         version_message: VersionMessage,
         best_height: u32,
-    ) -> Result<MainThreadMessage, NodeError> {
+    ) -> Result<MainThreadMessage, NodeError<H::Error>> {
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
@@ -790,7 +790,7 @@ impl Node {
     }
 
     // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&self) -> Result<(), NodeError> {
+    async fn fetch_headers(&self) -> Result<(), NodeError<H::Error>> {
         self.dialog
             .send_dialog("Attempting to load headers from the database".into())
             .await;

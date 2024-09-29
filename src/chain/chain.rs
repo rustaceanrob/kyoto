@@ -45,13 +45,13 @@ const MAX_HEADER_SIZE: usize = 20_000;
 const FILTER_BASIC: u8 = 0x00;
 
 #[derive(Debug)]
-pub(crate) struct Chain {
+pub(crate) struct Chain<H: HeaderStore> {
     header_chain: HeaderChain,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     checkpoints: HeaderCheckpoints,
     params: Params,
-    db: Arc<Mutex<dyn HeaderStore + Send + Sync>>,
+    db: Arc<Mutex<H>>,
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
     block_queue: BlockQueue,
@@ -59,14 +59,14 @@ pub(crate) struct Chain {
 }
 
 #[allow(dead_code)]
-impl Chain {
+impl<H: HeaderStore> Chain<H> {
     pub(crate) fn new(
         network: &Network,
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
         checkpoints: HeaderCheckpoints,
         dialog: Dialog,
-        db: impl HeaderStore + Send + Sync + 'static,
+        db: H,
         quorum_required: usize,
     ) -> Self {
         let params = params_from_network(network);
@@ -248,7 +248,7 @@ impl Chain {
     }
 
     // Load in the headers
-    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
+    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
         let loaded_headers = self
             .db
             .lock()
@@ -783,7 +783,7 @@ mod tests {
 
     use super::Chain;
 
-    fn new_regtest(anchor: HeaderCheckpoint) -> Chain {
+    fn new_regtest(anchor: HeaderCheckpoint) -> Chain<()> {
         let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
@@ -798,7 +798,7 @@ mod tests {
         )
     }
 
-    fn new_regtest_two_peers(anchor: HeaderCheckpoint) -> Chain {
+    fn new_regtest_two_peers(anchor: HeaderCheckpoint) -> Chain<()> {
         let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
