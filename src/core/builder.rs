@@ -13,6 +13,10 @@ use crate::{
 };
 use crate::{ConnectionType, TrustedPeer};
 
+#[cfg(feature = "database")]
+/// The default node returned from the [`NodeBuilder`](crate::core).
+pub type NodeDefault = Node<SqliteHeaderDb, SqlitePeerDb>;
+
 /// Build a [`Node`] in an additive way.
 ///
 /// # Examples
@@ -153,9 +157,7 @@ impl NodeBuilder {
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "database")]
-    pub fn build_node(
-        &mut self,
-    ) -> Result<(Node<SqliteHeaderDb, SqlitePeerDb>, Client), SqlInitializationError> {
+    pub fn build_node(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new_from_config(
