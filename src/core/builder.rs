@@ -4,7 +4,9 @@ use bitcoin::{Network, ScriptBuf};
 
 use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
 #[cfg(feature = "database")]
-use crate::db::error::DatabaseError;
+use crate::db::error::SqlInitializationError;
+#[cfg(feature = "database")]
+use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
@@ -151,8 +153,9 @@ impl NodeBuilder {
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "database")]
-    pub fn build_node(&mut self) -> Result<(Node, Client), DatabaseError> {
-        use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
+    pub fn build_node(
+        &mut self,
+    ) -> Result<(Node<SqliteHeaderDb, SqlitePeerDb>, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new_from_config(
@@ -164,11 +167,11 @@ impl NodeBuilder {
     }
 
     /// Consume the node builder by using custom database implementations, receiving a [`Node`] and [`Client`].
-    pub fn build_with_databases(
+    pub fn build_with_databases<H: HeaderStore + 'static, P: PeerStore + 'static>(
         &mut self,
-        peer_store: impl PeerStore + Send + Sync + 'static,
-        header_store: impl HeaderStore + Send + Sync + 'static,
-    ) -> (Node, Client) {
+        peer_store: P,
+        header_store: H,
+    ) -> (Node<H, P>, Client) {
         Node::new_from_config(
             core::mem::take(&mut self.config),
             self.network,

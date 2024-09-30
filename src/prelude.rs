@@ -124,6 +124,7 @@ pub(crate) fn default_port_from_network(network: &Network) -> u16 {
     }
 }
 
+#[cfg(feature = "dns")]
 pub(crate) fn encode_qname(domain: &str) -> Vec<u8> {
     let mut qname = Vec::new();
     for label in domain.split('.') {

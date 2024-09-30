@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::error::DatabaseError;
+use crate::db::error::{SqlInitializationError, SqlPeerStoreError};
 use crate::db::traits::PeerStore;
 use crate::db::{PeerStatus, PersistedPeer};
 use crate::prelude::FutureResult;
@@ -40,27 +40,24 @@ pub struct SqlitePeerDb {
 impl SqlitePeerDb {
     /// Create a new peer storage with an optional directory path. If no path is provided,
     /// the file will be stored in a `data` subdirectory where the program is ran.
-    pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, DatabaseError> {
+    pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, SqlInitializationError> {
         // Open a connection
         let mut path = path.unwrap_or_else(|| PathBuf::from("."));
         path.push("data");
         path.push(network.to_string());
         if !path.exists() {
-            fs::create_dir_all(&path).map_err(|_| DatabaseError::Open)?
+            fs::create_dir_all(&path)?
         }
-        let conn = Connection::open(path.join("peers.db")).map_err(|_| DatabaseError::Open)?;
+        let conn = Connection::open(path.join("peers.db"))?;
         // Create the schema version
         let schema_table_query = format!("CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN} TEXT PRIMARY KEY, {VERSION_COLUMN} INTEGER NOT NULL)");
         // Update the schema version
-        conn.execute(&schema_table_query, [])
-            .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        conn.execute(&schema_table_query, [])?;
         let schema_init_version = format!(
             "INSERT OR REPLACE INTO {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN}, {VERSION_COLUMN}) VALUES (?1, ?2)");
-        conn.execute(&schema_init_version, params![SCHEMA_KEY, SCHEMA_VERSION])
-            .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        conn.execute(&schema_init_version, params![SCHEMA_KEY, SCHEMA_VERSION])?;
         // Build the table if it doesn't exist
-        conn.execute(INITIAL_PEER_SCHEMA, [])
-            .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        conn.execute(INITIAL_PEER_SCHEMA, [])?;
         // Migrate to any new schema versions
         Self::migrate(&conn)?;
         Ok(Self {
@@ -70,17 +67,16 @@ impl SqlitePeerDb {
 
     // This function currently does nothing, but if new columns are required this may be used to alter the tables
     // without breaking older tables.
-    fn migrate(conn: &Connection) -> Result<(), DatabaseError> {
+    fn migrate(conn: &Connection) -> Result<(), SqlInitializationError> {
         let version_query =
             format!("SELECT {VERSION_COLUMN} FROM {SCHEMA_TABLE_NAME} WHERE {SCHEMA_COLUMN} = ?1");
-        let _current_version: u8 = conn
-            .query_row(&version_query, [SCHEMA_KEY], |row| row.get(0))
-            .map_err(|e| DatabaseError::Load(e.to_string()))?;
+        let _current_version: u8 =
+            conn.query_row(&version_query, [SCHEMA_KEY], |row| row.get(0))?;
         // Match on the version and migrate to new schemas in the future
         Ok(())
     }
 
-    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), DatabaseError> {
+    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
             PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -101,62 +97,52 @@ impl SqlitePeerDb {
         lock.execute(
             stmt,
             params![blob, peer.port, services.to_u64(), tried, banned,],
-        )
-        .map_err(|e| DatabaseError::Write(e.to_string()))?;
+        )?;
         Ok(())
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, DatabaseError> {
+    async fn random(&mut self) -> Result<PersistedPeer, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
-        let mut stmt = lock
-            .prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")
-            .map_err(|e| DatabaseError::Write(e.to_string()))?;
-        let mut rows = stmt
-            .query([])
-            .map_err(|e| DatabaseError::Load(e.to_string()))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| DatabaseError::Load(e.to_string()))?
-        {
-            let ip_addr: Vec<u8> = row.get(0).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let port: u16 = row.get(1).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let service_flags: u64 = row.get(2).map_err(|e| DatabaseError::Load(e.to_string()))?;
-            let tried: bool = row.get(3).map_err(|e| DatabaseError::Load(e.to_string()))?;
+        let mut stmt =
+            lock.prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let ip_addr: Vec<u8> = row.get(0)?;
+            let port: u16 = row.get(1)?;
+            let service_flags: u64 = row.get(2)?;
+            let tried: bool = row.get(3)?;
             let status = if tried {
                 PeerStatus::Tried
             } else {
                 PeerStatus::New
             };
-            let ip = deserialize(&ip_addr).map_err(|_| DatabaseError::Deserialization)?;
+            let ip = deserialize(&ip_addr)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             Ok(PersistedPeer::new(ip, port, services, status))
         } else {
-            Err(DatabaseError::Load("No peers in the datastore".into()))
+            Err(SqlPeerStoreError::Empty)
         }
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, DatabaseError> {
+    async fn num_unbanned(&mut self) -> Result<u32, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
-        let mut stmt = lock
-            .prepare("SELECT COUNT(*) FROM peers WHERE banned = false")
-            .map_err(|e| DatabaseError::Load(e.to_string()))?;
-        let count: u32 = stmt
-            .query_row([], |row| row.get(0))
-            .map_err(|_| DatabaseError::Deserialization)?;
+        let mut stmt = lock.prepare("SELECT COUNT(*) FROM peers WHERE banned = false")?;
+        let count: u32 = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
     }
 }
 
 impl PeerStore for SqlitePeerDb {
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), DatabaseError> {
+    type Error = SqlPeerStoreError;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error> {
         Box::pin(self.update(peer))
     }
 
-    fn random(&mut self) -> FutureResult<PersistedPeer, DatabaseError> {
+    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
         Box::pin(self.random())
     }
 
-    fn num_unbanned(&mut self) -> FutureResult<u32, DatabaseError> {
+    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
         Box::pin(self.num_unbanned())
     }
 }
