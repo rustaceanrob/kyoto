@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::{
-    chain::error::HeaderPersistenceError, db::error::PeerManagerError, impl_sourceless_error,
-};
+use crate::impl_sourceless_error;
 
 use super::messages::FailurePayload;
 
@@ -45,6 +43,68 @@ impl<H: Debug + Display, P: Debug + Display> From<HeaderPersistenceError<H>> for
 impl<H: Debug + Display, P: Debug + Display> From<PeerManagerError<P>> for NodeError<H, P> {
     fn from(value: PeerManagerError<P>) -> Self {
         NodeError::PeerDatabase(value)
+    }
+}
+
+/// Errors when managing persisted peers.
+#[derive(Debug)]
+pub enum PeerManagerError<P: Debug + Display> {
+    /// DNS failed to respond.
+    Dns,
+    /// Reading or writing from the database failed.
+    Database(P),
+}
+
+impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PeerManagerError::Dns => write!(f, "DNS servers failed to respond."),
+            PeerManagerError::Database(e) => {
+                write!(f, "reading or writing from the database failed: {e}")
+            }
+        }
+    }
+}
+
+impl<P: Debug + Display> std::error::Error for PeerManagerError<P> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
+impl<P: Debug + Display> From<P> for PeerManagerError<P> {
+    fn from(value: P) -> Self {
+        PeerManagerError::Database(value)
+    }
+}
+
+/// Errors with the block header representation that prevent the node from operating.
+#[derive(Debug)]
+pub enum HeaderPersistenceError<H: Debug + Display> {
+    /// The block headers do not point to each other in a list.
+    HeadersDoNotLink,
+    /// Some predefined checkpoint does not match.
+    MismatchedCheckpoints,
+    /// A user tried to retrieve headers too far in the past for what is in their database.
+    CannotLocateHistory,
+    /// A database error.
+    Database(H),
+}
+
+impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
+            HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
+            HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
+            HeaderPersistenceError::Database(e) => write!(f, "the headers could not be loaded from sqlite. {e}"),
+        }
+    }
+}
+
+impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
     }
 }
 
