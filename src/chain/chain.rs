@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use super::{
     block_queue::BlockQueue,
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
-    error::{BlockScanError, HeaderPersistenceError, HeaderSyncError},
+    error::{BlockScanError, HeaderSyncError},
     header_chain::HeaderChain,
 };
 #[cfg(feature = "silent-payments")]
@@ -24,6 +24,7 @@ use crate::{
     chain::header_batch::HeadersBatch,
     core::{
         dialog::Dialog,
+        error::HeaderPersistenceError,
         messages::{NodeMessage, Warning},
     },
     db::traits::HeaderStore,

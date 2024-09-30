@@ -20,7 +20,7 @@ use tokio::{
 };
 
 use crate::{
-    db::{error::PeerManagerError, traits::PeerStore, PeerStatus, PersistedPeer},
+    db::{traits::PeerStore, PeerStatus, PersistedPeer},
     network::{
         error::PeerError,
         peer::Peer,
@@ -33,6 +33,7 @@ use crate::{
 use super::{
     channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
+    error::PeerManagerError,
     messages::Warning,
 };
 
