@@ -9,7 +9,7 @@ use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
 use rusqlite::{params, Connection, Result};
 use tokio::sync::Mutex;
 
-use crate::db::error::{SqlError, SqlInitializationError};
+use crate::db::error::{SqlHeaderStoreError, SqlInitializationError};
 use crate::db::traits::HeaderStore;
 use crate::prelude::FutureResult;
 
@@ -78,7 +78,10 @@ impl SqliteHeaderDb {
         Ok(())
     }
 
-    async fn load_after(&mut self, anchor_height: u32) -> Result<BTreeMap<u32, Header>, SqlError> {
+    async fn load_after(
+        &mut self,
+        anchor_height: u32,
+    ) -> Result<BTreeMap<u32, Header>, SqlHeaderStoreError> {
         let mut headers = BTreeMap::<u32, Header>::new();
         let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
@@ -101,22 +104,22 @@ impl SqliteHeaderDb {
             let next_header = Header {
                 version: Version::from_consensus(version),
                 prev_blockhash: BlockHash::from_str(&prev_hash)
-                    .map_err(|_| SqlError::StringConversion)?,
+                    .map_err(|_| SqlHeaderStoreError::StringConversion)?,
                 merkle_root: TxMerkleNode::from_str(&merkle_root)
-                    .map_err(|_| SqlError::StringConversion)?,
+                    .map_err(|_| SqlHeaderStoreError::StringConversion)?,
                 time,
                 bits: CompactTarget::from_consensus(bits),
                 nonce,
             };
             if BlockHash::from_str(&hash)
-                .map_err(|_| SqlError::StringConversion)?
+                .map_err(|_| SqlHeaderStoreError::StringConversion)?
                 .ne(&next_header.block_hash())
             {
-                return Err(SqlError::Corruption);
+                return Err(SqlHeaderStoreError::Corruption);
             }
             if let Some(header) = headers.values().last() {
                 if header.block_hash().ne(&next_header.prev_blockhash) {
-                    return Err(SqlError::Corruption);
+                    return Err(SqlHeaderStoreError::Corruption);
                 }
             }
             headers.insert(height, next_header);
@@ -124,7 +127,10 @@ impl SqliteHeaderDb {
         Ok(headers)
     }
 
-    async fn write<'a>(&mut self, header_chain: &'a BTreeMap<u32, Header>) -> Result<(), SqlError> {
+    async fn write<'a>(
+        &mut self,
+        header_chain: &'a BTreeMap<u32, Header>,
+    ) -> Result<(), SqlHeaderStoreError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction()?;
         let best_height: Option<u32> =
@@ -162,7 +168,7 @@ impl SqliteHeaderDb {
         &mut self,
         header_chain: &'a BTreeMap<u32, Header>,
         height: u32,
-    ) -> Result<(), SqlError> {
+    ) -> Result<(), SqlHeaderStoreError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction()?;
         for (new_height, header) in header_chain {
@@ -194,7 +200,10 @@ impl SqliteHeaderDb {
         Ok(())
     }
 
-    async fn height_of<'a>(&mut self, block_hash: &'a BlockHash) -> Result<Option<u32>, SqlError> {
+    async fn height_of<'a>(
+        &mut self,
+        block_hash: &'a BlockHash,
+    ) -> Result<Option<u32>, SqlHeaderStoreError> {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT height FROM headers WHERE block_hash = ?1";
         let row: Option<u32> =
@@ -202,14 +211,14 @@ impl SqliteHeaderDb {
         Ok(row)
     }
 
-    async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, SqlError> {
+    async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, SqlHeaderStoreError> {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT block_hash FROM headers WHERE height = ?1";
         let row: Option<String> = write_lock.query_row(stmt, params![height], |row| row.get(0))?;
         match row {
             Some(row) => match BlockHash::from_str(&row) {
                 Ok(hash) => Ok(Some(hash)),
-                Err(_) => Err(SqlError::StringConversion),
+                Err(_) => Err(SqlHeaderStoreError::StringConversion),
             },
             None => Ok(None),
         }
@@ -217,7 +226,7 @@ impl SqliteHeaderDb {
 }
 
 impl HeaderStore for SqliteHeaderDb {
-    type Error = SqlError;
+    type Error = SqlHeaderStoreError;
     fn load_after(
         &mut self,
         anchor_height: u32,

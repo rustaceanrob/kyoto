@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::error::{SqlError, SqlInitializationError};
+use crate::db::error::{SqlInitializationError, SqlPeerStoreError};
 use crate::db::traits::PeerStore;
 use crate::db::{PeerStatus, PersistedPeer};
 use crate::prelude::FutureResult;
@@ -76,7 +76,7 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), SqlError> {
+    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
             PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -101,7 +101,7 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, SqlError> {
+    async fn random(&mut self) -> Result<PersistedPeer, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let mut stmt =
             lock.prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")?;
@@ -116,15 +116,15 @@ impl SqlitePeerDb {
             } else {
                 PeerStatus::New
             };
-            let ip = deserialize(&ip_addr).map_err(|_| SqlError::Corruption)?;
+            let ip = deserialize(&ip_addr)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
             Ok(PersistedPeer::new(ip, port, services, status))
         } else {
-            Err(SqlError::Corruption)
+            Err(SqlPeerStoreError::Empty)
         }
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, SqlError> {
+    async fn num_unbanned(&mut self) -> Result<u32, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let mut stmt = lock.prepare("SELECT COUNT(*) FROM peers WHERE banned = false")?;
         let count: u32 = stmt.query_row([], |row| row.get(0))?;
@@ -133,7 +133,7 @@ impl SqlitePeerDb {
 }
 
 impl PeerStore for SqlitePeerDb {
-    type Error = SqlError;
+    type Error = SqlPeerStoreError;
     fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error> {
         Box::pin(self.update(peer))
     }

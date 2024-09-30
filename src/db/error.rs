@@ -48,10 +48,67 @@ impl From<std::io::Error> for SqlInitializationError {
     }
 }
 
-/// Errors while reading or writing to and from a SQL-based backend.
+/// Errors while reading or writing to and from a SQL-based peer backend.
 #[cfg(feature = "database")]
 #[derive(Debug)]
-pub enum SqlError {
+pub enum SqlPeerStoreError {
+    /// A consensus critical data structure is malformed.
+    Deserialize(bitcoin::consensus::encode::Error),
+    /// There are no known peers in the database.
+    Empty,
+    /// An error occured performing a SQL operation.
+    SQL(rusqlite::Error),
+}
+
+#[cfg(feature = "database")]
+impl core::fmt::Display for SqlPeerStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SqlPeerStoreError::Deserialize(e) => {
+                write!(
+                    f,
+                    "a byte array could not be deserialized into a known datatype: {e}"
+                )
+            }
+            Self::Empty => {
+                write!(f, "there are no known peers in the database.")
+            }
+            SqlPeerStoreError::SQL(e) => {
+                write!(f, "reading or writing from the database failed: {e}")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "database")]
+impl std::error::Error for SqlPeerStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            SqlPeerStoreError::Deserialize(error) => Some(error),
+            SqlPeerStoreError::Empty => None,
+            SqlPeerStoreError::SQL(error) => Some(error),
+        }
+    }
+}
+
+#[cfg(feature = "database")]
+impl From<rusqlite::Error> for SqlPeerStoreError {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::SQL(value)
+    }
+}
+
+#[cfg(feature = "database")]
+impl From<bitcoin::consensus::encode::Error> for SqlPeerStoreError {
+    fn from(value: bitcoin::consensus::encode::Error) -> Self {
+        Self::Deserialize(value)
+    }
+}
+
+/// Errors while reading or writing to and from a SQL-based block header backend.
+#[cfg(feature = "database")]
+#[derive(Debug)]
+pub enum SqlHeaderStoreError {
     /// A consensus critical data structure is malformed.
     Corruption,
     /// A string could not be deserialized into a known datatype.
@@ -61,36 +118,38 @@ pub enum SqlError {
 }
 
 #[cfg(feature = "database")]
-impl core::fmt::Display for SqlError {
+impl core::fmt::Display for SqlHeaderStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SqlError::StringConversion => {
+            SqlHeaderStoreError::StringConversion => {
                 write!(
                     f,
                     "a string could not be deserialized into a known datatype."
                 )
             }
-            SqlError::SQL(e) => {
+            SqlHeaderStoreError::SQL(e) => {
                 write!(f, "reading or writing from the database failed: {e}")
             }
-            SqlError::Corruption => write!(f, "a consensus critical data structure is malformed."),
+            SqlHeaderStoreError::Corruption => {
+                write!(f, "a consensus critical data structure is malformed.")
+            }
         }
     }
 }
 
 #[cfg(feature = "database")]
-impl std::error::Error for SqlError {
+impl std::error::Error for SqlHeaderStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            SqlError::Corruption => None,
-            SqlError::StringConversion => None,
-            SqlError::SQL(error) => Some(error),
+            SqlHeaderStoreError::Corruption => None,
+            SqlHeaderStoreError::StringConversion => None,
+            SqlHeaderStoreError::SQL(error) => Some(error),
         }
     }
 }
 
 #[cfg(feature = "database")]
-impl From<rusqlite::Error> for SqlError {
+impl From<rusqlite::Error> for SqlHeaderStoreError {
     fn from(value: rusqlite::Error) -> Self {
         Self::SQL(value)
     }
