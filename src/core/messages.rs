@@ -124,7 +124,7 @@ pub enum Warning {
     CouldNotConnect,
     /// A connection was maintained, but the peer does not signal for compact block filers.
     NoCompactFilters,
-    /// The node has been waiting for new `inv` and will request block headers.
+    /// The node has been waiting for new `inv` and will find new peers to avoid block withholding.
     PotentialStaleTip,
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
