@@ -16,14 +16,8 @@ pub enum NodeError<H: Debug + Display, P: Debug + Display> {
 impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeError::HeaderDatabase(e) => write!(
-                f,
-                "the header database encountered an error and cannot recover: {e}"
-            ),
-            NodeError::PeerDatabase(e) => write!(
-                f,
-                "the peer database encountered an error and cannot recover: {e}"
-            ),
+            NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
+            NodeError::PeerDatabase(e) => write!(f, "peer manager: {e}"),
         }
     }
 }
@@ -60,7 +54,7 @@ impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
         match self {
             PeerManagerError::Dns => write!(f, "DNS servers failed to respond."),
             PeerManagerError::Database(e) => {
-                write!(f, "reading or writing from the database failed: {e}")
+                write!(f, "database: {e}")
             }
         }
     }
@@ -97,7 +91,7 @@ impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
             HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
             HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
-            HeaderPersistenceError::Database(e) => write!(f, "the headers could not be loaded from sqlite. {e}"),
+            HeaderPersistenceError::Database(e) => write!(f, "database: {e}"),
         }
     }
 }
