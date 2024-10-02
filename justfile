@@ -21,3 +21,10 @@ integrate:
 
 example:
   cargo run --example signet
+
+all:
+  cargo fmt 
+  cargo clippy --all-targets
+  cargo test -- --skip test_signet_syncs
+  sh scripts/integration.sh {{bitcoindir}}
+  cargo run --example signet
