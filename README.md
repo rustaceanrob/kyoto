@@ -100,13 +100,7 @@ The default path to the `.bitcoin` directory is for Linux. To set this path to a
 just bitcoindir=/path/to/bitcoin/folder/ integrate
 ```
 
-## Contributing
-
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
-
-#### Project Layout
+## Project Layout
 
 `chain`: Contains all logic for syncing block headers, filter headers, filters, parsing blocks. Also contains preset checkpoints for Signet, Regtest, and Bitcoin networks. Notable files: `chain.rs`
 
@@ -117,3 +111,18 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 `filters`: Additional structures for managing compact filter headers and filters, used by `chain.rs`
 
 `network`: Opens and closes connections, handles encryption and decryption of messages, generates messages, parses messages, times message response times, performs DNS lookups. Notable files: `peer.rs`, `reader.rs`, `parsers.rs`, `outbound_messages.rs`
+
+## Contributing
+
+Please read [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+
+## License
+
+Licensed under either of
+
+* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
