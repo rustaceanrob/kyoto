@@ -40,7 +40,7 @@ use super::{
 const MAX_TRIES: usize = 50;
 
 // Preferred peers to connect to based on the user configuration
-type Whitelist = Option<Vec<TrustedPeer>>;
+type Whitelist = Vec<TrustedPeer>;
 
 // A peer that is or was connected to the node
 #[derive(Debug)]
@@ -159,13 +159,8 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Add a new trusted peer to the whitelist
-    pub fn add_peer(&mut self, peer: TrustedPeer) {
-        match &mut self.whitelist {
-            Some(peers) => {
-                peers.push(peer);
-            }
-            None => self.whitelist = Some(vec![peer]),
-        }
+    pub fn add_trusted_peer(&mut self, peer: TrustedPeer) {
+        self.whitelist.push(peer);
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
@@ -265,18 +260,16 @@ impl<P: PeerStore> PeerMap<P> {
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
-        if let Some(whitelist) = &mut self.whitelist {
-            if let Some(peer) = whitelist.pop() {
-                self.dialog
-                    .send_dialog("Using a configured peer.".into())
-                    .await;
-                let port = peer
-                    .port
-                    .unwrap_or(default_port_from_network(&self.network));
-                let peer =
-                    PersistedPeer::new(peer.address, port, peer.known_services, PeerStatus::Tried);
-                return Ok(peer);
-            }
+        if let Some(peer) = self.whitelist.pop() {
+            self.dialog
+                .send_dialog("Using a configured peer.".into())
+                .await;
+            let port = peer
+                .port
+                .unwrap_or(default_port_from_network(&self.network));
+            let peer =
+                PersistedPeer::new(peer.address, port, peer.known_services, PeerStatus::Tried);
+            return Ok(peer);
         }
         let current_count = {
             let mut peer_manager = self.db.lock().await;

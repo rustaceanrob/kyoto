@@ -83,7 +83,7 @@ impl NodeBuilder {
 
     /// Add preferred peers to try to connect to.
     pub fn add_peers(mut self, whitelist: Vec<TrustedPeer>) -> Self {
-        self.config.white_list = Some(whitelist);
+        self.config.white_list = whitelist;
         self
     }
 

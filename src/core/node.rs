@@ -49,7 +49,7 @@ use super::{
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
 const LOOP_TIMEOUT: u64 = 1;
 
-type Whitelist = Option<Vec<TrustedPeer>>;
+type Whitelist = Vec<TrustedPeer>;
 type PeerRequirement = usize;
 
 /// The state of the node with respect to connected peers.
@@ -315,7 +315,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             },
                             ClientMessage::AddPeer(peer) => {
                                 let mut peer_map = self.peer_map.lock().await;
-                                peer_map.add_peer(peer);
+                                peer_map.add_trusted_peer(peer);
                             }
                         }
                     }
