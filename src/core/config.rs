@@ -12,7 +12,7 @@ const TIMEOUT_SECS: u64 = 5;
 
 pub(crate) struct NodeConfig {
     pub required_peers: u8,
-    pub white_list: Option<Vec<TrustedPeer>>,
+    pub white_list: Vec<TrustedPeer>,
     pub addresses: HashSet<ScriptBuf>,
     pub data_path: Option<PathBuf>,
     pub header_checkpoint: Option<HeaderCheckpoint>,
