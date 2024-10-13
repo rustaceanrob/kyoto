@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 
-use crate::{IndexedBlock, TxBroadcast};
+use crate::{IndexedBlock, TrustedPeer, TxBroadcast};
 
 use super::{
     error::ClientError,
@@ -186,6 +186,7 @@ macro_rules! impl_core_client {
                     .await
                     .map_err(|_| ClientError::SendError)
             }
+
             /// Set a new connection timeout for peers to respond to messages.
             ///
             /// # Errors
@@ -197,6 +198,18 @@ macro_rules! impl_core_client {
             ) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::SetDuration(duration))
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Add another known peer to connect to.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn add_peer(&self, peer: TrustedPeer) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::AddPeer(peer))
                     .await
                     .map_err(|_| ClientError::SendError)
             }

@@ -8,7 +8,7 @@ use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid
 use crate::IndexedFilter;
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
-    TxBroadcast,
+    TrustedPeer, TxBroadcast,
 };
 
 use super::node::NodeState;
@@ -113,6 +113,8 @@ pub(crate) enum ClientMessage {
     GetBlock(BlockHash),
     /// Set a new connection timeout.
     SetDuration(Duration),
+    /// Add another known peer to connect to.
+    AddPeer(TrustedPeer),
 }
 
 /// Warnings a node may issue while running.
