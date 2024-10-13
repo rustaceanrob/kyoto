@@ -158,6 +158,16 @@ impl<P: PeerStore> PeerMap<P> {
         self.response_timeout = duration;
     }
 
+    // Add a new trusted peer to the whitelist
+    pub fn add_peer(&mut self, peer: TrustedPeer) {
+        match &mut self.whitelist {
+            Some(peers) => {
+                peers.push(peer);
+            }
+            None => self.whitelist = Some(vec![peer]),
+        }
+    }
+
     // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: PersistedPeer) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
