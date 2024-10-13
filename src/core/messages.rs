@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 #[cfg(feature = "silent-payments")]
 use bitcoin::BlockHash;
@@ -111,6 +111,8 @@ pub(crate) enum ClientMessage {
     /// Explicitly request a block from the node.
     #[cfg(feature = "silent-payments")]
     GetBlock(BlockHash),
+    /// Set a new connection timeout.
+    SetDuration(Duration),
 }
 
 /// Warnings a node may issue while running.

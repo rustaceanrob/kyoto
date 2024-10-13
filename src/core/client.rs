@@ -1,6 +1,7 @@
 #[cfg(feature = "silent-payments")]
 use bitcoin::BlockHash;
 use bitcoin::ScriptBuf;
+use std::time::Duration;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
@@ -182,6 +183,20 @@ macro_rules! impl_core_client {
             pub async fn rescan(&self) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::Rescan)
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+            /// Set a new connection timeout for peers to respond to messages.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn set_response_timeout(
+                &self,
+                duration: Duration,
+            ) -> Result<(), ClientError> {
+                self.ntx
+                    .send(ClientMessage::SetDuration(duration))
                     .await
                     .map_err(|_| ClientError::SendError)
             }
