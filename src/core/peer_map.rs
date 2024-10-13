@@ -153,6 +153,11 @@ impl<P: PeerStore> PeerMap<P> {
         }
     }
 
+    // Set a new timeout duration
+    pub fn set_duration(&mut self, duration: Duration) {
+        self.response_timeout = duration;
+    }
+
     // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: PersistedPeer) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);

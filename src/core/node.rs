@@ -309,6 +309,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 let mut chain = self.chain.lock().await;
                                 chain.get_block(hash);
                             },
+                            ClientMessage::SetDuration(duration) => {
+                                let mut peer_map = self.peer_map.lock().await;
+                                peer_map.set_duration(duration);
+                            }
                         }
                     }
                 }
