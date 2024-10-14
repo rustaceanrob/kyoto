@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-// A peer cannot send 100,000 ADDR messages in one connection.
-const ADDR_HARD_LIMIT: i32 = 100_000;
+// A peer cannot send 10,000 ADDRs in one connection.
+const ADDR_HARD_LIMIT: i32 = 10_000;
 
 // Very simple denial of service protection so a peer cannot spam us with unsolicited messages.
 #[derive(Debug, Clone)]
@@ -57,8 +57,8 @@ impl MessageCounter {
         self.filters -= 1;
     }
 
-    pub(crate) fn got_addrs(&mut self) {
-        self.addrs -= 1;
+    pub(crate) fn got_addrs(&mut self, num_addrs: usize) {
+        self.addrs -= num_addrs as i32;
     }
 
     pub(crate) fn got_block(&mut self) {
@@ -198,7 +198,7 @@ mod tests {
         assert!(counter.timer.tracked_time.is_some());
         counter.got_block();
         assert!(counter.timer.tracked_time.is_none());
-        counter.got_addrs();
+        counter.got_addrs(1);
         assert!(!counter.unsolicited());
         counter.got_verack();
         assert!(counter.unsolicited());
