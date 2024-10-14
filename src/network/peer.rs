@@ -222,7 +222,7 @@ impl Peer {
                 Ok(())
             }
             PeerMessage::Addr(addrs) => {
-                self.message_counter.got_addrs();
+                self.message_counter.got_addrs(addrs.len());
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
