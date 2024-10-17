@@ -158,6 +158,17 @@ macro_rules! impl_core_client {
                     .map_err(|_| ClientError::SendError)
             }
 
+            /// Broadcast a new transaction to the network from a synchronus context.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub fn broadcast_tx_blocking(&self, tx: TxBroadcast) -> Result<(), ClientError> {
+                self.ntx
+                    .blocking_send(ClientMessage::Broadcast(tx))
+                    .map_err(|_| ClientError::SendError)
+            }
+
             /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
             /// If the script was already present in the node's collection, no change will occur.
             ///
@@ -172,6 +183,22 @@ macro_rules! impl_core_client {
                 self.ntx
                     .send(ClientMessage::AddScript(script.into()))
                     .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Add more Bitcoin [`ScriptBuf`] to watch for from a synchronus context. Does not rescan the filters.
+            /// If the script was already present in the node's collection, no change will occur.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            #[cfg(not(feature = "silent-payments"))]
+            pub fn add_script_blocking(
+                &self,
+                script: impl Into<ScriptBuf>,
+            ) -> Result<(), ClientError> {
+                self.ntx
+                    .blocking_send(ClientMessage::AddScript(script.into()))
                     .map_err(|_| ClientError::SendError)
             }
 
