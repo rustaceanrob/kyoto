@@ -123,8 +123,8 @@ impl NodeBuilder {
     /// In the case of a block reorganization, the node may scan for blocks below the given block height
     /// to accurately reflect which relevant blocks are in the best chain.
     /// If none is provided, the _most recent_ checkpoint will be used.
-    pub fn anchor_checkpoint(mut self, checkpoint: HeaderCheckpoint) -> Self {
-        self.config.header_checkpoint = Some(checkpoint);
+    pub fn anchor_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
+        self.config.header_checkpoint = Some(checkpoint.into());
         self
     }
 

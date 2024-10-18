@@ -521,3 +521,27 @@ impl HeaderCheckpoints {
         }
     }
 }
+
+impl From<(u32, BlockHash)> for HeaderCheckpoint {
+    fn from(value: (u32, BlockHash)) -> Self {
+        HeaderCheckpoint::new(value.0, value.1)
+    }
+}
+
+impl TryFrom<(u32, String)> for HeaderCheckpoint {
+    type Error = <BlockHash as FromStr>::Err;
+
+    fn try_from(value: (u32, String)) -> Result<Self, Self::Error> {
+        let hash = BlockHash::from_str(&value.1)?;
+        Ok(HeaderCheckpoint::new(value.0, hash))
+    }
+}
+
+impl TryFrom<(u32, &str)> for HeaderCheckpoint {
+    type Error = <BlockHash as FromStr>::Err;
+
+    fn try_from(value: (u32, &str)) -> Result<Self, Self::Error> {
+        let hash = BlockHash::from_str(value.1)?;
+        Ok(HeaderCheckpoint::new(value.0, hash))
+    }
+}
