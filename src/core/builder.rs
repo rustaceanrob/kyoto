@@ -96,8 +96,8 @@ impl NodeBuilder {
 
     /// Add a path to the directory where data should be stored. If none is provided, the current
     /// working directory will be used.
-    pub fn add_data_dir(mut self, path: PathBuf) -> Self {
-        self.config.data_path = Some(path);
+    pub fn add_data_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.config.data_path = Some(path.into());
         self
     }
 
