@@ -467,6 +467,46 @@ impl HeaderCheckpoint {
     pub fn new(height: Height, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }
+
+    /// Get the checkpoint that is closest to the specified height without exceeding that height.
+    /// This constructor is useful when recovering a wallet where one does not need to scan the
+    /// full chain, but must scan past a specified height to sufficiently recover the wallet.
+    pub fn closest_checkpoint_below_height(height: Height, network: Network) -> Self {
+        let checkpoints: Vec<HeaderCheckpoint> = match network {
+            Network::Bitcoin => MAINNET_HEADER_CP
+                .iter()
+                .copied()
+                .map(|(height, hash)| {
+                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
+                })
+                .collect(),
+            Network::Testnet => panic!("unimplemented network"),
+            Network::Signet => SIGNET_HEADER_CP
+                .iter()
+                .copied()
+                .map(|(height, hash)| {
+                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
+                })
+                .collect(),
+            Network::Regtest => REGTEST_HEADER_CP
+                .iter()
+                .copied()
+                .map(|(height, hash)| {
+                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
+                })
+                .collect(),
+            _ => unreachable!(),
+        };
+        let mut cp = *checkpoints.first().unwrap();
+        for checkpoint in checkpoints {
+            if height.ge(&checkpoint.height) {
+                cp = checkpoint;
+            } else {
+                break;
+            }
+        }
+        cp
+    }
 }
 
 #[derive(Debug)]
@@ -543,5 +583,37 @@ impl TryFrom<(u32, &str)> for HeaderCheckpoint {
     fn try_from(value: (u32, &str)) -> Result<Self, Self::Error> {
         let hash = BlockHash::from_str(value.1)?;
         Ok(HeaderCheckpoint::new(value.0, hash))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::Network;
+
+    #[test]
+    fn test_correct_checkpoints_selected() {
+        let network = Network::Bitcoin;
+        let first_height = 840_000;
+        let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(first_height, network);
+        assert_eq!(
+            checkpoint.hash,
+            BlockHash::from_str("0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5")
+                .unwrap()
+        );
+        let second_height = 840_001;
+        let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(second_height, network);
+        assert_eq!(
+            checkpoint.hash,
+            BlockHash::from_str("0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5")
+                .unwrap()
+        );
+        let third_height = 839_999;
+        let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(third_height, network);
+        assert_eq!(
+            checkpoint.hash,
+            BlockHash::from_str("000000000000000000011d55599ed27d7efca05f5849b755319c89eb2cffbc1f")
+                .unwrap()
+        );
     }
 }
