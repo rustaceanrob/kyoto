@@ -2,16 +2,17 @@
 //! New peers are stored in a local database, and the node connects to multiple peers
 //! to improve the anonymity set when broadcasting transactions to the Bitcoin network.
 
-use bitcoin::BlockHash;
-use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{AddrV2, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
 };
+
+const NETWORK: Network = Network::Signet;
+const RECOVERY_HEIGHT: u32 = 170_000;
 
 #[tokio::main]
 async fn main() {
@@ -19,12 +20,11 @@ async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
     // Use a predefined checkpoint
-    let (height, hash) = SIGNET_HEADER_CP.iter().rev().nth(3).unwrap();
-    let checkpoint = HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap());
+    let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
-    let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+    let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
-        .require_network(bitcoin::Network::Signet)
+        .require_network(NETWORK)
         .unwrap()
         .into();
     let mut addresses = HashSet::new();
@@ -37,7 +37,7 @@ async fn main() {
         ServiceFlags::P2P_V2,
     );
     // Create a new node builder
-    let builder = NodeBuilder::new(bitcoin::Network::Signet);
+    let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Add the peers
