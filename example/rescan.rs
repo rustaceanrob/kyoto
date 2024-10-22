@@ -2,11 +2,14 @@
 //! the filters for inclusions of these scripts and download the relevant
 //! blocks.
 
-use bitcoin::BlockHash;
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
+use kyoto::{Address, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
+
+const NETWORK: Network = Network::Signet;
+const RECOVERY_HEIGHT: u32 = 170_000;
 
 #[tokio::main]
 async fn main() {
@@ -14,24 +17,23 @@ async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
     // Add Bitcoin scripts to scan the blockchain for
-    let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+    let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
-        .require_network(bitcoin::Network::Signet)
+        .require_network(NETWORK)
         .unwrap()
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // Create a new node builder
-    let builder = NodeBuilder::new(bitcoin::Network::Signet);
+    let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(HeaderCheckpoint::new(
-            170_000,
-            BlockHash::from_str("00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d")
-                .unwrap(),
+        .anchor_checkpoint(HeaderCheckpoint::closest_checkpoint_below_height(
+            RECOVERY_HEIGHT,
+            NETWORK,
         ))
         // The number of connections we would like to maintain
         .num_required_peers(1)
@@ -58,12 +60,11 @@ async fn main() {
         }
     }
     // Add new scripts to the node.
-    let new_script = bitcoin::Address::from_str(
-        "tb1par6ufhp0t448t908kyyvkp3a48r42qcjmg0z9p6a0zuakc44nn2seh63jr",
-    )
-    .unwrap()
-    .require_network(bitcoin::Network::Signet)
-    .unwrap();
+    let new_script =
+        Address::from_str("tb1par6ufhp0t448t908kyyvkp3a48r42qcjmg0z9p6a0zuakc44nn2seh63jr")
+            .unwrap()
+            .require_network(NETWORK)
+            .unwrap();
     sender.add_script(new_script).await.unwrap();
     // // Tell the node to look for these new scripts
     sender.rescan().await.unwrap();
