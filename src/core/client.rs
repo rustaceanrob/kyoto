@@ -72,41 +72,8 @@ impl Client {
         }
     }
 
-    /// Broadcast a transaction and wait for the transaction to be sent to at least one node.
-    /// Note that this may take a significant amount of time depending on your peer and broadcast policy.
-    /// Furthermore, this is not a guarantee that the transaction has been _propagated_ throughout the network,
-    /// only that one or more peers has received the transaction.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running or the transaction was rejected by at least one peer.
-    pub async fn wait_for_broadcast(&mut self, tx: TxBroadcast) -> Result<(), ClientError> {
-        let txid = tx.tx.compute_txid();
-        self.ntx
-            .send(ClientMessage::Broadcast(tx))
-            .await
-            .map_err(|_| ClientError::SendError)?;
-        let mut rec = self.nrx.subscribe();
-        loop {
-            while let Ok(message) = rec.recv().await {
-                match message {
-                    NodeMessage::TxSent(id) => {
-                        if id.eq(&txid) {
-                            return Ok(());
-                        }
-                    }
-                    NodeMessage::TxBroadcastFailure(id) => {
-                        if id.txid.eq(&txid) {
-                            return Err(ClientError::BroadcastFailure(id));
-                        }
-                    }
-                    _ => continue,
-                }
-            }
-        }
-    }
-
     /// Wait until the client's headers and filters are fully synced to connected peers, dropping any block and transaction messages.
+    /// For new wallets, no blocks should be interesting yet.
     pub async fn wait_until_synced(&mut self) -> SyncUpdate {
         let mut rec = self.nrx.subscribe();
         loop {
@@ -283,6 +250,12 @@ macro_rules! impl_core_client {
 
 impl_core_client!(Client);
 impl_core_client!(ClientSender);
+
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for ClientError {
+    fn from(_: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        ClientError::SendError
+    }
+}
 
 #[cfg(test)]
 mod tests {
