@@ -126,6 +126,15 @@ macro_rules! impl_core_client {
 
             /// Broadcast a new transaction to the network.
             ///
+            /// # Note
+            ///
+            /// When broadcasting a one-parent one-child (TRUC) package,
+            /// broadcast the child first, followed by the parent.
+            ///
+            /// Package relay is under-development at the time of writing.
+            ///
+            /// For more information, see BIP-431 and BIP-331.
+            ///
             /// # Errors
             ///
             /// If the node has stopped running.
