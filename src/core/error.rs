@@ -2,8 +2,6 @@ use std::fmt::{Debug, Display};
 
 use crate::impl_sourceless_error;
 
-use super::messages::FailurePayload;
-
 /// Errors that prevent the node from running.
 #[derive(Debug)]
 pub enum NodeError<H: Debug + Display, P: Debug + Display> {
@@ -107,8 +105,6 @@ impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
 pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
     SendError,
-    /// The transaction was not broadcast to any peers.
-    BroadcastFailure(FailurePayload),
 }
 
 impl core::fmt::Display for ClientError {
@@ -117,11 +113,6 @@ impl core::fmt::Display for ClientError {
             ClientError::SendError => {
                 write!(f, "the receiver of this message was dropped from memory.")
             }
-            ClientError::BroadcastFailure(fail) => write!(
-                f,
-                "the transaction was not broadcast to any peers. REASON CODE: {}",
-                fail.txid
-            ),
         }
     }
 }
