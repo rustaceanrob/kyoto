@@ -13,8 +13,11 @@ use crate::db::traits::PeerStore;
 use crate::db::{PeerStatus, PersistedPeer};
 use crate::prelude::FutureResult;
 
+use super::{DATA_DIR, DEFAULT_CWD};
+
 const BUGGED_SERVICE: u64 = 0xfffffffffffff3b0;
 
+const FILE_NAME: &str = "peers.db";
 // Labels for the schema table
 const SCHEMA_TABLE_NAME: &str = "peer_schema_versions";
 const SCHEMA_COLUMN: &str = "schema_key";
@@ -42,13 +45,13 @@ impl SqlitePeerDb {
     /// the file will be stored in a `data` subdirectory where the program is ran.
     pub fn new(network: Network, path: Option<PathBuf>) -> Result<Self, SqlInitializationError> {
         // Open a connection
-        let mut path = path.unwrap_or_else(|| PathBuf::from("."));
-        path.push("data");
+        let mut path = path.unwrap_or_else(|| PathBuf::from(DEFAULT_CWD));
+        path.push(DATA_DIR);
         path.push(network.to_string());
         if !path.exists() {
             fs::create_dir_all(&path)?
         }
-        let conn = Connection::open(path.join("peers.db"))?;
+        let conn = Connection::open(path.join(FILE_NAME))?;
         // Create the schema version
         let schema_table_query = format!("CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE_NAME} ({SCHEMA_COLUMN} TEXT PRIMARY KEY, {VERSION_COLUMN} INTEGER NOT NULL)");
         // Update the schema version
