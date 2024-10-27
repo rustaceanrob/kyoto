@@ -146,6 +146,17 @@ macro_rules! impl_core_client {
                     .map_err(|_| ClientError::SendError)
             }
 
+            /// Tell the node to shut down from a synchronus context.
+            ///
+            /// # Errors
+            ///
+            /// If the node has already stopped running.
+            pub async fn shutdown_blocking(&self) -> Result<(), ClientError> {
+                self.ntx
+                    .blocking_send(ClientMessage::Shutdown)
+                    .map_err(|_| ClientError::SendError)
+            }
+
             /// Broadcast a new transaction to the network.
             ///
             /// # Errors
