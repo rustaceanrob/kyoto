@@ -204,6 +204,14 @@ impl TxBroadcast {
             broadcast_policy,
         }
     }
+
+    /// Prepare a transaction to be broadcasted to a random connection.
+    pub fn random_broadcast(tx: Transaction) -> Self {
+        Self {
+            tx,
+            broadcast_policy: TxBroadcastPolicy::RandomPeer,
+        }
+    }
 }
 
 /// The strategy for how this transaction should be shared with the network.
@@ -273,8 +281,8 @@ impl TrustedPeer {
     }
 
     /// Create a new trusted peer using the default port for the network.
-    pub fn from_ip(ip_addr: IpAddr) -> Self {
-        let address = match ip_addr {
+    pub fn from_ip(ip_addr: impl Into<IpAddr>) -> Self {
+        let address = match ip_addr.into() {
             IpAddr::V4(ip) => AddrV2::Ipv4(ip),
             IpAddr::V6(ip) => AddrV2::Ipv6(ip),
         };
@@ -286,7 +294,8 @@ impl TrustedPeer {
     }
 
     /// Create a new peer from a known address and port.
-    pub fn from_socket_addr(socket_addr: SocketAddr) -> Self {
+    pub fn from_socket_addr(socket_addr: impl Into<SocketAddr>) -> Self {
+        let socket_addr: SocketAddr = socket_addr.into();
         let address = match socket_addr {
             SocketAddr::V4(ip) => AddrV2::Ipv4(*ip.ip()),
             SocketAddr::V6(ip) => AddrV2::Ipv6(*ip.ip()),
