@@ -221,9 +221,9 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            pub async fn add_peer(&self, peer: TrustedPeer) -> Result<(), ClientError> {
+            pub async fn add_peer(&self, peer: impl Into<TrustedPeer>) -> Result<(), ClientError> {
                 self.ntx
-                    .send(ClientMessage::AddPeer(peer))
+                    .send(ClientMessage::AddPeer(peer.into()))
                     .await
                     .map_err(|_| ClientError::SendError)
             }

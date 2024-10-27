@@ -87,6 +87,12 @@ impl NodeBuilder {
         self
     }
 
+    /// Add a preferred peer to try to connect to.
+    pub fn add_peer(mut self, trusted_peer: impl Into<TrustedPeer>) -> Self {
+        self.config.white_list.push(trusted_peer.into());
+        self
+    }
+
     /// Add Bitcoin scripts to monitor for. You may add more later with the [`Client`].
     #[cfg(not(feature = "silent-payments"))]
     pub fn add_scripts(mut self, addresses: HashSet<ScriptBuf>) -> Self {
