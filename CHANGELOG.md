@@ -5,6 +5,18 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.0
+
+## Added
+
+- Type alias for `Node` in `builder` with default generics
+
+## Changed
+
+- `HeaderStore` and `PeerStore` traits now have an associated error type
+- `Node` is now generic over `H: HeaderStore` and `P: PeerStore`
+- Move `NodeError` subvariants into `core`
+
 ## v0.2.0
 
 ## Added
@@ -36,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.1.0
 
-#### Added
+## Added
 
 - `NodeBuilder` offers configuration options to build a compact block filters `Node` and `Client`
 - `Client` is further split into `ClientSender` and `Receiver<NodeMessage>`
