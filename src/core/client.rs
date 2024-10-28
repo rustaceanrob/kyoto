@@ -118,7 +118,7 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has already stopped running.
-            pub async fn shutdown_blocking(&self) -> Result<(), ClientError> {
+            pub fn shutdown_blocking(&self) -> Result<(), ClientError> {
                 self.ntx
                     .blocking_send(ClientMessage::Shutdown)
                     .map_err(|_| ClientError::SendError)
