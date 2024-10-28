@@ -5,6 +5,25 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.0
+
+## Added
+
+- New `HeaderCheckpoint` constructor from height
+- `shutdown`, `add_scripts`, `broadcast_transaction` methods have blocking APIs
+- Add a `TrustedPeer` while the node is running
+- Add change the peer timeout while the node is running
+
+## Changed
+
+- Use `impl Into` whenever possible on `NodeBuilder` and `Client` APIs
+- Remove the misleading `wait_for_broadcast` method on `Client`
+
+## Fixes
+
+- Remove `Option` from `Whitelist` as it is already a `Vec`
+- Limit the amount of `ADDR` messages a single peer can send
+
 ## v0.3.0
 
 ## Added
