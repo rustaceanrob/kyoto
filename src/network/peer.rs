@@ -408,7 +408,11 @@ impl Peer {
             .map_err(|_| PeerError::Reader)?;
         let mut local_garbage_terminator_message = [0u8; 36];
         handshake
-            .complete_materials(remote_public_key, &mut local_garbage_terminator_message)
+            .complete_materials(
+                remote_public_key,
+                &mut local_garbage_terminator_message,
+                None,
+            )
             .map_err(|_| PeerError::HandshakeFailed)?;
         self.write_bytes(writer, local_garbage_terminator_message.to_vec())
             .await?;

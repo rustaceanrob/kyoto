@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bip324::PacketWriter;
+use bip324::{PacketType, PacketWriter};
 use bitcoin::{
     consensus::serialize,
     hashes::Hash,
@@ -145,7 +145,7 @@ impl V2OutboundMessage {
 
     fn encrypt_plaintext(&mut self, plaintext: Vec<u8>) -> Result<Vec<u8>, PeerError> {
         self.encryptor
-            .prepare_packet_with_alloc(&plaintext, None, false)
+            .encrypt_packet(&plaintext, None, PacketType::Genuine)
             .map_err(|_| PeerError::MessageEncryption)
     }
 }
