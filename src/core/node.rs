@@ -183,7 +183,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
     pub async fn run(&self) -> Result<(), NodeError<H::Error, P::Error>> {
-        self.dialog.send_dialog("Starting node".into()).await;
+        self.dialog.send_dialog("Starting node").await;
         self.dialog
             .send_dialog(format!(
                 "Configured connection requirement: {} peers",
@@ -370,7 +370,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn get_blocks(&self) {
         if let Some(block_request) = self.pop_block_queue().await {
             self.dialog
-                .send_dialog("Sending block request to a random peer".into())
+                .send_dialog("Sending block request to a random peer")
                 .await;
             self.send_random(block_request).await;
         }
@@ -390,7 +390,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     TxBroadcastPolicy::AllPeers => {
                         self.dialog
                             .send_dialog(format!(
-                                "Sending transaction to {} connected peers.",
+                                "Sending transaction to {} connected peers",
                                 peer_map.live()
                             ))
                             .await;
@@ -400,7 +400,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     }
                     TxBroadcastPolicy::RandomPeer => {
                         self.dialog
-                            .send_dialog("Sending transaction to a random peer.".into())
+                            .send_dialog("Sending transaction to a random peer")
                             .await;
                         peer_map
                             .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
@@ -470,9 +470,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 if last_block.stale() {
                     self.dialog.send_warning(Warning::PotentialStaleTip).await;
                     self.dialog
-                        .send_dialog(
-                            "Disconnecting from remote nodes to find new connections".into(),
-                        )
+                        .send_dialog("Disconnecting from remote nodes to find new connections")
                         .await;
                     self.broadcast(MainThreadMessage::Disconnect).await;
                 }
@@ -550,9 +548,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             .await;
         // Now we may request peers if required
         if needs_peers {
-            self.dialog
-                .send_dialog("Requesting new addresses".into())
-                .await;
+            self.dialog.send_dialog("Requesting new addresses").await;
             peer_map
                 .send_message(nonce, MainThreadMessage::GetAddr)
                 .await;
@@ -807,7 +803,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // When the application starts, fetch any headers we know about from the database.
     async fn fetch_headers(&self) -> Result<(), NodeError<H::Error, P::Error>> {
         self.dialog
-            .send_dialog("Attempting to load headers from the database".into())
+            .send_dialog("Attempting to load headers from the database")
             .await;
         let mut chain = self.chain.lock().await;
         chain

@@ -12,8 +12,8 @@ impl Dialog {
         Self { ntx }
     }
 
-    pub(crate) async fn send_dialog(&self, dialog: String) {
-        let _ = self.ntx.send(NodeMessage::Dialog(dialog));
+    pub(crate) async fn send_dialog(&self, dialog: impl Into<String>) {
+        let _ = self.ntx.send(NodeMessage::Dialog(dialog.into()));
     }
 
     pub(crate) async fn chain_update(

@@ -395,7 +395,7 @@ impl Peer {
         R: AsyncRead + Send + Unpin,
     {
         self.dialog
-            .send_dialog("Initiating a handshake for encrypted messaging".into())
+            .send_dialog("Initiating a handshake for encrypted messaging")
             .await;
         let mut public_key = [0; 64];
         let mut handshake = Handshake::new(self.network, Role::Initiator, None, &mut public_key)
@@ -429,7 +429,7 @@ impl Peer {
             .finalize()
             .map_err(|_| PeerError::HandshakeFailed)?;
         self.dialog
-            .send_dialog("Established an encrypted connection".into())
+            .send_dialog("Established an encrypted connection")
             .await;
         Ok(packet_handler)
     }
