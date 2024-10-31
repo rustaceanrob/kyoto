@@ -11,7 +11,7 @@ use crate::{
     TrustedPeer, TxBroadcast,
 };
 
-use super::node::NodeState;
+use super::{error::FetchHeaderError, node::NodeState};
 
 /// Messages receivable by a running node.
 #[derive(Debug, Clone)]
@@ -94,7 +94,7 @@ impl FailurePayload {
 }
 
 /// Commands to issue a node.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum ClientMessage {
     /// Stop the node.
     Shutdown,
@@ -115,6 +115,22 @@ pub(crate) enum ClientMessage {
     SetDuration(Duration),
     /// Add another known peer to connect to.
     AddPeer(TrustedPeer),
+    /// Request a header from a specified height.
+    GetHeader(HeaderRequest),
+}
+
+type HeaderSender = tokio::sync::oneshot::Sender<Result<Option<Header>, FetchHeaderError>>;
+
+#[derive(Debug)]
+pub(crate) struct HeaderRequest {
+    pub(crate) oneshot: HeaderSender,
+    pub(crate) height: u32,
+}
+
+impl HeaderRequest {
+    pub(crate) fn new(oneshot: HeaderSender, height: u32) -> Self {
+        Self { oneshot, height }
+    }
 }
 
 /// Warnings a node may issue while running.
@@ -153,6 +169,8 @@ pub enum Warning {
         /// Additional context as to why block syncing failed.
         warning: String,
     },
+    /// A channel that was supposed to receive a message was dropped.
+    ChannelDropped,
 }
 
 impl core::fmt::Display for Warning {
@@ -196,6 +214,12 @@ impl core::fmt::Display for Warning {
                 write!(
                     f,
                     "A peer sent us a peer-to-peer message the node did not request."
+                )
+            }
+            Warning::ChannelDropped => {
+                write!(
+                    f,
+                    "A channel that was supposed to receive a message was dropped."
                 )
             }
         }

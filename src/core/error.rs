@@ -118,3 +118,40 @@ impl core::fmt::Display for ClientError {
 }
 
 impl_sourceless_error!(ClientError);
+
+/// Errors occuring when the client is fetching headers from the node.
+#[derive(Debug)]
+pub enum FetchHeaderError {
+    /// The channel to the node was likely closed and dropped from memory.
+    /// This implies the node is not running.
+    SendError,
+    /// The database operation failed while attempting to find the header.
+    DatabaseOptFailed {
+        /// The message from the backend describing the failure.
+        error: String,
+    },
+    /// The channel to the client was likely closed by the node and dropped from memory.
+    RecvError,
+}
+
+impl core::fmt::Display for FetchHeaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FetchHeaderError::SendError => {
+                write!(f, "the receiver of this message was dropped from memory.")
+            }
+            FetchHeaderError::DatabaseOptFailed { error } => {
+                write!(
+                    f,
+                    "the database operation failed while attempting to find the header: {error}"
+                )
+            }
+            FetchHeaderError::RecvError => write!(
+                f,
+                "the channel to the client was likely closed by the node and dropped from memory."
+            ),
+        }
+    }
+}
+
+impl_sourceless_error!(FetchHeaderError);

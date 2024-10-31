@@ -193,6 +193,8 @@ async fn test_mine_after_reorg() {
     // Reorganize the blocks
     let old_best = best;
     let old_height = rpc.get_block_count().unwrap();
+    let fetched_header = client.get_header(10).await.unwrap().unwrap();
+    assert_eq!(old_best, fetched_header.block_hash());
     invalidate_block(&rpc, &best).await;
     mine_blocks(&rpc, &miner, 2, 1).await;
     let best = rpc.get_best_block_hash().unwrap();
