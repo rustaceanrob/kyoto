@@ -226,6 +226,63 @@ impl SqliteHeaderDb {
             None => Ok(None),
         }
     }
+
+    async fn header_at(&mut self, height: u32) -> Result<Option<Header>, SqlHeaderStoreError> {
+        let write_lock = self.conn.lock().await;
+        let stmt = "SELECT * FROM headers WHERE height = ?1";
+        let query = write_lock.query_row(stmt, params![height], |row| {
+            let hash: String = row.get(1)?;
+            let version: i32 = row.get(2)?;
+            let prev_hash: String = row.get(3)?;
+            let merkle_root: String = row.get(4)?;
+            let time: u32 = row.get(5)?;
+            let bits: u32 = row.get(6)?;
+            let nonce: u32 = row.get(7)?;
+
+            let header = Header {
+                version: Version::from_consensus(version),
+                prev_blockhash: BlockHash::from_str(&prev_hash).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Blob,
+                        Box::new(e),
+                    )
+                })?,
+                merkle_root: TxMerkleNode::from_str(&merkle_root).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Blob,
+                        Box::new(e),
+                    )
+                })?,
+                time,
+                bits: CompactTarget::from_consensus(bits),
+                nonce,
+            };
+
+            if BlockHash::from_str(&hash)
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Blob,
+                        Box::new(e),
+                    )
+                })?
+                .ne(&header.block_hash())
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+
+            Ok(header)
+        });
+        match query {
+            Ok(header) => Ok(Some(header)),
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(SqlHeaderStoreError::SQL(e)),
+            },
+        }
+    }
 }
 
 impl HeaderStore for SqliteHeaderDb {
@@ -262,6 +319,10 @@ impl HeaderStore for SqliteHeaderDb {
     fn hash_at(&mut self, height: u32) -> FutureResult<Option<BlockHash>, Self::Error> {
         Box::pin(self.hash_at(height))
     }
+
+    fn header_at(&mut self, height: u32) -> FutureResult<Option<Header>, Self::Error> {
+        Box::pin(self.header_at(height))
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +352,12 @@ mod tests {
         assert_eq!(get_height_8, 8);
         let load = db.load_after(7).await.unwrap();
         assert_eq!(map, load);
+        let get_header_9 = db.header_at(9).await.unwrap().unwrap();
+        assert_eq!(get_header_9, block_9);
+        let get_header_11 = db.header_at(11).await.unwrap();
+        assert!(get_header_11.is_none());
+        let get_header_7 = db.header_at(7).await.unwrap();
+        assert!(get_header_7.is_none());
         drop(db);
         binding.close().unwrap();
     }
@@ -309,6 +376,8 @@ mod tests {
         map.insert(10, block_10);
         let w = db.write(&map).await;
         assert!(w.is_ok());
+        let get_height_10 = db.header_at(10).await.unwrap().unwrap();
+        assert_eq!(block_10, get_height_10);
         let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
         let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
         let mut map = BTreeMap::new();
@@ -320,6 +389,10 @@ mod tests {
         let block_hash_10 = new_block_10.block_hash();
         let w = db.write(&map).await;
         assert!(w.is_ok());
+        let get_height_10 = db.header_at(10).await.unwrap().unwrap();
+        assert_eq!(new_block_10, get_height_10);
+        let get_height_12 = db.header_at(12).await.unwrap();
+        assert!(get_height_12.is_none());
         let get_hash_10 = db.hash_at(10).await.unwrap().unwrap();
         assert_eq!(get_hash_10, block_hash_10);
         let get_height_11 = db.height_of(&block_hash_11).await.unwrap().unwrap();

@@ -39,6 +39,9 @@ pub trait HeaderStore: Debug + Send + Sync {
 
     /// Return the hash at the height in the database, if it exists.
     fn hash_at(&mut self, height: u32) -> FutureResult<Option<BlockHash>, Self::Error>;
+
+    /// Return the header at the height in the database, if it exists.
+    fn header_at(&mut self, height: u32) -> FutureResult<Option<Header>, Self::Error>;
 }
 
 /// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
@@ -90,6 +93,13 @@ impl HeaderStore for () {
             Ok(None)
         }
         Box::pin(do_hast_at())
+    }
+
+    fn header_at(&mut self, _height: u32) -> FutureResult<Option<Header>, Self::Error> {
+        async fn do_header_at() -> Result<Option<Header>, Infallible> {
+            Ok(None)
+        }
+        Box::pin(do_header_at())
     }
 }
 
