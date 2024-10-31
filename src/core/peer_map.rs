@@ -261,9 +261,7 @@ impl<P: PeerStore> PeerMap<P> {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
         if let Some(peer) = self.whitelist.pop() {
-            self.dialog
-                .send_dialog("Using a configured peer.".into())
-                .await;
+            self.dialog.send_dialog("Using a configured peer").await;
             let port = peer
                 .port
                 .unwrap_or(default_port_from_network(&self.network));
@@ -385,9 +383,7 @@ impl<P: PeerStore> PeerMap<P> {
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
         use crate::network::dns::Dns;
         use std::net::IpAddr;
-        self.dialog
-            .send_dialog("Bootstraping peers with DNS".into())
-            .await;
+        self.dialog.send_dialog("Bootstraping peers with DNS").await;
         let mut db_lock = self.db.lock().await;
         let new_peers = Dns::new(self.network)
             .bootstrap()

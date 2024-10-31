@@ -403,9 +403,7 @@ impl<H: HeaderStore> Chain<H> {
                 self.dialog
                     .send_dialog(format!("Found checkpoint, height: {}", checkpoint.height))
                     .await;
-                self.dialog
-                    .send_dialog("Writing progress to disk...".into())
-                    .await;
+                self.dialog.send_dialog("Writing progress to disk...").await;
                 self.checkpoints.advance();
                 self.flush_to_disk().await;
             } else {
@@ -451,9 +449,7 @@ impl<H: HeaderStore> Chain<H> {
         if let Some(stem) = stem_position {
             let current_chainwork = self.header_chain.chainwork_after_height(stem);
             if current_chainwork.lt(&challenge_chainwork) {
-                self.dialog
-                    .send_dialog("Valid reorganization found".into())
-                    .await;
+                self.dialog.send_dialog("Valid reorganization found").await;
                 let reorged = self.header_chain.extend(&uncommon);
                 let removed_hashes = &reorged
                     .iter()
