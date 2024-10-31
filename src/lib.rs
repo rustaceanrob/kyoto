@@ -74,7 +74,7 @@ mod filters;
 mod network;
 mod prelude;
 #[cfg(feature = "silent-payments")]
-use filters::filter::Filter;
+use filters::Filter;
 #[cfg(feature = "silent-payments")]
 use std::collections::HashSet;
 
