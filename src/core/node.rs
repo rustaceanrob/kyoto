@@ -26,7 +26,7 @@ use crate::{
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
     },
-    core::peer_map::PeerMap,
+    core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
     ConnectionType, FailurePayload, TrustedPeer, TxBroadcastPolicy,
@@ -316,6 +316,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             ClientMessage::AddPeer(peer) => {
                                 let mut peer_map = self.peer_map.lock().await;
                                 peer_map.add_trusted_peer(peer);
+                            },
+                            ClientMessage::GetHeader(request) => {
+                                let mut chain = self.chain.lock().await;
+                                let header_opt = chain.fetch_header(request.height).await;
+                                if let Err(_) = request.oneshot.send(header_opt.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() })) {
+                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                };
                             }
                         }
                     }

@@ -115,14 +115,38 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // This header chain contains a block hash in memory
-    pub(crate) fn header_at_height(&self, height: u32) -> Option<&Header> {
+    pub(crate) fn cached_header_at_height(&self, height: u32) -> Option<&Header> {
         self.header_chain.header_at_height(height)
+    }
+
+    // Fetch a header from the cache or disk.
+    pub(crate) async fn fetch_header(
+        &mut self,
+        height: u32,
+    ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
+        match self.header_chain.header_at_height(height) {
+            Some(header) => Ok(Some(header.clone())),
+            None => {
+                let mut db = self.db.lock().await;
+                let header_opt = db.header_at(height).await;
+                if let Err(_) = header_opt {
+                    self.dialog
+                        .send_warning(Warning::FailedPersistance {
+                            warning: format!(
+                                "Unexpected error fetching a header from the header store at height {height}"
+                            ),
+                        })
+                        .await;
+                }
+                header_opt.map_err(|e| HeaderPersistenceError::Database(e))
+            }
+        }
     }
 
     // The hash at the given height, potentially checking on disk
     pub(crate) async fn blockhash_at_height(&self, height: u32) -> Option<BlockHash> {
         match self
-            .header_at_height(height)
+            .cached_header_at_height(height)
             .map(|header| header.block_hash())
         {
             Some(hash) => Some(hash),
@@ -852,6 +876,7 @@ mod tests {
             vec![block_8, block_9, new_block_10, block_11],
             chain.header_chain.values()
         );
+        assert_eq!(chain.fetch_header(10).await.unwrap().unwrap(), new_block_10);
         // A new peer sending us these headers should not do anything
         let dup_sync = chain.sync_chain(batch_4).await;
         assert_eq!(11, chain.height());
@@ -922,6 +947,7 @@ mod tests {
         let chain_sync = chain.sync_chain(batch_4).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 3);
+        assert_eq!(chain.fetch_header(3).await.unwrap().unwrap(), block_3);
         assert_eq!(
             chain.header_chain.values(),
             vec![new_block_1, new_block_2, block_3]

@@ -1,3 +1,4 @@
+use bitcoin::block::Header;
 #[cfg(feature = "silent-payments")]
 use bitcoin::BlockHash;
 use bitcoin::ScriptBuf;
@@ -9,8 +10,8 @@ use tokio::sync::mpsc::Sender;
 use crate::{IndexedBlock, TrustedPeer, TxBroadcast};
 
 use super::{
-    error::ClientError,
-    messages::{ClientMessage, NodeMessage, SyncUpdate},
+    error::{ClientError, FetchHeaderError},
+    messages::{ClientMessage, HeaderRequest, NodeMessage, SyncUpdate},
 };
 
 /// A [`Client`] allows for communication with a running node.
@@ -187,6 +188,30 @@ macro_rules! impl_core_client {
                 self.ntx
                     .blocking_send(ClientMessage::AddScript(script.into()))
                     .map_err(|_| ClientError::SendError)
+            }
+
+            /// Get a header at the specified height, if it exists.
+            ///
+            /// # Note
+            ///
+            /// The height of the chain is the canonical index of the header in the chain.
+            /// For example, the genesis block is at a height of zero.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn get_header(
+                &self,
+                height: u32,
+            ) -> Result<Option<Header>, FetchHeaderError> {
+                let (tx, rx) =
+                    tokio::sync::oneshot::channel::<Result<Option<Header>, FetchHeaderError>>();
+                let message = HeaderRequest::new(tx, height);
+                self.ntx
+                    .send(ClientMessage::GetHeader(message))
+                    .await
+                    .map_err(|_| FetchHeaderError::SendError)?;
+                rx.await.map_err(|_| FetchHeaderError::RecvError)?
             }
 
             /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
