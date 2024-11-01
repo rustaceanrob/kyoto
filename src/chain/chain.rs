@@ -44,6 +44,7 @@ const REORG_LOOKBACK: u32 = 7;
 const MAX_HEADER_SIZE: usize = 20_000;
 const FILTER_BASIC: u8 = 0x00;
 
+#[allow(unused)]
 #[derive(Debug)]
 pub(crate) struct Chain<H: HeaderStore> {
     header_chain: HeaderChain,
@@ -358,7 +359,7 @@ impl<H: HeaderStore> Chain<H> {
         }
 
         // All the headers connect with each other and is the difficulty adjustment not absurd
-        if !header_batch.connected_with_valid_bits(&self.params).await {
+        if !header_batch.connected().await {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 

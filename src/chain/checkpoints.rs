@@ -101,6 +101,34 @@ pub const SIGNET_HEADER_CP: &[(Height, &str)] = &[
     ),
 ];
 
+/// Known block hashes for Testnet4.
+pub const TESTNET4_HEADER_CP: &[(Height, &str)] = &[
+    (
+        0,
+        "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+    ),
+    (
+        10_000,
+        "000000000037079ff4c37eed57d00eb9ddfde8737b559ffa4101b11e76c97466",
+    ),
+    (
+        20_000,
+        "0000000000003a28386161143be8e7cdc3d857021986c4d0ee140d852a155b59",
+    ),
+    (
+        30_000,
+        "000000000000000095a56b41da7618b40949a3aef84059732ff1b045cb44fbbf",
+    ),
+    (
+        40_000,
+        "000000000000000c1a1fad82b0e133f4772802b6dff7a95990580ae2e15c634f",
+    ),
+    (
+        50_000,
+        "00000000e2c8c94ba126169a88997233f07a9769e2b009fb10cad0e893eff2cb",
+    ),
+];
+
 /// Known block hashes on the Bitcoin blockchain.
 pub const MAINNET_HEADER_CP: &[(Height, &str)] = &[
     (
@@ -481,6 +509,13 @@ impl HeaderCheckpoint {
                 })
                 .collect(),
             Network::Testnet => panic!("unimplemented network"),
+            Network::Testnet4 => TESTNET4_HEADER_CP
+                .iter()
+                .copied()
+                .map(|(height, hash)| {
+                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
+                })
+                .collect(),
             Network::Signet => SIGNET_HEADER_CP
                 .iter()
                 .copied()
@@ -521,6 +556,7 @@ impl HeaderCheckpoints {
         let cp_list = match network {
             Network::Bitcoin => MAINNET_HEADER_CP.to_vec(),
             Network::Testnet => panic!("unimplemented network"),
+            Network::Testnet4 => TESTNET4_HEADER_CP.to_vec(),
             Network::Signet => SIGNET_HEADER_CP.to_vec(),
             Network::Regtest => REGTEST_HEADER_CP.to_vec(),
             _ => unreachable!(),
