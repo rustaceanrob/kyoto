@@ -71,6 +71,10 @@ name = "signet"
 path = "example/signet.rs"
 
 [[example]]
+name = "testnet"
+path = "example/testnet4.rs"
+
+[[example]]
 name = "rescan"
 path = "example/rescan.rs"
 

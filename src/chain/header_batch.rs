@@ -26,6 +26,9 @@ impl HeadersBatch {
             .zip(self.batch.iter().skip(1))
             .all(|(first, second)| {
                 let transition = Target::from_compact(first.bits).max_transition_threshold(params);
+                if Target::from_compact(second.bits).gt(&transition) {
+                    println!("There is a problem");
+                }
                 first.block_hash().eq(&second.prev_blockhash)
                     && Target::from_compact(second.bits).le(&transition)
             })

@@ -72,6 +72,7 @@ impl<'a> Dns<'a> {
             Network::Testnet => TESTNET_SEEDS.to_vec(),
             Network::Signet => SIGNET_SEEDS.to_vec(),
             Network::Regtest => Vec::with_capacity(0),
+            Network::Testnet4 => Vec::with_capacity(0),
             _ => unreachable!(),
         };
         Self { seeds }
