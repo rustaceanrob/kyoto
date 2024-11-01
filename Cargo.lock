@@ -302,20 +302,20 @@ checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
 
 [[package]]
 name = "bip324"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db5b9671497208a11a2c65b7037ef1bb2a5ee831f3004f58bf1332400f9bd47e"
+checksum = "bf211dbeae95401a82e449e49ef083a6e74ca4e295282aa6987fb2a24c694cc7"
 dependencies = [
  "bitcoin",
- "futures",
  "rand",
+ "tokio",
 ]
 
 [[package]]
 name = "bitcoin"
-version = "0.32.1"
+version = "0.32.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bf33434c870e98ecc8608588ccc990c5daba9ba9ad39733dc85fba22c211504"
+checksum = "788902099d47c8682efe6a7afb01c8d58b9794ba66c06affd81c3d6b560743eb"
 dependencies = [
  "base58ck",
  "bech32",
