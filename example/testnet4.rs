@@ -7,6 +7,8 @@ use std::{net::Ipv4Addr, str::FromStr};
 const NETWORK: Network = Network::Testnet4;
 const RECOVERY_HEIGHT: u32 = 0;
 
+// THE TESTNET4 DOES NOT CURRENTLY HAVE PEERS THAT SERVE COMPACT BLOCK FILTERS
+
 #[tokio::main]
 async fn main() {
     // Add third-party logging
@@ -23,7 +25,7 @@ async fn main() {
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // Add preferred peers to connect to
-    let peer = TrustedPeer::from_ip(Ipv4Addr::new(95, 217, 73, 162));
+    let peer = TrustedPeer::from_ip(Ipv4Addr::new(18, 189, 156, 102));
     // Create a new node builder
     let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
