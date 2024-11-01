@@ -23,6 +23,11 @@ impl Dialog {
         num_filters: u32,
         best_height: u32,
     ) {
+        let _ = self.ntx.send(NodeMessage::Progress {
+            filter_headers: num_cf_headers,
+            filters: num_filters,
+            tip_height: best_height,
+        });
         let message = format!(
             "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
             num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
