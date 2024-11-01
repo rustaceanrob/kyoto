@@ -125,11 +125,11 @@ impl<H: HeaderStore> Chain<H> {
         height: u32,
     ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
         match self.header_chain.header_at_height(height) {
-            Some(header) => Ok(Some(header.clone())),
+            Some(header) => Ok(Some(*header)),
             None => {
                 let mut db = self.db.lock().await;
                 let header_opt = db.header_at(height).await;
-                if let Err(_) = header_opt {
+                if header_opt.is_err() {
                     self.dialog
                         .send_warning(Warning::FailedPersistance {
                             warning: format!(
@@ -138,7 +138,7 @@ impl<H: HeaderStore> Chain<H> {
                         })
                         .await;
                 }
-                header_opt.map_err(|e| HeaderPersistenceError::Database(e))
+                header_opt.map_err(HeaderPersistenceError::Database)
             }
         }
     }
