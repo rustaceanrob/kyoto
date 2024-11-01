@@ -214,6 +214,30 @@ macro_rules! impl_core_client {
                 rx.await.map_err(|_| FetchHeaderError::RecvError)?
             }
 
+            /// Get a header at the specified height in a synchronus context, if it exists.
+            ///
+            /// # Note
+            ///
+            /// The height of the chain is the canonical index of the header in the chain.
+            /// For example, the genesis block is at a height of zero.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub fn get_header_blocking(
+                &self,
+                height: u32,
+            ) -> Result<Option<Header>, FetchHeaderError> {
+                let (tx, rx) =
+                    tokio::sync::oneshot::channel::<Result<Option<Header>, FetchHeaderError>>();
+                let message = HeaderRequest::new(tx, height);
+                self.ntx
+                    .blocking_send(ClientMessage::GetHeader(message))
+                    .map_err(|_| FetchHeaderError::SendError)?;
+                rx.blocking_recv()
+                    .map_err(|_| FetchHeaderError::RecvError)?
+            }
+
             /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
             ///
             /// # Errors
