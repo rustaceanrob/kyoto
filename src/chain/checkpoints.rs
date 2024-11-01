@@ -501,35 +501,11 @@ impl HeaderCheckpoint {
     /// full chain, but must scan past a specified height to sufficiently recover the wallet.
     pub fn closest_checkpoint_below_height(height: Height, network: Network) -> Self {
         let checkpoints: Vec<HeaderCheckpoint> = match network {
-            Network::Bitcoin => MAINNET_HEADER_CP
-                .iter()
-                .copied()
-                .map(|(height, hash)| {
-                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
-                })
-                .collect(),
+            Network::Bitcoin => Self::headers_from_const(MAINNET_HEADER_CP),
             Network::Testnet => panic!("unimplemented network"),
-            Network::Testnet4 => TESTNET4_HEADER_CP
-                .iter()
-                .copied()
-                .map(|(height, hash)| {
-                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
-                })
-                .collect(),
-            Network::Signet => SIGNET_HEADER_CP
-                .iter()
-                .copied()
-                .map(|(height, hash)| {
-                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
-                })
-                .collect(),
-            Network::Regtest => REGTEST_HEADER_CP
-                .iter()
-                .copied()
-                .map(|(height, hash)| {
-                    HeaderCheckpoint::new(height, BlockHash::from_str(hash).unwrap())
-                })
-                .collect(),
+            Network::Testnet4 => Self::headers_from_const(TESTNET4_HEADER_CP),
+            Network::Signet => Self::headers_from_const(SIGNET_HEADER_CP),
+            Network::Regtest => Self::headers_from_const(REGTEST_HEADER_CP),
             _ => unreachable!(),
         };
         let mut cp = *checkpoints.first().unwrap();
@@ -541,6 +517,15 @@ impl HeaderCheckpoint {
             }
         }
         cp
+    }
+
+    fn headers_from_const(headers: &[(u32, &str)]) -> Vec<HeaderCheckpoint> {
+        headers
+            .into_iter()
+            .map(|(height, hash)| {
+                HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap())
+            })
+            .collect()
     }
 }
 
