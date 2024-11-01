@@ -1,6 +1,6 @@
 use bitcoin::{
     consensus::Decodable,
-    io::BufRead,
+    io::Read,
     p2p::{message::CommandString, Magic},
 };
 
@@ -26,7 +26,7 @@ pub(crate) struct V1Header {
 }
 
 impl Decodable for V1Header {
-    fn consensus_decode<R: BufRead + ?Sized>(
+    fn consensus_decode<R: Read + ?Sized>(
         reader: &mut R,
     ) -> Result<Self, bitcoin::consensus::encode::Error> {
         let magic = Magic::consensus_decode(reader)?;

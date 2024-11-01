@@ -15,13 +15,14 @@ resolver = "2"
 
 [dependencies]
 bitcoin_hashes = "0.14.0"
-bitcoin = { version = "0.32.0", features = [
+bitcoin = { version = "0.32.4", features = [
     "serde",
     "rand-std",
 ], default-features = false }
-bip324 = { version = "0.4.0", default-features = false, features = [
+bip324 = { version = "0.5.0", default-features = false, features = [
     "std",
     "alloc",
+    "tokio",
 ] }
 tokio = { version = "1.37", default-features = false, features = [
     "rt-multi-thread",
