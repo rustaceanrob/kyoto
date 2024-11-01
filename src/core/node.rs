@@ -320,7 +320,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             ClientMessage::GetHeader(request) => {
                                 let mut chain = self.chain.lock().await;
                                 let header_opt = chain.fetch_header(request.height).await;
-                                if let Err(_) = request.oneshot.send(header_opt.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() })) {
+                                let send_result = request.oneshot.send(header_opt.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }));
+                                if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };
                             }

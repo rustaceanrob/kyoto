@@ -7,8 +7,8 @@ use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid
 #[cfg(feature = "silent-payments")]
 use crate::IndexedFilter;
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, IndexedTransaction,
-    TrustedPeer, TxBroadcast,
+    chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, TrustedPeer,
+    TxBroadcast,
 };
 
 use super::{error::FetchHeaderError, node::NodeState};
@@ -24,8 +24,6 @@ pub enum NodeMessage {
     StateChange(NodeState),
     /// The node is connected to all required peers.
     ConnectionsMet,
-    /// A relevant transaction based on the user provided scripts.
-    Transaction(IndexedTransaction),
     /// A relevant [`Block`](crate) based on the user provided scripts.
     /// Note that the block may not contain any transactions contained in the script set.
     /// This is due to block filters having a non-zero false-positive rate when compressing data.

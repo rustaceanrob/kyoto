@@ -66,7 +66,6 @@ async fn main() {
                 NodeMessage::Dialog(d) => tracing::info!("{d}"),
                 NodeMessage::Warning(e) => tracing::warn!("{e}"),
                 NodeMessage::StateChange(s) => tracing::info!("State update: {s}"),
-                NodeMessage::Transaction(t) => drop(t),
                 NodeMessage::Block(b) => drop(b),
                 NodeMessage::BlocksDisconnected(r) => {
                     let _ = r;

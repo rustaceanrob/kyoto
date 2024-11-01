@@ -107,7 +107,8 @@ pub use tokio::sync::broadcast::Receiver;
 
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]
-pub struct IndexedTransaction {
+#[allow(dead_code)]
+pub(crate) struct IndexedTransaction {
     /// The Bitcoin transaction.
     pub transaction: Transaction,
     /// The height of the block in the chain that includes this transaction.

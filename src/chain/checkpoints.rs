@@ -521,7 +521,7 @@ impl HeaderCheckpoint {
 
     fn headers_from_const(headers: &[(u32, &str)]) -> Vec<HeaderCheckpoint> {
         headers
-            .into_iter()
+            .iter()
             .map(|(height, hash)| {
                 HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap())
             })
