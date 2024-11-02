@@ -22,6 +22,12 @@ integrate:
 example:
   cargo run --example signet --release
 
+signet:
+  cargo run --example signet --release
+
+testnet:
+  cargo run --example testnet --release
+
 all:
   cargo fmt 
   cargo clippy --all-targets
