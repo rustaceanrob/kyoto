@@ -8,7 +8,7 @@ use bitcoin::{
     block::Header,
     consensus::Params,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    Block, BlockHash, Network, ScriptBuf, TxOut, Work,
+    Block, BlockHash, CompactTarget, Network, ScriptBuf, TxOut, Work,
 };
 use tokio::sync::Mutex;
 
@@ -44,7 +44,6 @@ const REORG_LOOKBACK: u32 = 7;
 const MAX_HEADER_SIZE: usize = 20_000;
 const FILTER_BASIC: u8 = 0x00;
 
-#[allow(unused)]
 #[derive(Debug)]
 pub(crate) struct Chain<H: HeaderStore> {
     header_chain: HeaderChain,
@@ -331,6 +330,7 @@ impl<H: HeaderStore> Chain<H> {
             None => {
                 // Nothing left to do but add the headers to the chain
                 if self.tip().eq(&header_batch.first().prev_blockhash) {
+                    self.audit_difficulty(self.height(), &header_batch).await?;
                     self.header_chain.extend(header_batch.inner());
                     return Ok(());
                 }
@@ -390,6 +390,7 @@ impl<H: HeaderStore> Chain<H> {
         header_batch: HeadersBatch,
         checkpoint: HeaderCheckpoint,
     ) -> Result<(), HeaderSyncError> {
+        self.audit_difficulty(self.height(), &header_batch).await?;
         // Eagerly append the batch to the chain
         self.header_chain.extend(header_batch.inner());
         // We need to check a hard-coded checkpoint
@@ -415,7 +416,6 @@ impl<H: HeaderStore> Chain<H> {
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
         }
-        // TODO: check the difficulty adjustment when possible
         Ok(())
     }
 
@@ -475,6 +475,96 @@ impl<H: HeaderStore> Chain<H> {
         } else {
             Err(HeaderSyncError::FloatingHeaders)
         }
+    }
+
+    async fn audit_difficulty(
+        &mut self,
+        height_start: u32,
+        batch: &HeadersBatch,
+    ) -> Result<(), HeaderSyncError> {
+        if self.params.no_pow_retargeting {
+            return Ok(());
+        }
+        // Next adjustment height = (floor(current height / interval) + 1) * interval
+        let adjustment_interval = self.params.difficulty_adjustment_interval() as u32;
+        let next_multiple = (height_start / adjustment_interval) + 1;
+        let next_adjustment_height = next_multiple * adjustment_interval;
+        // The height in the batch where the next adjustment is contained
+        let offset = next_adjustment_height - height_start;
+        // We already audited the difficulty last batch
+        if offset == 0 {
+            return Ok(());
+        }
+        // We cannot audit the difficulty yet, as the next adjustment will be contained in the next batch
+        if offset > batch.len() as u32 {
+            return Ok(());
+        }
+        // The difficulty should be adjusted at this height
+        let audit_index = (offset - 1) as usize;
+        // This is the timestamp used to start the boundary
+        let last_epoch_start_index = next_adjustment_height - adjustment_interval;
+        // This is the timestamp used to end the boundary
+        let last_epoch_boundary = if offset == 1 {
+            // This is the case where the last epoch ends on the tip of our chain
+            self.fetch_header(height_start).await.ok().flatten()
+        } else {
+            // Otherwise we can simply index into the batch and find the header at the boundary'
+            let last_epoch_boundary_index = (offset - 2) as usize;
+            batch.get(last_epoch_boundary_index).copied()
+        };
+        // The start of the epoch will always be a member of our chain because the batch size
+        // is less than the adjustment interval
+        let last_epoch_start = self
+            .fetch_header(last_epoch_start_index)
+            .await
+            .ok()
+            .flatten();
+
+        let audit = batch.get(audit_index).copied();
+
+        match audit {
+            Some(header) => match last_epoch_start.zip(last_epoch_boundary) {
+                Some((first, second)) => {
+                    let retarget_bits = header.bits;
+                    let target = CompactTarget::from_header_difficulty_adjustment(
+                        first,
+                        second,
+                        &self.params,
+                    );
+                    if retarget_bits.ne(&target) {
+                        self.dialog
+                            .send_warning(Warning::UnexpectedSyncError {
+                                warning:
+                                    "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
+                                        .into(),
+                            })
+                            .await;
+                        return Err(HeaderSyncError::MiscalculatedDifficulty);
+                    }
+                    return Ok(());
+                }
+                None => {
+                    self.dialog
+                        .send_dialog(
+                            "Unable to audit the difficulty adjustment due to a failed header fetch...",
+                        )
+                        .await;
+                    self.dialog
+                        .send_dialog("This is likely due to no history present in the header store")
+                        .await;
+                }
+            },
+            None => {
+                self.dialog
+                    .send_warning(Warning::UnexpectedSyncError {
+                        warning:
+                            "Unable to audit the difficulty adjustment due to an index overflow"
+                                .into(),
+                    })
+                    .await;
+            }
+        }
+        Ok(())
     }
 
     // We don't have a header in memory that we need to evaluate a fork.
