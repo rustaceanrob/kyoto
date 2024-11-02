@@ -7,8 +7,6 @@ use std::{net::Ipv4Addr, str::FromStr};
 const NETWORK: Network = Network::Testnet4;
 const RECOVERY_HEIGHT: u32 = 0;
 
-// THE TESTNET4 DOES NOT CURRENTLY HAVE PEERS THAT SERVE COMPACT BLOCK FILTERS
-
 #[tokio::main]
 async fn main() {
     // Add third-party logging
