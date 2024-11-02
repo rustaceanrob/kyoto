@@ -69,7 +69,11 @@ impl HeadersBatch {
         self.batch.len()
     }
 
-    pub(crate) fn inner(&self) -> &Vec<Header> {
+    pub(crate) fn get(&self, index: usize) -> Option<&Header> {
+        self.batch.get(index)
+    }
+
+    pub(crate) fn inner(&self) -> &[Header] {
         &self.batch
     }
 }

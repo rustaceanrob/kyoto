@@ -20,7 +20,7 @@ integrate:
   sh scripts/integration.sh {{bitcoindir}}
 
 example:
-  cargo run --example signet
+  cargo run --example signet --release
 
 all:
   cargo fmt 
