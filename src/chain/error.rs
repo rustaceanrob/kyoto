@@ -11,6 +11,7 @@ pub(crate) enum HeaderSyncError {
     PreCheckpointFork,
     InvalidCheckpoint,
     MiscalculatedDifficulty,
+    InvalidBits,
     FloatingHeaders,
     LessWorkFork,
     DbError,
@@ -46,6 +47,10 @@ impl Display for HeaderSyncError {
                 write!(f, "a peer sent us a fork with less work than our chain.")
             }
             HeaderSyncError::DbError => write!(f, "the database could not load a fork."),
+            HeaderSyncError::InvalidBits => write!(
+                f,
+                "the target work does not adhere to basic transition requirements."
+            ),
         }
     }
 }

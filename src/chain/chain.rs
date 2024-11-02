@@ -366,6 +366,10 @@ impl<H: HeaderStore> Chain<H> {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
+        if !header_batch.bits_adhere_transition(self.network).await {
+            return Err(HeaderSyncError::InvalidBits);
+        }
+
         // The headers have times that are greater than the median of the previous 11 blocks
         let mut last_relevant_mtp = self.header_chain.last_median_time_past_window();
         if !header_batch
@@ -482,6 +486,9 @@ impl<H: HeaderStore> Chain<H> {
     ) -> Result<(), HeaderSyncError> {
         let params = self.network.params();
         if params.no_pow_retargeting {
+            return Ok(());
+        }
+        if params.allow_min_difficulty_blocks {
             return Ok(());
         }
         // Next adjustment height = (floor(current height / interval) + 1) * interval

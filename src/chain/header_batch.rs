@@ -1,4 +1,4 @@
-use bitcoin::block::Header;
+use bitcoin::{block::Header, params::Params, Target};
 
 use crate::{
     impl_sourceless_error,
@@ -36,6 +36,21 @@ impl HeadersBatch {
         })
     }
 
+    // Do the targets not change drastically within the batch?
+    pub(crate) async fn bits_adhere_transition(&self, params: impl AsRef<Params>) -> bool {
+        let params = params.as_ref();
+        if params.allow_min_difficulty_blocks {
+            return true;
+        }
+        self.batch
+            .iter()
+            .zip(self.batch.iter().skip(1))
+            .all(|(first, second)| {
+                let transition = Target::from_compact(first.bits).max_transition_threshold(params);
+                Target::from_compact(second.bits).le(&transition)
+            })
+    }
+
     // Do the blocks pass the time requirements
     pub(crate) async fn valid_median_time_past(&self, previous_buffer: &mut Vec<Header>) -> bool {
         previous_buffer.extend_from_slice(&self.batch);
@@ -64,7 +79,6 @@ impl HeadersBatch {
             .expect("headers have at least one element by construction")
     }
 
-    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.batch.len()
     }
