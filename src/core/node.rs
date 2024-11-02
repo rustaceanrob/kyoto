@@ -125,7 +125,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         checkpoints.prune_up_to(checkpoint);
         // Build the chain
         let chain = Chain::new(
-            &network,
+            network,
             scripts,
             checkpoint,
             checkpoints,

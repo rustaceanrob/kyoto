@@ -6,7 +6,6 @@ use std::{
 
 use bitcoin::{
     block::Header,
-    consensus::Params,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     Block, BlockHash, CompactTarget, Network, ScriptBuf, TxOut, Work,
 };
@@ -35,7 +34,7 @@ use crate::{
         filter_chain::FilterChain,
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
-    prelude::{params_from_network, MEDIAN_TIME_PAST},
+    prelude::MEDIAN_TIME_PAST,
     IndexedBlock,
 };
 
@@ -50,7 +49,7 @@ pub(crate) struct Chain<H: HeaderStore> {
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     checkpoints: HeaderCheckpoints,
-    params: Params,
+    network: Network,
     db: Arc<Mutex<H>>,
     best_known_height: Option<u32>,
     scripts: HashSet<ScriptBuf>,
@@ -61,7 +60,7 @@ pub(crate) struct Chain<H: HeaderStore> {
 #[allow(dead_code)]
 impl<H: HeaderStore> Chain<H> {
     pub(crate) fn new(
-        network: &Network,
+        network: Network,
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
         checkpoints: HeaderCheckpoints,
@@ -69,14 +68,13 @@ impl<H: HeaderStore> Chain<H> {
         db: H,
         quorum_required: usize,
     ) -> Self {
-        let params = params_from_network(network);
         let header_chain = HeaderChain::new(anchor);
         let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
         let filter_chain = FilterChain::new(anchor);
         Chain {
             header_chain,
             checkpoints,
-            params,
+            network,
             db: Arc::new(Mutex::new(db)),
             cf_header_chain,
             filter_chain,
@@ -482,11 +480,12 @@ impl<H: HeaderStore> Chain<H> {
         height_start: u32,
         batch: &HeadersBatch,
     ) -> Result<(), HeaderSyncError> {
-        if self.params.no_pow_retargeting {
+        let params = self.network.params();
+        if params.no_pow_retargeting {
             return Ok(());
         }
         // Next adjustment height = (floor(current height / interval) + 1) * interval
-        let adjustment_interval = self.params.difficulty_adjustment_interval() as u32;
+        let adjustment_interval = params.difficulty_adjustment_interval() as u32;
         let next_multiple = (height_start / adjustment_interval) + 1;
         let next_adjustment_height = next_multiple * adjustment_interval;
         // The height in the batch where the next adjustment is contained
@@ -526,11 +525,8 @@ impl<H: HeaderStore> Chain<H> {
             Some(header) => match last_epoch_start.zip(last_epoch_boundary) {
                 Some((first, second)) => {
                     let retarget_bits = header.bits;
-                    let target = CompactTarget::from_header_difficulty_adjustment(
-                        first,
-                        second,
-                        &self.params,
-                    );
+                    let target =
+                        CompactTarget::from_header_difficulty_adjustment(first, second, params);
                     if retarget_bits.ne(&target) {
                         self.dialog
                             .send_warning(Warning::UnexpectedSyncError {
@@ -899,7 +895,7 @@ mod tests {
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
         Chain::new(
-            &bitcoin::Network::Regtest,
+            bitcoin::Network::Regtest,
             HashSet::new(),
             anchor,
             checkpoints,
@@ -914,7 +910,7 @@ mod tests {
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
         Chain::new(
-            &bitcoin::Network::Regtest,
+            bitcoin::Network::Regtest,
             HashSet::new(),
             anchor,
             checkpoints,

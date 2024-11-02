@@ -1,6 +1,6 @@
 use core::{future::Future, pin::Pin};
 
-use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, params::Params, Network};
+use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, Network};
 
 #[allow(dead_code)]
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
@@ -101,17 +101,6 @@ impl Netgroup for AddrV2 {
                 .join("::"),
             AddrV2::Unknown(_, _) => "UNKNOWN".to_owned(),
         }
-    }
-}
-
-pub(crate) fn params_from_network(network: &Network) -> Params {
-    match network {
-        Network::Bitcoin => Params::new(*network),
-        Network::Testnet => panic!("unimplemented network"),
-        Network::Testnet4 => Params::new(*network),
-        Network::Signet => Params::new(*network),
-        Network::Regtest => Params::new(*network),
-        _ => unreachable!(),
     }
 }
 
