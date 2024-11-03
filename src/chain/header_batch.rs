@@ -1,3 +1,5 @@
+use std::ops::RangeFrom;
+
 use bitcoin::{block::Header, params::Params, Target};
 
 use crate::{
@@ -84,6 +86,10 @@ impl HeadersBatch {
     }
 
     pub(crate) fn get(&self, index: usize) -> Option<&Header> {
+        self.batch.get(index)
+    }
+
+    pub(crate) fn get_slice(&self, index: RangeFrom<usize>) -> Option<&[Header]> {
         self.batch.get(index)
     }
 

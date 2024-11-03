@@ -526,23 +526,25 @@ impl<H: HeaderStore> Chain<H> {
             .ok()
             .flatten();
 
-        let audit = batch.get(audit_index).copied();
+        let audit = batch.get_slice(audit_index..);
 
         match audit {
-            Some(header) => match last_epoch_start.zip(last_epoch_boundary) {
+            Some(headers) => match last_epoch_start.zip(last_epoch_boundary) {
                 Some((first, second)) => {
-                    let retarget_bits = header.bits;
                     let target =
                         CompactTarget::from_header_difficulty_adjustment(first, second, params);
-                    if retarget_bits.ne(&target) {
-                        self.dialog
-                            .send_warning(Warning::UnexpectedSyncError {
-                                warning:
-                                    "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
-                                        .into(),
-                            })
-                            .await;
-                        return Err(HeaderSyncError::MiscalculatedDifficulty);
+                    for header in headers {
+                        let retarget_bits = header.bits;
+                        if retarget_bits.ne(&target) {
+                            self.dialog
+                                .send_warning(Warning::UnexpectedSyncError {
+                                    warning:
+                                        "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
+                                            .into(),
+                                })
+                                .await;
+                            return Err(HeaderSyncError::MiscalculatedDifficulty);
+                        }
                     }
                     return Ok(());
                 }
