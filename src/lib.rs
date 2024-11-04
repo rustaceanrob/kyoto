@@ -86,24 +86,38 @@ pub use arti_client::{TorClient, TorClientConfig};
 use tor_rtcompat::PreferredRuntime;
 
 // Re-exports
-pub use crate::core::builder::NodeBuilder;
-pub use crate::core::client::{Client, ClientSender};
-pub use crate::core::error::{ClientError, NodeError};
-pub use crate::core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning};
-pub use crate::core::node::{Node, NodeState};
-pub use bitcoin::block::Header;
-pub use bitcoin::p2p::address::AddrV2;
-pub use bitcoin::p2p::message_network::RejectReason;
-pub use bitcoin::p2p::ServiceFlags;
-pub use bitcoin::{Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid};
-pub use chain::checkpoints::HeaderCheckpoint;
-pub use chain::checkpoints::MAINNET_HEADER_CP;
-pub use chain::checkpoints::SIGNET_HEADER_CP;
+#[doc(inline)]
+pub use chain::checkpoints::{
+    HeaderCheckpoint, MAINNET_HEADER_CP, SIGNET_HEADER_CP, TESTNET4_HEADER_CP,
+};
+
+#[doc(inline)]
 pub use db::memory::peers::StatelessPeerStore;
+
 #[cfg(feature = "database")]
+#[doc(inline)]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
+
+#[doc(inline)]
 pub use db::traits::{HeaderStore, PeerStore};
+
+#[doc(inline)]
 pub use tokio::sync::broadcast::Receiver;
+
+#[doc(inline)]
+pub use {
+    crate::core::builder::NodeBuilder,
+    crate::core::client::{Client, ClientSender},
+    crate::core::error::{ClientError, NodeError},
+    crate::core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning},
+    crate::core::node::{Node, NodeState},
+};
+
+#[doc(inline)]
+pub use bitcoin::{
+    block::Header, p2p::address::AddrV2, p2p::message_network::RejectReason, p2p::ServiceFlags,
+    Address, Block, BlockHash, Network, ScriptBuf, Transaction, Txid,
+};
 
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]
