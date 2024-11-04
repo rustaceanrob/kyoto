@@ -109,7 +109,7 @@ pub use {
     crate::core::builder::NodeBuilder,
     crate::core::client::{Client, ClientSender},
     crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{FailurePayload, NodeMessage, SyncUpdate, Warning},
+    crate::core::messages::{FailurePayload, NodeMessage, Progress, SyncUpdate, Warning},
     crate::core::node::{Node, NodeState},
 };
 

@@ -1,6 +1,6 @@
 use tokio::sync::broadcast::Sender;
 
-use super::messages::{NodeMessage, Warning};
+use super::messages::{NodeMessage, Progress, Warning};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Dialog {
@@ -23,11 +23,11 @@ impl Dialog {
         num_filters: u32,
         best_height: u32,
     ) {
-        let _ = self.ntx.send(NodeMessage::Progress {
-            filter_headers: num_cf_headers,
-            filters: num_filters,
-            tip_height: best_height,
-        });
+        let _ = self.ntx.send(NodeMessage::Progress(Progress::new(
+            num_cf_headers,
+            num_filters,
+            best_height,
+        )));
         let message = format!(
             "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
             num_headers, best_height, num_cf_headers, best_height, num_filters, best_height

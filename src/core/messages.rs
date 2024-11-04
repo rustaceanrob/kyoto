@@ -31,14 +31,7 @@ pub enum NodeMessage {
     /// The node is fully synced, having scanned the requested range.
     Synced(SyncUpdate),
     /// The progress of the node during the block filter download process.
-    Progress {
-        /// The number of filter headers that have been assumed checked and downloaded.
-        filter_headers: u32,
-        /// The number of block filters that have been assumed checked and downloaded.
-        filters: u32,
-        /// The best known height to the tip of the chain.
-        tip_height: u32,
-    },
+    Progress(Progress),
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A transaction was sent to one or more connected peers.
@@ -82,6 +75,34 @@ impl SyncUpdate {
     /// a 99% probability.
     pub fn recent_history(&self) -> &BTreeMap<u32, Header> {
         &self.recent_history
+    }
+}
+
+/// The progress of the node during the block filter download process.
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct Progress {
+    /// The number of filter headers that have been assumed checked and downloaded.
+    pub filter_headers: u32,
+    /// The number of block filters that have been assumed checked and downloaded.
+    pub filters: u32,
+    /// The best known height to the tip of the chain.
+    pub tip_height: u32,
+}
+
+impl Progress {
+    pub(crate) fn new(filter_headers: u32, filters: u32, tip_height: u32) -> Self {
+        Self {
+            filter_headers,
+            filters,
+            tip_height,
+        }
+    }
+
+    /// The total progress represented as a fraction.
+    pub fn percentage_complete(&self) -> f32 {
+        let total = (2 * self.tip_height) as f32;
+        (self.filter_headers + self.filters) as f32 / total
     }
 }
 
