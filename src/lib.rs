@@ -25,6 +25,8 @@
 //!         .into();
 //!     let mut addresses = HashSet::new();
 //!     addresses.insert(address);
+//!     // Start the scan after a specified header
+//!     let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(170_000, Network::Signet);
 //!     // Create a new node builder
 //!     let builder = NodeBuilder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
@@ -32,11 +34,7 @@
 //!         // The Bitcoin scripts to monitor
 //!         .add_scripts(addresses)
 //!         // Only scan blocks strictly after an anchor checkpoint
-//!         .anchor_checkpoint(HeaderCheckpoint::new(
-//!             170_000,
-//!             BlockHash::from_str("00000041c812a89f084f633e4cf47e819a2f6b1c0a15162355a930410522c99d")
-//!                 .unwrap(),
-//!         ))
+//!         .anchor_checkpoint(checkpoint)
 //!         // The number of connections we would like to maintain
 //!         .num_required_peers(2)
 //!         .build_node()
