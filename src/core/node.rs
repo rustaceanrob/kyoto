@@ -299,7 +299,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.broadcast(response).await
                                 }
                             },
-                            #[cfg(feature = "silent-payments")]
+                            #[cfg(feature = "filter-control")]
                             ClientMessage::GetBlock(hash) => {
                                 let mut state = self.state.write().await;
                                 if matches!(*state, NodeState::TransactionsSynced) {

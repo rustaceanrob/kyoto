@@ -17,7 +17,7 @@ use super::{
     error::{BlockScanError, HeaderSyncError},
     header_chain::HeaderChain,
 };
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
@@ -736,7 +736,7 @@ impl<H: HeaderStore> Chain<H> {
             }
         }
 
-        #[cfg(feature = "silent-payments")]
+        #[cfg(feature = "filter-control")]
         {
             let height = self
                 .height_of_hash(filter_message.block_hash)
@@ -748,7 +748,7 @@ impl<H: HeaderStore> Chain<H> {
                 .await;
         }
 
-        #[cfg(not(feature = "silent-payments"))]
+        #[cfg(not(feature = "filter-control"))]
         if !self.block_queue.contains(&filter_message.block_hash)
             && filter
                 .contains_any(&self.scripts)
@@ -853,7 +853,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Explicitly request a block
-    #[cfg(feature = "silent-payments")]
+    #[cfg(feature = "filter-control")]
     pub(crate) fn get_block(&mut self, hash: BlockHash) {
         self.block_queue.add(hash)
     }

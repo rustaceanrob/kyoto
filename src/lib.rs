@@ -73,9 +73,9 @@ pub mod db;
 mod filters;
 mod network;
 mod prelude;
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use filters::Filter;
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use std::collections::HashSet;
 
 use std::net::{IpAddr, SocketAddr};
@@ -172,7 +172,7 @@ impl IndexedBlock {
     }
 }
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 /// A compact block filter with associated height.
 #[derive(Debug, Clone)]
 pub struct IndexedFilter {
@@ -180,7 +180,7 @@ pub struct IndexedFilter {
     filter: Filter,
 }
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 impl IndexedFilter {
     fn new(height: u32, filter: Filter) -> Self {
         Self { height, filter }
