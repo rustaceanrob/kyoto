@@ -8,7 +8,7 @@ build:
 
 check:
    cargo fmt
-   cargo clippy
+   cargo clippy --all-targets
 
 test:
   cargo test -- --skip test_signet_syncs
