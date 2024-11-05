@@ -139,11 +139,31 @@ impl NodeBuilder {
     }
 
     /// Set the time duration a peer has to respond to a message from the local node.
-    /// Note that, on test networks, new block propagation is empirically faster than
-    /// the Bitcoin network. Longer durations may allow blocks to propagate and for
-    /// new `inv` messages to be sent. If none is provided, a timeout of 5 seconds will be used.
-    pub fn set_response_timeout(mut self, timeout: Duration) -> Self {
-        self.config.response_timeout = timeout;
+    ///
+    /// ## Note
+    ///
+    /// Both bandwidth and computing time should be considered when configuring this timeout.
+    /// On test networks, this value may be quite short, however on the Bitcoin network,
+    /// nodes may be slower to respond while processing blocks and transactions.
+    ///
+    /// If none is provided, a timeout of 5 seconds will be used.
+    pub fn set_response_timeout(mut self, response_timeout: Duration) -> Self {
+        self.config.response_timeout = response_timeout;
+        self
+    }
+
+    /// The maximum connection time that will be maintained with a remote peer, regardless of
+    /// the quality of the peer.
+    ///
+    /// ## Note
+    ///
+    /// This value is configurable as some developers may be satisfied with a peer
+    /// as long as the peer responds promptly. Other implementations may value finding
+    /// new a reliable peers faster, so the maximum connection time may be shorter.
+    ///
+    /// If none is provided, a maximum connection time of two hours will be used.
+    pub fn set_maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
+        self.config.max_connection_time = max_connection_time;
         self
     }
 

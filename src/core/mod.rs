@@ -61,3 +61,18 @@ pub enum FilterSyncPolicy {
     #[default]
     Continue,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub(crate) struct PeerTimeoutConfig {
+    pub(crate) response_timeout: Duration,
+    pub(crate) max_connection_time: Duration,
+}
+
+impl PeerTimeoutConfig {
+    fn new(response_timeout: Duration, max_connection_time: Duration) -> Self {
+        Self {
+            response_timeout,
+            max_connection_time,
+        }
+    }
+}

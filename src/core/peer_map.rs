@@ -35,6 +35,7 @@ use super::{
     dialog::Dialog,
     error::PeerManagerError,
     messages::Warning,
+    PeerTimeoutConfig,
 };
 
 const MAX_TRIES: usize = 50;
@@ -67,7 +68,7 @@ pub(crate) struct PeerMap<P: PeerStore> {
     dialog: Dialog,
     target_db_size: u32,
     net_groups: HashSet<String>,
-    response_timeout: Duration,
+    timeout_config: PeerTimeoutConfig,
 }
 
 #[allow(dead_code)]
@@ -81,7 +82,7 @@ impl<P: PeerStore> PeerMap<P> {
         dialog: Dialog,
         connection_type: ConnectionType,
         target_db_size: u32,
-        response_timeout: Duration,
+        timeout_config: PeerTimeoutConfig,
     ) -> Self {
         let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
             ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
@@ -103,7 +104,7 @@ impl<P: PeerStore> PeerMap<P> {
             dialog,
             target_db_size,
             net_groups: HashSet::new(),
-            response_timeout,
+            timeout_config,
         }
     }
 
@@ -155,7 +156,7 @@ impl<P: PeerStore> PeerMap<P> {
 
     // Set a new timeout duration
     pub fn set_duration(&mut self, duration: Duration) {
-        self.response_timeout = duration;
+        self.timeout_config.response_timeout = duration;
     }
 
     // Add a new trusted peer to the whitelist
@@ -175,7 +176,7 @@ impl<P: PeerStore> PeerMap<P> {
             prx,
             loaded_peer.services,
             self.dialog.clone(),
-            self.response_timeout,
+            self.timeout_config,
         );
         let mut connector = self.connector.lock().await;
         if !connector.can_connect(&loaded_peer.addr) {
