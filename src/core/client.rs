@@ -290,13 +290,13 @@ macro_rules! impl_core_client {
                     .map_err(|_| ClientError::SendError)
             }
 
-            /// Request a block be fetched.
+            /// Request a block be fetched. The block will be emitted as a [`NodeMessage::Block`](crate::core::messages::NodeMessage) event.
             ///
             /// # Errors
             ///
             /// If the node has stopped running.
             #[cfg(feature = "filter-control")]
-            pub async fn get_block(&self, block_hash: BlockHash) -> Result<(), ClientError> {
+            pub async fn request_block(&self, block_hash: BlockHash) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::GetBlock(block_hash))
                     .await
