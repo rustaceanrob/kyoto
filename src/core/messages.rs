@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, time::Duration};
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
 use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid};
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, TrustedPeer,
@@ -41,7 +41,7 @@ pub enum NodeMessage {
     /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
     TxBroadcastFailure(FailurePayload),
     /// A compact block filter with associated height and block hash.
-    #[cfg(feature = "silent-payments")]
+    #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
 }
 
@@ -137,7 +137,7 @@ pub(crate) enum ClientMessage {
     /// on node operation.
     ContinueDownload,
     /// Explicitly request a block from the node.
-    #[cfg(feature = "silent-payments")]
+    #[cfg(feature = "filter-control")]
     GetBlock(BlockHash),
     /// Set a new connection timeout.
     SetDuration(Duration),

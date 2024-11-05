@@ -58,7 +58,7 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
 }
 
 fn get_block_from_cfg(config: GetBlockConfig) -> Inventory {
-    if cfg!(feature = "silent-payments") {
+    if cfg!(feature = "filter-control") {
         Inventory::WitnessBlock(config.locator)
     } else {
         Inventory::Block(config.locator)

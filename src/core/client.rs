@@ -1,5 +1,5 @@
 use bitcoin::block::Header;
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
 use bitcoin::ScriptBuf;
 use std::time::Duration;
@@ -163,7 +163,7 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            #[cfg(not(feature = "silent-payments"))]
+            #[cfg(not(feature = "filter-control"))]
             pub async fn add_script(
                 &self,
                 script: impl Into<ScriptBuf>,
@@ -180,7 +180,7 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            #[cfg(not(feature = "silent-payments"))]
+            #[cfg(not(feature = "filter-control"))]
             pub fn add_script_blocking(
                 &self,
                 script: impl Into<ScriptBuf>,
@@ -295,7 +295,7 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            #[cfg(feature = "silent-payments")]
+            #[cfg(feature = "filter-control")]
             pub async fn get_block(&self, block_hash: BlockHash) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::GetBlock(block_hash))

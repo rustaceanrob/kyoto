@@ -64,6 +64,16 @@
 //! # Getting started
 //!
 //! The [`core`] module documentation is likely the best place to start when developing an application with Kyoto.
+//!
+//! # Features
+//!
+//! `dns`: if no peers are provided, query DNS seeds for Bitcoin nodes to connect to. Default and recommend feature.
+//!
+//! `database`: use the default `rusqlite` database implementations. Default and recommend feature.
+//!
+//! `filter-control`: check filters and request blocks directly. Recommended for silent payments or strict chain ordering implementations.
+//!
+//! `tor` *No MSRV guarantees*: connect to nodes over the Tor network.
 
 #![warn(missing_docs)]
 pub mod chain;
@@ -73,9 +83,9 @@ pub mod db;
 mod filters;
 mod network;
 mod prelude;
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use filters::Filter;
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 use std::collections::HashSet;
 
 use std::net::{IpAddr, SocketAddr};
@@ -172,7 +182,7 @@ impl IndexedBlock {
     }
 }
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 /// A compact block filter with associated height.
 #[derive(Debug, Clone)]
 pub struct IndexedFilter {
@@ -180,7 +190,7 @@ pub struct IndexedFilter {
     filter: Filter,
 }
 
-#[cfg(feature = "silent-payments")]
+#[cfg(feature = "filter-control")]
 impl IndexedFilter {
     fn new(height: u32, filter: Filter) -> Self {
         Self { height, filter }
