@@ -43,7 +43,7 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
-    FilterSyncPolicy, LastBlockMonitor,
+    FilterSyncPolicy, LastBlockMonitor, PeerTimeoutConfig,
 };
 
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
@@ -92,7 +92,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         required_peers: PeerRequirement,
         target_peer_size: u32,
         connection_type: ConnectionType,
-        timeout: Duration,
+        timeout_config: PeerTimeoutConfig,
         filter_sync_policy: FilterSyncPolicy,
         peer_store: P,
         header_store: H,
@@ -115,7 +115,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             dialog.clone(),
             connection_type,
             target_peer_size,
-            timeout,
+            timeout_config,
         )));
         // Set up the transaction broadcaster
         let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
@@ -157,6 +157,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_store: P,
         header_store: H,
     ) -> (Self, Client) {
+        let timeout_config =
+            PeerTimeoutConfig::new(config.response_timeout, config.max_connection_time);
         Node::new(
             network,
             config.white_list,
@@ -165,7 +167,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             config.required_peers as PeerRequirement,
             config.target_peer_size,
             config.connection_type,
-            config.response_timeout,
+            timeout_config,
             config.filter_sync_policy,
             peer_store,
             header_store,

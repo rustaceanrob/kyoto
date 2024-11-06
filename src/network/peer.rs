@@ -18,6 +18,7 @@ use crate::{
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,
+        PeerTimeoutConfig,
     },
     network::outbound_messages::V1OutboundMessage,
 };
@@ -37,8 +38,6 @@ use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 2;
-//                    sec  min  hour
-const TWO_HOUR: u64 = 60 * 60 * 2;
 const MAX_RESPONSE: [u8; 4111] = [0; 4111];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
@@ -51,6 +50,7 @@ pub(crate) struct Peer {
     message_counter: MessageCounter,
     services: ServiceFlags,
     dialog: Dialog,
+    timeout_config: PeerTimeoutConfig,
 }
 
 impl Peer {
@@ -61,9 +61,9 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
         services: ServiceFlags,
         dialog: Dialog,
-        timeout: Duration,
+        timeout_config: PeerTimeoutConfig,
     ) -> Self {
-        let message_counter = MessageCounter::new(timeout);
+        let message_counter = MessageCounter::new(timeout_config.response_timeout);
         Self {
             nonce,
             main_thread_sender,
@@ -72,6 +72,7 @@ impl Peer {
             message_counter,
             services,
             dialog,
+            timeout_config,
         }
     }
 
@@ -148,11 +149,11 @@ impl Peer {
                 self.dialog.send_warning(Warning::PeerTimedOut).await;
                 return Ok(());
             }
-            if Instant::now().duration_since(start_time) > Duration::from_secs(TWO_HOUR) {
+            if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
                 self.dialog
                     .send_dialog(format!(
                         "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
-                        self.nonce, TWO_HOUR,
+                        self.nonce, self.timeout_config.max_connection_time.as_secs(),
                     ))
                     .await;
                 return Ok(());
