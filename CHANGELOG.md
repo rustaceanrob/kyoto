@@ -5,6 +5,25 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0
+
+## Added
+
+- Client may fetch a `Header` at a particular height
+- Support for Testnet4 with new example
+
+## Changed
+
+- `HeaderStore` has additional `header_at` method
+- Removed unused `IndexedTransaction` variant on `NodeMessage`
+- New `Progress` variant on `NodeMessage`
+
+## Fixes
+
+- Use inline docs for rustdoc
+- Check the `CompactTarget` of the block headers received with far stricter requirements with respect to the difficulty adjustment
+- Bump `bip324` to `0.5.0` and `bitcoin` to `0.32.4`
+
 ## v0.4.0
 
 ## Added
