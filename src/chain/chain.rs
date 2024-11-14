@@ -503,6 +503,18 @@ impl<H: HeaderStore> Chain<H> {
         }
         // We cannot audit the difficulty yet, as the next adjustment will be contained in the next batch
         if offset > batch.len() as u32 {
+            if let Some(tip) = self.cached_header_at_height(height_start) {
+                if batch.inner().iter().any(|header| header.bits.ne(&tip.bits)) {
+                    self.dialog
+                    .send_warning(Warning::UnexpectedSyncError {
+                        warning:
+                            "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
+                                .into(),
+                    })
+                    .await;
+                    return Err(HeaderSyncError::MiscalculatedDifficulty);
+                }
+            }
             return Ok(());
         }
         // The difficulty should be adjusted at this height
