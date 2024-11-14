@@ -14,11 +14,10 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitcoin_hashes = "0.14.0"
-bitcoin = { version = "0.32.4", features = [
-    "serde",
+bitcoin = { version = "0.32.4", default-features = false, features = [
     "rand-std",
-], default-features = false }
+] }
+bitcoin_hashes = "0.14.0"
 bip324 = { version = "0.5.0", default-features = false, features = [
     "std",
     "alloc",
