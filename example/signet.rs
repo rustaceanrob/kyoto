@@ -76,6 +76,9 @@ async fn main() {
                 NodeMessage::TxBroadcastFailure(t) => {
                     tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
                 }
+                NodeMessage::FeeFilter(fee) => {
+                    tracing::info!("Fee filter received: {fee} kwu");
+                }
                 NodeMessage::Synced(update) => {
                     tracing::info!("Synced chain up to block {}", update.tip.height);
                     tracing::info!("Chain tip: {}", update.tip.hash);

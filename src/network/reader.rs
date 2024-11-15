@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags};
-use bitcoin::Txid;
+use bitcoin::{FeeRate, Txid};
 use tokio::sync::mpsc::Sender;
 
 use crate::core::channel_messages::{CombinedAddr, PeerMessage};
@@ -49,7 +49,7 @@ impl Reader {
     }
 
     fn parse_message(&self, message: NetworkMessage) -> Option<PeerMessage> {
-        // Supported messages are protocol version 70002 and below
+        // Supported messages are protocol version 70013 and below
         match message {
             NetworkMessage::Version(version) => Some(PeerMessage::Version(version)),
             NetworkMessage::Verack => Some(PeerMessage::Verack),
@@ -139,7 +139,15 @@ impl Reader {
                 }))
             }
             // 70013
-            NetworkMessage::FeeFilter(_) => None,
+            NetworkMessage::FeeFilter(i) => {
+                if i < 0 {
+                    Some(PeerMessage::Disconnect)
+                } else {
+                    // Safe cast because i64::MAX < u64::MAX
+                    let fee_rate = FeeRate::from_sat_per_kwu(i as u64 / 4);
+                    Some(PeerMessage::FeeFilter(fee_rate))
+                }
+            }
             // 70016
             NetworkMessage::WtxidRelay => Some(PeerMessage::Disconnect),
             NetworkMessage::AddrV2(addresses) => {

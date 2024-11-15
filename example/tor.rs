@@ -71,7 +71,6 @@ async fn main() {
             NodeMessage::Dialog(d) => tracing::info!("{}", d),
             NodeMessage::Warning(e) => tracing::warn!("{}", e),
             NodeMessage::StateChange(_) => (),
-            NodeMessage::Transaction(t) => drop(t),
             NodeMessage::Block(b) => drop(b),
             NodeMessage::BlocksDisconnected(r) => {
                 let _ = r;
@@ -88,6 +87,7 @@ async fn main() {
                 break;
             }
             NodeMessage::ConnectionsMet => tracing::info!("Connected to all required peers"),
+            _ => (),
         }
     }
     let _ = sender.shutdown().await;
