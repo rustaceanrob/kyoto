@@ -6,7 +6,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, Transaction,
+    Block, BlockHash, FeeRate, Transaction,
 };
 
 use crate::core::messages::FailurePayload;
@@ -55,6 +55,7 @@ pub(crate) enum PeerMessage {
     Ping(u64),
     #[allow(dead_code)]
     Pong(u64),
+    FeeFilter(FeeRate),
 }
 
 #[derive(Debug, Clone)]

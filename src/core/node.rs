@@ -276,9 +276,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                         .send_warning(Warning::TransactionRejected).await;
                                     self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
                                 }
-                                PeerMessage::Disconnect => {
-                                    continue
-                                }
                                 _ => continue,
                             }
                         },

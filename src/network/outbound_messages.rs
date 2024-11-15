@@ -19,9 +19,10 @@ use bitcoin::{
 
 use crate::{core::channel_messages::GetBlockConfig, prelude::default_port_from_network};
 
-use super::{error::PeerError, traits::MessageGenerator};
-
-pub const PROTOCOL_VERSION: u32 = 70002;
+use super::{
+    error::PeerError, traits::MessageGenerator, KYOTO_VERSION, PROTOCOL_VERSION,
+    RUST_BITCOIN_VERSION,
+};
 
 pub(crate) struct V1OutboundMessage {
     network: Network,
@@ -51,7 +52,9 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         receiver: from_and_recv.clone(),
         sender: from_and_recv,
         nonce: 1,
-        user_agent: "Kyoto Light Client / 0.2.0 / rust-bitcoin 0.32".to_string(),
+        user_agent: format!(
+            "Kyoto Light Client / {KYOTO_VERSION} / rust-bitcoin {RUST_BITCOIN_VERSION}"
+        ),
         start_height: 0,
         relay: false,
     }
