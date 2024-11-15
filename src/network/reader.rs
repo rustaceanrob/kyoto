@@ -110,15 +110,15 @@ impl Reader {
                 Some(PeerMessage::Headers(headers))
             }
             // 70012
-            NetworkMessage::SendHeaders => Some(PeerMessage::Disconnect),
+            NetworkMessage::SendHeaders => None,
             NetworkMessage::GetAddr => None,
             NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(nonce)),
             NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(nonce)),
             NetworkMessage::MerkleBlock(_) => None,
             // Bloom Filters are enabled by 70011
-            NetworkMessage::FilterLoad(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::FilterAdd(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::FilterClear => Some(PeerMessage::Disconnect),
+            NetworkMessage::FilterLoad(_) => None,
+            NetworkMessage::FilterAdd(_) => None,
+            NetworkMessage::FilterClear => None,
             NetworkMessage::GetCFilters(_) => None,
             NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter)),
             NetworkMessage::GetCFHeaders(_) => None,
@@ -139,7 +139,7 @@ impl Reader {
                 }))
             }
             // 70013
-            NetworkMessage::FeeFilter(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::FeeFilter(_) => None,
             // 70016
             NetworkMessage::WtxidRelay => Some(PeerMessage::Disconnect),
             NetworkMessage::AddrV2(addresses) => {
