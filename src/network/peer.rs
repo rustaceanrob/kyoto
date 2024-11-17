@@ -1,7 +1,7 @@
 extern crate tokio;
 use std::{ops::DerefMut, time::Duration};
 
-use bip324::{Handshake, PacketHandler, Role};
+use bip324::{Handshake, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -38,7 +38,7 @@ use super::outbound_messages::V2OutboundMessage;
 use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
-const HANDSHAKE_TIMEOUT: u64 = 2;
+const HANDSHAKE_TIMEOUT: u64 = 4;
 const MAX_RESPONSE: [u8; 4111] = [0; 4111];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
@@ -104,8 +104,7 @@ impl Peer {
                     .await;
                 self.dialog.send_warning(Warning::CouldNotConnect).await;
             }
-            let packet_handler = handshake_result?;
-            let (decryptor, encryptor) = packet_handler.into_split();
+            let (decryptor, encryptor) = handshake_result?;
             let message_mutex: MutexMessageGenerator =
                 Mutex::new(Box::new(V2OutboundMessage::new(self.network, encryptor)));
             drop(lock);
@@ -395,7 +394,7 @@ impl Peer {
         &mut self,
         writer: &mut W,
         reader: &mut R,
-    ) -> Result<PacketHandler, PeerError>
+    ) -> Result<(PacketReader, PacketWriter), PeerError>
     where
         W: AsyncWrite + Send + Unpin,
         R: AsyncRead + Send + Unpin,
@@ -437,6 +436,6 @@ impl Peer {
         self.dialog
             .send_dialog("Established an encrypted connection")
             .await;
-        Ok(packet_handler)
+        Ok(packet_handler.into_split())
     }
 }
