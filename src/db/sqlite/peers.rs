@@ -15,8 +15,6 @@ use crate::prelude::FutureResult;
 
 use super::{DATA_DIR, DEFAULT_CWD};
 
-const BUGGED_SERVICE: u64 = 0xfffffffffffff3b0;
-
 const FILE_NAME: &str = "peers.db";
 // Labels for the schema table
 const SCHEMA_TABLE_NAME: &str = "peer_schema_versions";
@@ -29,7 +27,7 @@ const SCHEMA_VERSION: u8 = 0;
 const INITIAL_PEER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS peers (
     ip_addr BLOB PRIMARY KEY,
     port INTEGER NOT NULL,
-    service_flags INTEGER NOT NULL,
+    service_flags BLOB NOT NULL,
     tried BOOLEAN NOT NULL,
     banned BOOLEAN NOT NULL
 )";
@@ -79,7 +77,7 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn update(&mut self, mut peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
+    async fn update(&mut self, peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
             PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -90,16 +88,11 @@ impl SqlitePeerDb {
             PeerStatus::Tried => (true, false),
             PeerStatus::Ban => (true, true),
         };
-        let blob = serialize(&peer.addr);
-        let bad_service = ServiceFlags::from(BUGGED_SERVICE);
-        let services = if peer.services.has(bad_service) {
-            peer.services.remove(bad_service)
-        } else {
-            peer.services
-        };
+        let address_blob = serialize(&peer.addr);
+        let service_blob = peer.services.to_u64().to_le_bytes();
         lock.execute(
             stmt,
-            params![blob, peer.port, services.to_u64(), tried, banned,],
+            params![address_blob, peer.port, service_blob, tried, banned,],
         )?;
         Ok(())
     }
@@ -112,7 +105,8 @@ impl SqlitePeerDb {
         if let Some(row) = rows.next()? {
             let ip_addr: Vec<u8> = row.get(0)?;
             let port: u16 = row.get(1)?;
-            let service_flags: u64 = row.get(2)?;
+            let service_blob: [u8; 8] = row.get(2)?;
+            let service_flags = u64::from_le_bytes(service_blob);
             let tried: bool = row.get(3)?;
             let status = if tried {
                 PeerStatus::Tried
