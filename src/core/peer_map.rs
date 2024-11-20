@@ -27,7 +27,7 @@ use crate::{
         traits::{ClearNetConnection, NetworkConnector},
     },
     prelude::{default_port_from_network, Median, Netgroup},
-    ConnectionType, TrustedPeer,
+    ConnectionType, PeerStoreSizeConfig, TrustedPeer,
 };
 
 use super::{
@@ -66,7 +66,7 @@ pub(crate) struct PeerMap<P: PeerStore> {
     connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
     whitelist: Whitelist,
     dialog: Dialog,
-    target_db_size: u32,
+    target_db_size: PeerStoreSizeConfig,
     net_groups: HashSet<String>,
     timeout_config: PeerTimeoutConfig,
 }
@@ -81,7 +81,7 @@ impl<P: PeerStore> PeerMap<P> {
         whitelist: Whitelist,
         dialog: Dialog,
         connection_type: ConnectionType,
-        target_db_size: u32,
+        target_db_size: PeerStoreSizeConfig,
         timeout_config: PeerTimeoutConfig,
     ) -> Self {
         let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
@@ -296,9 +296,14 @@ impl<P: PeerStore> PeerMap<P> {
 
     // Do we need peers
     pub async fn need_peers(&mut self) -> Result<bool, PeerManagerError<P::Error>> {
-        let mut db = self.db.lock().await;
-        let num_unbanned = db.num_unbanned().await?;
-        Ok(num_unbanned < self.target_db_size)
+        match self.target_db_size {
+            PeerStoreSizeConfig::Unbounded => Ok(true),
+            PeerStoreSizeConfig::Limit(limit) => {
+                let mut db = self.db.lock().await;
+                let num_unbanned = db.num_unbanned().await?;
+                Ok(num_unbanned < limit)
+            }
+        }
     }
 
     // Add peers to the database that were gossiped over the p2p network

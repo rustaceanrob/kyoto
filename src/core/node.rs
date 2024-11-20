@@ -29,7 +29,7 @@ use crate::{
     core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    ConnectionType, FailurePayload, TrustedPeer, TxBroadcastPolicy,
+    ConnectionType, FailurePayload, PeerStoreSizeConfig, TrustedPeer, TxBroadcastPolicy,
 };
 
 use super::{
@@ -90,7 +90,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         scripts: HashSet<ScriptBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: PeerRequirement,
-        target_peer_size: u32,
+        target_peer_size: PeerStoreSizeConfig,
         connection_type: ConnectionType,
         timeout_config: PeerTimeoutConfig,
         filter_sync_policy: FilterSyncPolicy,

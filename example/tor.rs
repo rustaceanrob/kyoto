@@ -6,7 +6,9 @@ use kyoto::core::messages::NodeMessage;
 use kyoto::db::memory::peers::StatelessPeerStore;
 use kyoto::db::sqlite::headers::SqliteHeaderDb;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{BlockHash, ConnectionType, TorClient, TorClientConfig, TrustedPeer};
+use kyoto::{
+    BlockHash, ConnectionType, PeerStoreSizeConfig, TorClient, TorClientConfig, TrustedPeer,
+};
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -54,7 +56,7 @@ async fn main() {
         // The number of connections we would like to maintain
         .num_required_peers(2)
         // We only maintain a list of 32 peers in memory
-        .peer_db_size(256)
+        .peer_db_size(PeerStoreSizeConfig::Limit(32))
         // Connect to peers over Tor
         .set_connection_type(ConnectionType::Tor(tor))
         // Build without the default databases

@@ -401,3 +401,15 @@ pub enum ConnectionType {
     #[cfg(feature = "tor")]
     Tor(TorClient<PreferredRuntime>),
 }
+
+/// Configure how many peers will be stored.
+#[derive(Debug, Default, Clone)]
+pub enum PeerStoreSizeConfig {
+    /// Add new peers to the store regardless of the current size. For memory-limited [`PeerStore`]
+    /// implementations, consider using a bounded size.
+    #[default]
+    Unbounded,
+    /// Bound the size of the [`PeerStore`]. When set, no new peers will be requested if the database
+    /// has at least this amount of peers.
+    Limit(u32),
+}
