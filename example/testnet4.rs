@@ -1,6 +1,6 @@
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{Address, Network, TrustedPeer};
+use kyoto::{Address, Network, PeerStoreSizeConfig, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
@@ -34,6 +34,8 @@ async fn main() {
         .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(checkpoint)
+        // Store a limited number of peers
+        .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // The number of connections we would like to maintain
         .num_required_peers(1)
         // Create the node and client

@@ -11,7 +11,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{ConnectionType, TrustedPeer};
+use crate::{ConnectionType, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "database")]
 /// The default node returned from the [`NodeBuilder`](crate::core).
@@ -116,9 +116,9 @@ impl NodeBuilder {
     /// Set the desired number of peers for the database to keep track of. For limited or in-memory peer storage,
     /// this number may be small, however a sufficient margin of peers should be set so the node can try many options
     /// when downloading compact block filters. For nodes that store peers on disk, more peers will typically result in
-    /// fewer errors. If none is provided, a limit of 4096 will be used.
-    pub fn peer_db_size(mut self, target_num: u32) -> Self {
-        self.config.target_peer_size = target_num;
+    /// fewer errors. If none is provided, no limit to the size of the store will be introduced.
+    pub fn peer_db_size(mut self, target: PeerStoreSizeConfig) -> Self {
+        self.config.target_peer_size = target;
         self
     }
 
