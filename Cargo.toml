@@ -18,7 +18,7 @@ bitcoin = { version = "0.32.4", default-features = false, features = [
     "rand-std",
 ] }
 bitcoin_hashes = "0.14.0"
-bip324 = { version = "0.5.0", default-features = false, features = [
+bip324 = { version = "0.6.0", default-features = false, features = [
     "std",
     "alloc",
     "tokio",

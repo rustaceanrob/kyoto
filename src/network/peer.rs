@@ -1,10 +1,10 @@
 extern crate tokio;
 use std::{ops::DerefMut, time::Duration};
 
-use bip324::{Handshake, PacketReader, PacketWriter, Role};
+use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -39,7 +39,6 @@ use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 4;
-const MAX_RESPONSE: [u8; 4111] = [0; 4111];
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
 
@@ -402,40 +401,22 @@ impl Peer {
         self.dialog
             .send_dialog("Initiating a handshake for encrypted messaging")
             .await;
-        let mut public_key = [0; 64];
-        let mut handshake = Handshake::new(self.network, Role::Initiator, None, &mut public_key)
-            .map_err(|_| PeerError::HandshakeFailed)?;
-        self.write_bytes(writer, public_key.to_vec()).await?;
-        let mut remote_public_key = [0u8; 64];
-        let _ = reader
-            .read_exact(&mut remote_public_key)
-            .await
-            .map_err(|_| PeerError::Reader)?;
-        let mut local_garbage_terminator_message = [0u8; 36];
-        handshake
-            .complete_materials(
-                remote_public_key,
-                &mut local_garbage_terminator_message,
-                None,
-            )
-            .map_err(|_| PeerError::HandshakeFailed)?;
-        self.write_bytes(writer, local_garbage_terminator_message.to_vec())
-            .await?;
-        let mut max_response = MAX_RESPONSE;
-        let size = reader
-            .read(&mut max_response)
-            .await
-            .map_err(|_| PeerError::Reader)?;
-        let response = &mut max_response[..size];
-        handshake
-            .authenticate_garbage_and_version(response)
-            .map_err(|_| PeerError::HandshakeFailed)?;
-        let packet_handler = handshake
-            .finalize()
-            .map_err(|_| PeerError::HandshakeFailed)?;
-        self.dialog
-            .send_dialog("Established an encrypted connection")
-            .await;
-        Ok(packet_handler.into_split())
+        let handshake =
+            AsyncProtocol::new(self.network, Role::Initiator, None, None, reader, writer).await;
+        match handshake {
+            Ok(proto) => {
+                self.dialog
+                    .send_dialog("Established an encrypted connection")
+                    .await;
+                let (reader, writer) = proto.into_split();
+                Ok((reader.decoder(), writer.encoder()))
+            }
+            Err(e) => {
+                self.dialog
+                    .send_dialog(format!("V2 handshake failed with description {e}"))
+                    .await;
+                Err(PeerError::HandshakeFailed)
+            }
+        }
     }
 }

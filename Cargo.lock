@@ -272,8 +272,8 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c8d66485a3a2ea485c1913c4572ce0256067a5377ac8c75c4960e1cda98605f"
 dependencies = [
- "bitcoin-internals",
- "bitcoin_hashes",
+ "bitcoin-internals 0.3.0",
+ "bitcoin_hashes 0.14.0",
 ]
 
 [[package]]
@@ -302,11 +302,13 @@ checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
 
 [[package]]
 name = "bip324"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf211dbeae95401a82e449e49ef083a6e74ca4e295282aa6987fb2a24c694cc7"
+checksum = "b443a76f86143c093b211628be683ee592a097d316db6b90f723ed816bde1a49"
 dependencies = [
  "bitcoin",
+ "bitcoin_hashes 0.15.0",
+ "chacha20-poly1305",
  "rand",
  "tokio",
 ]
@@ -319,11 +321,11 @@ checksum = "788902099d47c8682efe6a7afb01c8d58b9794ba66c06affd81c3d6b560743eb"
 dependencies = [
  "base58ck",
  "bech32",
- "bitcoin-internals",
- "bitcoin-io",
+ "bitcoin-internals 0.3.0",
+ "bitcoin-io 0.1.2",
  "bitcoin-units",
- "bitcoin_hashes",
- "hex-conservative",
+ "bitcoin_hashes 0.14.0",
+ "hex-conservative 0.2.0",
  "hex_lit",
  "secp256k1",
  "serde",
@@ -339,10 +341,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-internals"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b854212e29b96c8f0fe04cab11d57586c8f3257de0d146c76cb3b42b3eb9118"
+
+[[package]]
 name = "bitcoin-io"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "340e09e8399c7bd8912f495af6aa58bea0c9214773417ffaa8f6460f93aaee56"
+
+[[package]]
+name = "bitcoin-io"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26792cd2bf245069a1c5acb06aa7ad7abe1de69b507c90b490bca81e0665d0ee"
+dependencies = [
+ "bitcoin-internals 0.4.0",
+]
 
 [[package]]
 name = "bitcoin-units"
@@ -350,7 +367,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb54da0b28892f3c52203a7191534033e051b6f4b52bc15480681b57b7e036f5"
 dependencies = [
- "bitcoin-internals",
+ "bitcoin-internals 0.3.0",
  "serde",
 ]
 
@@ -360,9 +377,19 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb18c03d0db0247e147a21a6faafd5a7eb851c743db062de72018b6b7e8e4d16"
 dependencies = [
- "bitcoin-io",
- "hex-conservative",
+ "bitcoin-io 0.1.2",
+ "hex-conservative 0.2.0",
  "serde",
+]
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0982261c82a50d89d1a411602afee0498b3e0debe3d36693f0c661352809639"
+dependencies = [
+ "bitcoin-io 0.2.0",
+ "hex-conservative 0.3.0",
 ]
 
 [[package]]
@@ -486,6 +513,12 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
+name = "chacha20-poly1305"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ac8be588b1de2b7f1537ed39ba453a388d2cce60ce78ef5db449f71bebe58ba"
 
 [[package]]
 name = "chrono"
@@ -1337,6 +1370,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex-conservative"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4afe881d0527571892c4034822e59bb10c6c991cce6abe8199b6f5cf10766f55"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
 name = "hex_lit"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1532,7 +1574,7 @@ dependencies = [
  "arti-client",
  "bip324",
  "bitcoin",
- "bitcoin_hashes",
+ "bitcoin_hashes 0.14.0",
  "bitcoincore-rpc",
  "hex",
  "rusqlite",
@@ -2405,7 +2447,7 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e0cc0f1cf93f4969faf3ea1c7d8a9faed25918d96affa959720823dfe86d4f3"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.14.0",
  "rand",
  "secp256k1-sys",
  "serde",
