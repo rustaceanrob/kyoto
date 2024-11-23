@@ -81,3 +81,8 @@ path = "example/rescan.rs"
 name = "tor"
 path = "example/tor.rs"
 required-features = ["tor"]
+
+[[example]]
+name = "managed"
+path = "example/managed.rs"
+required-features = ["filter-control"]

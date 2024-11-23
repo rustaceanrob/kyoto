@@ -27,8 +27,7 @@ async fn main() {
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // Add preferred peers to connect to
-    let peer_1 = IpAddr::V4(Ipv4Addr::new(95, 217, 198, 121));
-    let peer_2 = TrustedPeer::new(
+    let peer = TrustedPeer::new(
         AddrV2::Ipv4(Ipv4Addr::new(23, 137, 57, 100)),
         None,
         ServiceFlags::P2P_V2,
@@ -38,20 +37,14 @@ async fn main() {
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Add the peers
-        .add_peers(vec![(peer_1, None).into(), peer_2])
-        // The Bitcoin scripts to monitor
-        .add_scripts(addresses)
+        .add_peer(peer)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(checkpoint)
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .num_required_peers(1)
         // Create the node and client
         .build_node()
         .unwrap();
-    // Check if the node is running. Another part of the program may be giving us the node.
-    if !node.is_running() {
-        tokio::task::spawn(async move { node.run().await });
-    }
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
@@ -62,35 +55,18 @@ async fn main() {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{d}"),
                 NodeMessage::Warning(e) => tracing::warn!("{e}"),
-                NodeMessage::StateChange(s) => tracing::info!("State update: {s}"),
-                NodeMessage::Block(b) => drop(b),
-                NodeMessage::BlocksDisconnected(r) => {
-                    let _ = r;
-                }
-                NodeMessage::TxSent(t) => {
-                    tracing::info!("Transaction sent. TXID: {t}");
-                }
-                NodeMessage::TxBroadcastFailure(t) => {
-                    tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
-                }
-                NodeMessage::FeeFilter(fee) => {
-                    tracing::info!("Fee filter received: {fee} kwu");
-                }
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip.height);
-                    tracing::info!("Chain tip: {}", update.tip.hash);
-                    let recent = update.recent_history;
-                    let header = client.get_header(update.tip.height).await.unwrap().unwrap();
-                    assert_eq!(header.block_hash(), update.tip.hash);
-                    tracing::info!("Recent history:");
-                    for (height, hash) in recent {
-                        tracing::info!("Height: {}", height);
-                        tracing::info!("Hash: {}", hash.block_hash());
-                    }
-                    break;
-                }
+                NodeMessage::Synced(_) => break,
                 NodeMessage::ConnectionsMet => {
                     tracing::info!("Connected to all required peers");
+                }
+                NodeMessage::IndexedFilter(mut filter) => {
+                    let height = filter.height();
+                    tracing::info!("Checking filter {}", height);
+                    if filter.contains_any(&addresses).await {
+                        let hash = filter.block_hash();
+                        tracing::info!("Found script at {}!", hash);
+                        break;
+                    }
                 }
                 _ => (),
             }
