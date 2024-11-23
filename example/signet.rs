@@ -1,3 +1,5 @@
+//! Usual sync on Signet.
+
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};

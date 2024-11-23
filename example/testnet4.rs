@@ -1,3 +1,5 @@
+//! Usual sync on Testnet.
+
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{Address, Network, PeerStoreSizeConfig, TrustedPeer};

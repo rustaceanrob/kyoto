@@ -1,11 +1,12 @@
+//! Kyoto supports checking filters directly, as protocols like silent payments will have
+//! many possible scripts to check. Enable the `filter-control` feature to check filters
+//! manually in your program.
+
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    str::FromStr,
-};
+use std::{net::Ipv4Addr, str::FromStr};
 
 const NETWORK: Network = Network::Signet;
 const RECOVERY_HEIGHT: u32 = 170_000;
@@ -45,9 +46,9 @@ async fn main() {
         // Create the node and client
         .build_node()
         .unwrap();
-    // Split the client into components that send messages and listen to messages.
-    // With this construction, different parts of the program can take ownership of
-    // specific tasks.
+
+    tokio::task::spawn(async move { node.run().await });
+
     let (sender, mut receiver) = client.split();
     // Continually listen for events until the node is synced to its peers.
     loop {
