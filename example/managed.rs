@@ -1,13 +1,16 @@
-//! Usual sync on Testnet.
+//! Kyoto supports checking filters directly, as protocols like silent payments will have
+//! many possible scripts to check. Enable the `filter-control` feature to check filters
+//! manually in your program.
 
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{Address, Network, PeerStoreSizeConfig, TrustedPeer};
+use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
-const NETWORK: Network = Network::Testnet4;
-const RECOVERY_HEIGHT: u32 = 0;
+const NETWORK: Network = Network::Signet;
+const RECOVERY_HEIGHT: u32 = 170_000;
+const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +20,7 @@ async fn main() {
     // Use a predefined checkpoint
     let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
-    let address = Address::from_str("tb1qkqkt3ra8d44lt90t9thgy3lgucsjrtywwgq8yp")
+    let address = Address::from_str(ADDR)
         .unwrap()
         .require_network(NETWORK)
         .unwrap()
@@ -25,31 +28,27 @@ async fn main() {
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // Add preferred peers to connect to
-    let peer = TrustedPeer::from_ip(Ipv4Addr::new(18, 189, 156, 102));
+    let peer = TrustedPeer::new(
+        AddrV2::Ipv4(Ipv4Addr::new(23, 137, 57, 100)),
+        None,
+        ServiceFlags::P2P_V2,
+    );
     // Create a new node builder
     let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Add the peers
         .add_peer(peer)
-        // The Bitcoin scripts to monitor
-        .add_scripts(addresses)
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(checkpoint)
-        // Store a limited number of peers
-        .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // The number of connections we would like to maintain
         .num_required_peers(1)
         // Create the node and client
         .build_node()
         .unwrap();
 
-    // Run the node on a new task
     tokio::task::spawn(async move { node.run().await });
 
-    // Split the client into components that send messages and listen to messages.
-    // With this construction, different parts of the program can take ownership of
-    // specific tasks.
     let (sender, mut receiver) = client.split();
     // Continually listen for events until the node is synced to its peers.
     loop {
@@ -57,20 +56,18 @@ async fn main() {
             match message {
                 NodeMessage::Dialog(d) => tracing::info!("{d}"),
                 NodeMessage::Warning(e) => tracing::warn!("{e}"),
-                NodeMessage::Block(b) => drop(b),
-                NodeMessage::BlocksDisconnected(r) => {
-                    for dc in r {
-                        let warning = format!("Block disconnected {}", dc.height);
-                        tracing::warn!(warning);
-                    }
-                }
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip.height);
-                    tracing::info!("Chain tip: {}", update.tip.hash);
-                    break;
-                }
+                NodeMessage::Synced(_) => break,
                 NodeMessage::ConnectionsMet => {
                     tracing::info!("Connected to all required peers");
+                }
+                NodeMessage::IndexedFilter(mut filter) => {
+                    let height = filter.height();
+                    tracing::info!("Checking filter {}", height);
+                    if filter.contains_any(&addresses).await {
+                        let hash = filter.block_hash();
+                        tracing::info!("Found script at {}!", hash);
+                        break;
+                    }
                 }
                 _ => (),
             }

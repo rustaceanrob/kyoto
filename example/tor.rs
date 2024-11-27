@@ -1,5 +1,6 @@
-//! This example demonstrates a limited resource device running with no default features.
-//! Note that, without DNS enabled, at least one peer must be provided when building the node.
+//! Kyoto allows for use of the Tor protocol to connect to peers.
+//! To do so, the `arti` project is used to build a Tor client.
+//! Enable Tor connections via the `tor` feature.
 
 use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
 use kyoto::core::messages::NodeMessage;

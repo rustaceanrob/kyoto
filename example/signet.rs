@@ -1,6 +1,4 @@
-//! The following configuration is likely a common set-up for most users.
-//! New peers are stored in a local database, and the node connects to multiple peers
-//! to improve the anonymity set when broadcasting transactions to the Bitcoin network.
+//! Usual sync on Signet.
 
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
@@ -13,6 +11,7 @@ use std::{
 
 const NETWORK: Network = Network::Signet;
 const RECOVERY_HEIGHT: u32 = 170_000;
+const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
 
 #[tokio::main]
 async fn main() {
@@ -22,7 +21,7 @@ async fn main() {
     // Use a predefined checkpoint
     let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
-    let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+    let address = Address::from_str(ADDR)
         .unwrap()
         .require_network(NETWORK)
         .unwrap()
