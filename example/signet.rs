@@ -10,7 +10,7 @@ use std::{
 };
 
 const NETWORK: Network = Network::Signet;
-const RECOVERY_HEIGHT: u32 = 170_000;
+const RECOVERY_HEIGHT: u32 = 190_000;
 const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
 
 #[tokio::main]
