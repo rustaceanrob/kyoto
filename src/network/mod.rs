@@ -24,7 +24,7 @@ pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 
 pub(crate) struct V1Header {
     magic: Magic,
-    command: CommandString,
+    _command: CommandString,
     length: u32,
     _checksum: u32,
 }
@@ -34,12 +34,12 @@ impl Decodable for V1Header {
         reader: &mut R,
     ) -> Result<Self, bitcoin::consensus::encode::Error> {
         let magic = Magic::consensus_decode(reader)?;
-        let command = CommandString::consensus_decode(reader)?;
+        let _command = CommandString::consensus_decode(reader)?;
         let length = u32::consensus_decode(reader)?;
         let _checksum = u32::consensus_decode(reader)?;
         Ok(Self {
             magic,
-            command,
+            _command,
             length,
             _checksum,
         })
