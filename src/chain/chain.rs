@@ -891,14 +891,14 @@ impl<H: HeaderStore> Chain<H> {
 mod tests {
     use std::{collections::HashSet, str::FromStr};
 
+    use bitcoin::hashes::sha256d;
+    use bitcoin::hashes::Hash;
     use bitcoin::{
         block::Header,
         consensus::deserialize,
         p2p::message_filter::{CFHeaders, CFilter},
         BlockHash, FilterHash, FilterHeader,
     };
-    use bitcoin_hashes::sha256d;
-    use bitcoin_hashes::Hash;
 
     use crate::{
         chain::{

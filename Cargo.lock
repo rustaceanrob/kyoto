@@ -1645,7 +1645,6 @@ dependencies = [
  "arti-client",
  "bip324",
  "bitcoin",
- "bitcoin_hashes 0.14.0",
  "corepc-node",
  "hex",
  "rusqlite",
