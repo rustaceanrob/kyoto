@@ -48,7 +48,7 @@ let mut addresses = HashSet::new();
 addresses.insert(address);
 let builder = NodeBuilder::new(bitcoin::Network::Signet);
 // Add node preferences and build the node/client
-let (mut node, mut client) = builder
+let (node, client) = builder
     // Add the peers
     .add_peers(vec![TrustedPeer::from_ip(peer_1), TrustedPeer::from_ip(peer_1)])
     // The Bitcoin scripts to monitor
@@ -76,7 +76,7 @@ While connections over the Tor protocol are supported by the feature `tor`, the 
 
 The preferred workflow is by using `just`. If you do not have `just` installed, check out the [installation page](https://just.systems/man/en/chapter_4.html).
 
-To run the unit tests:
+To run the unit tests and doc tests:
 
 ```
 just test
@@ -88,17 +88,21 @@ To sync with a live Signet node:
 just sync
 ```
 
-And to run scenarios against your `bitcoind` instance:
+And to run scenarios against your `bitcoind` instance, set a `BITCOIND_EXE` environment variable to the path to `bitcoind`:
+
+```
+export BITCOIND_EXE = "/usr/path/to/bitcoind/"
+```
+
+You may want to add this to your bash or zsh profile.
+
+To run the `bitcoind` tests:
 
 ```
 just integrate
 ```
 
-The default path to the `.bitcoin` directory is for Linux. To set this path to another operating system or location:
-
-```
-just bitcoindir=/path/to/bitcoin/folder/ integrate
-```
+If you do not have `bitcoind` installed, you may simply run `just integrate` and it will be installed for you in the `build` folder.
 
 ## Project Layout
 
