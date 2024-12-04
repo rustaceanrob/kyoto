@@ -1,1 +1,0 @@
-bitcoin-cli -chain=regtest -rpcuser="test" -rpcpassword="kyoto" stop
