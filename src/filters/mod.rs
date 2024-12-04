@@ -9,8 +9,8 @@ pub(crate) mod filter_chain;
 
 use std::collections::HashSet;
 
+use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::{bip158::BlockFilter, BlockHash, FilterHash, ScriptBuf};
-use bitcoin_hashes::{sha256d, Hash};
 
 use error::FilterError;
 
