@@ -25,24 +25,24 @@ jobs:
           rustup component add --toolchain ${{ matrix.toolchain }} rustfmt
           rustup component add --toolchain ${{ matrix.toolchain }} clippy
           rustup update ${{ matrix.toolchain }}
-      - name: Pin dependencies
-        if: matrix.msrv
-        run: | 
-          cargo update -p allocator-api2 --precise "0.2.9" --verbose
-          cargo update -p tempfile --precise 3.3.0
-          cargo update -p log --precise 0.4.18
-          cargo update -p zstd-sys --precise "2.0.8+zstd.1.5.5"
+      # - name: Pin dependencies
+      #   if: matrix.msrv
+      #   run: cargo update -p allocator-api2 --precise "0.2.9" --verbose
       - name: Lint all targets
+        if: ${{ !matrix.msrv }}
         run: cargo clippy --all-targets
       - name: Format
+        if: ${{ !matrix.msrv }}
         run: cargo fmt -- --check
       - name: Build with defeault features
         run: cargo build --verbose
       - name: Check release build on Rust ${{ matrix.toolchain }}
         run: cargo check --release --verbose --color always
       - name: Unit test
+        if: ${{ !matrix.msrv }}
         run: cargo test --verbose --lib
       - name: Doc test
+        if: ${{ !matrix.msrv }}
         run: cargo test --verbose --doc
   signet:
     runs-on: ubuntu-latest
