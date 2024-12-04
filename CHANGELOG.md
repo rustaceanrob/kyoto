@@ -5,6 +5,24 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.0
+
+## Added
+
+- Pass `FeeFilter` to client
+- Add Signet and Bitcoin checkpoints
+
+## Changed
+
+- Upgrade `bip324` to `0.6.0`
+- Switch to `corepc-node` to start `bitcoind` in CI
+- Use `into_payload` in `bitcoin 0.32.5`
+
+## Fixes
+
+- Add check to bits before adjustment
+- Remove explicit `serde` feature
+
 ## v0.5.0
 
 ## Added
