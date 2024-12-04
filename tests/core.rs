@@ -1,12 +1,13 @@
 use std::{
-    collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr},
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, SocketAddrV4},
+    path::PathBuf,
     str::FromStr,
     time::Duration,
 };
 
-use bitcoin::{address::NetworkChecked, consensus::serialize, Amount, ScriptBuf};
-use bitcoincore_rpc::{json::CreateRawTransactionInput, RpcApi};
+use bitcoin::{address::NetworkChecked, ScriptBuf};
+use corepc_node::{anyhow, exe_path, BitcoinD};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
     core::{
@@ -15,49 +16,54 @@ use kyoto::{
         node::Node,
     },
     db::memory::peers::StatelessPeerStore,
-    ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer, TxBroadcast,
+    BlockHash, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
 };
 
-const RPC_USER: &str = "test";
-const RPC_PASSWORD: &str = "kyoto";
-const WALLET: &str = "test_kyoto";
-const HOST: &str = "http://localhost:18443";
-const PORT: u16 = 18444;
-
-fn initialize_client() -> Result<bitcoincore_rpc::Client, bitcoincore_rpc::Error> {
-    let rpc = bitcoincore_rpc::Client::new(
-        HOST,
-        bitcoincore_rpc::Auth::UserPass(RPC_USER.into(), RPC_PASSWORD.into()),
-    )?;
-    // Do a call that will only fail if we are not connected to RPC.
-    let _ = rpc.get_best_block_hash()?;
-    match rpc.load_wallet(WALLET) {
-        Ok(_) => Ok(rpc),
-        Err(_) => {
-            rpc.create_wallet(WALLET, None, None, None, None)?;
-            Ok(rpc)
-        }
+// Start the bitcoin daemon either through an environment variable or by download
+fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(BitcoinD, SocketAddrV4)> {
+    let path = exe_path()?;
+    let mut conf = corepc_node::Conf::default();
+    conf.p2p = corepc_node::P2P::Yes;
+    conf.args.push("--txindex");
+    conf.args.push("--blockfilterindex");
+    conf.args.push("--peerblockfilters");
+    conf.args.push("--rest=1");
+    conf.args.push("--server=1");
+    conf.args.push("--listen=1");
+    conf.tmpdir = Some(tempfile::TempDir::new().unwrap().into_path());
+    if with_v2_transport {
+        conf.args.push("--v2transport=1")
+    } else {
+        conf.args.push("--v2transport=0");
     }
+    let bitcoind = BitcoinD::with_conf(path, &conf)?;
+    let socket_addr = bitcoind.params.p2p_socket.unwrap();
+    Ok((bitcoind, socket_addr))
 }
 
-async fn new_node(addrs: HashSet<ScriptBuf>) -> (Node<(), ()>, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+async fn new_node(addrs: HashSet<ScriptBuf>, socket_addr: SocketAddrV4) -> (Node<(), ()>, Client) {
+    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![host.into()])
+        .add_peer(host)
         .add_scripts(addrs)
         .build_with_databases((), ());
     (node, client)
 }
 
-async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+async fn new_node_sql(
+    addrs: HashSet<ScriptBuf>,
+    socket_addr: SocketAddrV4,
+    tempdir_path: PathBuf,
+) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
+    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![trusted])
+        .add_peer(host)
         .add_scripts(addrs)
+        .add_data_dir(tempdir_path)
         .build_node()
         .unwrap();
     (node, client)
@@ -66,32 +72,44 @@ async fn new_node_sql(addrs: HashSet<ScriptBuf>) -> (Node<SqliteHeaderDb, Sqlite
 async fn new_node_anchor_sql(
     addrs: HashSet<ScriptBuf>,
     checkpoint: HeaderCheckpoint,
+    socket_addr: SocketAddrV4,
+    tempdir_path: PathBuf,
 ) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
-    let addr = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let addr = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = addr.into();
     trusted.set_services(ServiceFlags::P2P_V2);
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
-        .add_peers(vec![trusted])
+        .add_peer(trusted)
         .add_scripts(addrs)
+        .add_data_dir(tempdir_path)
         .anchor_checkpoint(checkpoint)
         .build_node()
         .unwrap();
     (node, client)
 }
 
+fn num_blocks(rpc: &corepc_node::Client) -> i64 {
+    rpc.get_blockchain_info().unwrap().blocks
+}
+
+fn best_hash(rpc: &corepc_node::Client) -> BlockHash {
+    rpc.get_best_block_hash().unwrap().block_hash().unwrap()
+}
+
 async fn mine_blocks(
-    rpc: &bitcoincore_rpc::Client,
+    rpc: &corepc_node::Client,
     miner: &bitcoin::Address<NetworkChecked>,
-    num_blocks: u64,
+    num_blocks: usize,
     time: u64,
 ) {
     rpc.generate_to_address(num_blocks, miner).unwrap();
     tokio::time::sleep(Duration::from_secs(time)).await;
 }
 
-async fn invalidate_block(rpc: &bitcoincore_rpc::Client, hash: &bitcoin::BlockHash) {
-    rpc.invalidate_block(hash).unwrap();
+async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) {
+    rpc.call::<()>("invalidateblock", &[serde_json::to_value(hash).unwrap()])
+        .unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
@@ -110,38 +128,34 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut Receiver<NodeMessa
     }
 }
 
-// Steps to run this test.
-// 1. Run `scripts/regtest.sh`
-// 2. Run `cargo test test_reorg -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_reorg() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
     // Mine some blocks
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 1).await;
+    let best = best_hash(rpc);
     // Build and run a node
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone()).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let (sender, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
     // Reorganize the blocks
     let old_best = best;
-    let old_height = rpc.get_block_count().unwrap();
-    invalidate_block(&rpc, &best).await;
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let old_height = num_blocks(rpc);
+    invalidate_block(rpc, &best).await;
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Make sure the reorg was caught
     while let Ok(message) = recv.recv().await {
         match message {
@@ -164,40 +178,36 @@ async fn test_reorg() {
     rpc.stop().unwrap();
 }
 
-// Steps to run this test.
-// 1. Run `scripts/regtest.sh`
-// 2. Run `cargo test test_reorg -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_mine_after_reorg() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
     // Mine some blocks
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 1).await;
+    let best = best_hash(rpc);
     // Build and run a node
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone()).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
     // Reorganize the blocks
     let old_best = best;
-    let old_height = rpc.get_block_count().unwrap();
+    let old_height = num_blocks(rpc);
     let fetched_header = client.get_header(10).await.unwrap().unwrap();
     assert_eq!(old_best, fetched_header.block_hash());
-    invalidate_block(&rpc, &best).await;
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    invalidate_block(rpc, &best).await;
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Make sure the reorg was caught
     while let Ok(message) = recv.recv().await {
         match message {
@@ -215,203 +225,31 @@ async fn test_mine_after_reorg() {
             _ => {}
         }
     }
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
-// Steps to run this test.
-// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
-// 2. Run `scripts/regtest.sh`
-// 3. Run `cargo test test_broadcast -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
-#[tokio::test]
-async fn test_broadcast_success() {
-    let rpc_result = initialize_client();
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    // Mine some blocks
-    let rpc = rpc_result.unwrap();
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 105, 5).await;
-    // Send to a random address
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.send_to_address(
-        &other.clone(),
-        Amount::from_btc(100.).unwrap(),
-        None,
-        None,
-        Some(true),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    // Confirm the transaction
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    // Get inputs and outputs for a new transaction
-    let inputs = rpc
-        .list_unspent(Some(1), None, Some(&[&other]), None, None)
-        .unwrap();
-    let raw_tx_inputs: Vec<CreateRawTransactionInput> = inputs
-        .iter()
-        .map(|input| CreateRawTransactionInput {
-            txid: input.txid,
-            vout: input.vout,
-            sequence: None,
-        })
-        .collect::<_>();
-    let burn = rpc.get_new_address(None, None).unwrap().assume_checked();
-    let mut outs = HashMap::new();
-    outs.insert(burn.to_string(), Amount::from_sat(1000));
-    // Create and sign the transaction
-    let tx = rpc
-        .create_raw_transaction(&raw_tx_inputs, &outs, None, None)
-        .unwrap();
-    let signed = rpc
-        .sign_raw_transaction_with_wallet(&serialize(&tx), None, None)
-        .unwrap();
-    // Make sure we sync up to the tip under usual conditions.
-    let mut scripts = HashSet::new();
-    scripts.insert(burn.into());
-    let (node, client) = new_node(scripts.clone()).await;
-    tokio::task::spawn(async move { node.run().await });
-    let (sender, mut recv) = client.split();
-    // Broadcast the transaction to the network
-    sender
-        .broadcast_tx(TxBroadcast::new(
-            signed.transaction().unwrap(),
-            kyoto::TxBroadcastPolicy::AllPeers,
-        ))
-        .await
-        .unwrap();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::TxSent(t) => {
-                println!("Sent transaction: {t}");
-                break;
-            }
-            kyoto::core::messages::NodeMessage::TxBroadcastFailure(_) => {
-                panic!()
-            }
-            _ => {}
-        }
-    }
-    client.shutdown().await.unwrap();
-    rpc.stop().unwrap();
-}
-
-// Steps to run this test.
-// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
-// 2. Run `scripts/regtest.sh`
-// 3. Run `cargo test test_broadcast -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
-#[tokio::test]
-async fn test_broadcast_fail() {
-    let rpc_result = initialize_client();
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    // Mine some blocks
-    let rpc = rpc_result.unwrap();
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 105, 5).await;
-    // Send to a random address
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
-    rpc.send_to_address(
-        &other.clone(),
-        Amount::from_btc(100.).unwrap(),
-        None,
-        None,
-        Some(true),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    // Confirm the transaction
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    // Get inputs and outputs for a new transaction
-    let inputs = rpc
-        .list_unspent(Some(1), None, Some(&[&other]), None, None)
-        .unwrap();
-    let raw_tx_inputs: Vec<CreateRawTransactionInput> = inputs
-        .iter()
-        .map(|input| CreateRawTransactionInput {
-            txid: input.txid,
-            vout: input.vout,
-            sequence: None,
-        })
-        .collect::<_>();
-    let burn = rpc.get_new_address(None, None).unwrap().assume_checked();
-    let mut outs = HashMap::new();
-    outs.insert(burn.to_string(), Amount::from_sat(1000));
-    // Create but do not sign the transaction
-    let tx = rpc
-        .create_raw_transaction(&raw_tx_inputs, &outs, None, None)
-        .unwrap();
-    println!("Built unsigned transaction with TXID {}", tx.compute_txid());
-    let mut scripts = HashSet::new();
-    scripts.insert(burn.into());
-    let (node, client) = new_node(scripts.clone()).await;
-    tokio::task::spawn(async move { node.run().await });
-    let (sender, mut recv) = client.split();
-    // Broadcast the transaction to the network
-    sender
-        .broadcast_tx(TxBroadcast::new(tx, kyoto::TxBroadcastPolicy::AllPeers))
-        .await
-        .unwrap();
-    while let Ok(message) = recv.recv().await {
-        match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::TxSent(t) => {
-                println!("Sent transaction: {t}");
-                break;
-            }
-            kyoto::core::messages::NodeMessage::TxBroadcastFailure(_) => {
-                panic!()
-            }
-            _ => {}
-        }
-    }
-    client.shutdown().await.unwrap();
-    rpc.stop().unwrap();
-}
-
-// Steps to run this test.
-// 1. Run `scripts/regtest.sh`
-// 2. Run `cargo test test_long_chain -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_long_chain() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
     // Mine a lot of blocks
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 500, 15).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 500, 15).await;
+    let best = best_hash(rpc);
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone()).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let (sender, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
@@ -419,42 +257,37 @@ async fn test_long_chain() {
     rpc.stop().unwrap();
 }
 
-// Steps to run this test.
-// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
-// 2. Delete `data` from your root directory, if it exists.
-// 3. Run `scripts/regtest.sh`
-// 4. Run `cargo test test_sql_reorg -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_sql_reorg() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks.
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 1).await;
+    let best = best_hash(rpc);
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
-    let old_height = rpc.get_block_count().unwrap();
-    invalidate_block(&rpc, &best).await;
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let old_height = num_blocks(rpc);
+    invalidate_block(rpc, &best).await;
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Spin up the node on a cold start
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // Make sure the reorganization is caught after a cold start
@@ -477,10 +310,10 @@ async fn test_sql_reorg() {
     }
     client.shutdown().await.unwrap();
     // Mine more blocks
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
@@ -489,44 +322,39 @@ async fn test_sql_reorg() {
     rpc.stop().unwrap();
 }
 
-// Steps to run this test.
-// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
-// 2. Delete `data` from your root directory, if it exists.
-// 3. Run `scripts/regtest.sh`
-// 4. Run `cargo test test_two_deep_reorg -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_two_deep_reorg() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks.
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 1).await;
+    let best = best_hash(rpc);
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
-    let old_height = rpc.get_block_count().unwrap();
+    let old_height = num_blocks(rpc);
     let old_best = best;
-    invalidate_block(&rpc, &best).await;
-    let best = rpc.get_best_block_hash().unwrap();
-    invalidate_block(&rpc, &best).await;
-    mine_blocks(&rpc, &miner, 3, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    invalidate_block(rpc, &best).await;
+    let best = best_hash(rpc);
+    invalidate_block(rpc, &best).await;
+    mine_blocks(rpc, &miner, 3, 1).await;
+    let best = best_hash(rpc);
     // Make sure the reorganization is caught after a cold start
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     while let Ok(message) = recv.recv().await {
@@ -548,10 +376,10 @@ async fn test_two_deep_reorg() {
     }
     client.shutdown().await.unwrap();
     // Mine more blocks
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     // The node properly syncs after persisting a reorg
@@ -560,47 +388,40 @@ async fn test_two_deep_reorg() {
     rpc.stop().unwrap();
 }
 
-// Steps to run this test.
-// 1. Delete `regtest` from `.bitcoin` or wherever your Bitcoin Core data is stored.
-// 2. Delete `data` from your root directory, if it exists.
-// 3. Run `scripts/regtest.sh`
-// 4. Run `scripts/mine.sh`
-// 5. Run `cargo test test_sql_stale_anchor -- --nocapture`
-//
-// If the test fails: run `scripts/kill.sh`
 #[tokio::test]
 async fn test_sql_stale_anchor() {
-    let rpc = bitcoincore_rpc::Client::new(
-        HOST,
-        bitcoincore_rpc::Auth::UserPass(RPC_USER.into(), RPC_PASSWORD.into()),
-    )
-    .unwrap();
-    // Do a call that will only fail if we are not connected to RPC.
-    if rpc.get_new_address(None, None).is_err() {
-        println!("There is no wallet loaded. Have you ran `mine.sh`?");
+    let rpc_result = start_bitcoind(true);
+    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
+    if rpc_result.is_err() {
+        println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    // Get an address and the tip of the chain.
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    let best = rpc.get_best_block_hash().unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 17, 3).await;
+    let best = best_hash(rpc);
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let (_, mut recv) = client.split();
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
-    let old_height = rpc.get_block_count().unwrap();
-    invalidate_block(&rpc, &best).await;
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let old_height = num_blocks(rpc);
+    invalidate_block(rpc, &best).await;
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Spin up the node on a cold start with a stale tip
     let (node, client) = new_node_anchor_sql(
         scripts.clone(),
         HeaderCheckpoint::new(old_height as u32, old_best),
+        socket_addr,
+        tempdir.clone(),
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
@@ -625,13 +446,15 @@ async fn test_sql_stale_anchor() {
     }
     client.shutdown().await.unwrap();
     // Don't do anything, but reload the node from the checkpoint
-    let cp = rpc.get_best_block_hash().unwrap();
-    let old_height = rpc.get_block_count().unwrap();
-    let best = rpc.get_best_block_hash().unwrap();
+    let cp = best_hash(rpc);
+    let old_height = num_blocks(rpc);
+    let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
     let (node, client) = new_node_anchor_sql(
         scripts.clone(),
         HeaderCheckpoint::new(old_height as u32, cp),
+        socket_addr,
+        tempdir.clone(),
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
@@ -640,14 +463,16 @@ async fn test_sql_stale_anchor() {
     sync_assert(&best, &mut recv).await;
     client.shutdown().await.unwrap();
     // Mine more blocks and reload from the checkpoint
-    let cp = rpc.get_best_block_hash().unwrap();
-    let old_height = rpc.get_block_count().unwrap();
-    mine_blocks(&rpc, &miner, 2, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let cp = best_hash(rpc);
+    let old_height = num_blocks(rpc);
+    mine_blocks(rpc, &miner, 2, 1).await;
+    let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
     let (node, client) = new_node_anchor_sql(
         scripts.clone(),
         HeaderCheckpoint::new(old_height as u32, cp),
+        socket_addr,
+        tempdir,
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
@@ -661,22 +486,23 @@ async fn test_sql_stale_anchor() {
 #[tokio::test]
 #[allow(clippy::collapsible_match)]
 async fn test_halting_works() {
-    let rpc_result = initialize_client();
+    let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
         println!("Bitcoin Core is not running. Skipping this test...");
         return;
     }
-    let rpc = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let rpc = &bitcoind.client;
 
-    let miner = rpc.get_new_address(None, None).unwrap().assume_checked();
-    mine_blocks(&rpc, &miner, 10, 1).await;
-    let best = rpc.get_best_block_hash().unwrap();
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 1).await;
+    let best = best_hash(rpc);
     let mut scripts = HashSet::new();
-    let other = rpc.get_new_address(None, None).unwrap().assume_checked();
+    let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
 
-    let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), Some(PORT));
+    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peers(vec![host.into()])

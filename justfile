@@ -1,5 +1,3 @@
-bitcoindir := "$HOME/.bitcoin/"
-
 default:
   just --list
 
@@ -11,13 +9,14 @@ check:
    cargo clippy --all-targets
 
 test:
-  cargo test -- --skip test_signet_syncs
+  cargo test --lib
+  cargo test --doc
 
 sync: 
   cargo test test_signet_syncs -- --nocapture
 
 integrate: 
-  sh scripts/integration.sh {{bitcoindir}}
+  cargo test -- --test-threads 1 --nocapture --skip test_signet_syncs
 
 example:
   cargo run --example signet --release
@@ -31,6 +30,7 @@ testnet:
 all:
   cargo fmt 
   cargo clippy --all-targets
-  cargo test -- --skip test_signet_syncs
-  sh scripts/integration.sh {{bitcoindir}}
+  cargo test --lib
+  cargo test --doc
+  cargo test -- --test-threads 1 --nocapture --skip test_signet_syncs
   cargo run --example signet
