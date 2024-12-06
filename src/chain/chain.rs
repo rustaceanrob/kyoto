@@ -18,6 +18,10 @@ use super::{
     header_chain::HeaderChain,
 };
 #[cfg(feature = "filter-control")]
+use crate::core::error::FetchBlockError;
+#[cfg(feature = "filter-control")]
+use crate::core::messages::BlockRequest;
+#[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
@@ -844,10 +848,20 @@ impl<H: HeaderStore> Chain<H> {
         if !block.check_merkle_root() {
             return Err(BlockScanError::InvalidMerkleRoot);
         }
-        self.block_queue.receive(&block_hash);
-        self.dialog
-            .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
-            .await;
+        let sender = self.block_queue.receive(&block_hash);
+        match sender {
+            Some(sender) => {
+                let send_result = sender.send(Ok(IndexedBlock::new(height, block)));
+                if send_result.is_err() {
+                    self.dialog.send_warning(Warning::ChannelDropped).await
+                };
+            }
+            None => {
+                self.dialog
+                    .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
+                    .await;
+            }
+        }
         Ok(())
     }
 
@@ -866,8 +880,19 @@ impl<H: HeaderStore> Chain<H> {
 
     // Explicitly request a block
     #[cfg(feature = "filter-control")]
-    pub(crate) fn get_block(&mut self, hash: BlockHash) {
-        self.block_queue.add(hash)
+    pub(crate) async fn get_block(&mut self, request: BlockRequest) {
+        let height_opt = self.height_of_hash(request.hash).await;
+        if height_opt.is_none() {
+            let err_reponse = request.oneshot.send(Err(FetchBlockError::UnknownHash));
+            if err_reponse.is_err() {
+                self.dialog.send_warning(Warning::ChannelDropped).await;
+            }
+        } else {
+            self.dialog
+                .send_dialog(format!("Adding block {} to queue", request.hash))
+                .await;
+            self.block_queue.add(request)
+        }
     }
 
     // Reset the compact filter queue because we received a new block

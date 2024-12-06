@@ -306,7 +306,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                                 drop(state);
                                 let mut chain = self.chain.lock().await;
-                                chain.get_block(hash);
+                                chain.get_block(hash).await;
                             },
                             ClientMessage::SetDuration(duration) => {
                                 let mut peer_map = self.peer_map.lock().await;

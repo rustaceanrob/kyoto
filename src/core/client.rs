@@ -1,6 +1,7 @@
 use bitcoin::block::Header;
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
+#[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -9,6 +10,8 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{IndexedBlock, TrustedPeer, TxBroadcast};
 
+#[cfg(feature = "filter-control")]
+use super::{error::FetchBlockError, messages::BlockRequest};
 use super::{
     error::{ClientError, FetchHeaderError},
     messages::{ClientMessage, HeaderRequest, NodeMessage, SyncUpdate},
@@ -238,6 +241,26 @@ macro_rules! impl_core_client {
                     .map_err(|_| FetchHeaderError::RecvError)?
             }
 
+            /// Request a block be fetched.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            #[cfg(feature = "filter-control")]
+            pub async fn request_block(
+                &self,
+                block_hash: BlockHash,
+            ) -> Result<IndexedBlock, FetchBlockError> {
+                let (tx, rx) =
+                    tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
+                let message = BlockRequest::new(tx, block_hash);
+                self.ntx
+                    .send(ClientMessage::GetBlock(message))
+                    .await
+                    .map_err(|_| FetchBlockError::SendError)?;
+                rx.await.map_err(|_| FetchBlockError::RecvError)?
+            }
+
             /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
             ///
             /// # Errors
@@ -286,19 +309,6 @@ macro_rules! impl_core_client {
             pub async fn continue_download(&self) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::ContinueDownload)
-                    .await
-                    .map_err(|_| ClientError::SendError)
-            }
-
-            /// Request a block be fetched. The block will be emitted as a [`NodeMessage::Block`](crate::core::messages::NodeMessage) event.
-            ///
-            /// # Errors
-            ///
-            /// If the node has stopped running.
-            #[cfg(feature = "filter-control")]
-            pub async fn request_block(&self, block_hash: BlockHash) -> Result<(), ClientError> {
-                self.ntx
-                    .send(ClientMessage::GetBlock(block_hash))
                     .await
                     .map_err(|_| ClientError::SendError)
             }
