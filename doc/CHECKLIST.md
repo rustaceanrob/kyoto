@@ -135,5 +135,5 @@
   - [x] MacOS, Windows, Linux
   - [x] 1.63, stable, beta, nightly
   - [x] Format and clippy
-  - [ ] Regtest sync with Bitcoin Core
+  - [x] Regtest sync with Bitcoin Core
   - [x] On PR

@@ -241,7 +241,9 @@ macro_rules! impl_core_client {
                     .map_err(|_| FetchHeaderError::RecvError)?
             }
 
-            /// Request a block be fetched.
+            /// Request a block be fetched. Note that this method will request a block
+            /// from a connected peer's inventory, and may take an indefinite amount of
+            /// time, until a peer responds.
             ///
             /// # Errors
             ///

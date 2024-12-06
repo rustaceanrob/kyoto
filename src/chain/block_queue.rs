@@ -180,7 +180,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[ignore = "wastes time"]
     async fn test_laggy_peer() {
         use std::time::Duration;
         let hash_1 =
