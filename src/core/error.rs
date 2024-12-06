@@ -155,3 +155,45 @@ impl core::fmt::Display for FetchHeaderError {
 }
 
 impl_sourceless_error!(FetchHeaderError);
+
+/// Errors occuring when the client is fetching blocks from the node.
+#[derive(Debug)]
+pub enum FetchBlockError {
+    /// The channel to the node was likely closed and dropped from memory.
+    /// This implies the node is not running.
+    SendError,
+    /// The database operation failed while attempting to find the header.
+    DatabaseOptFailed {
+        /// The message from the backend describing the failure.
+        error: String,
+    },
+    /// The channel to the client was likely closed by the node and dropped from memory.
+    RecvError,
+    /// The hash is not a member of the chain of most work.
+    UnknownHash,
+}
+
+impl core::fmt::Display for FetchBlockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FetchBlockError::SendError => {
+                write!(f, "the receiver of this message was dropped from memory.")
+            }
+            FetchBlockError::DatabaseOptFailed { error } => {
+                write!(
+                    f,
+                    "the database operation failed while attempting to find the header: {error}"
+                )
+            }
+            FetchBlockError::RecvError => write!(
+                f,
+                "the channel to the client was likely closed by the node and dropped from memory."
+            ),
+            FetchBlockError::UnknownHash => {
+                write!(f, "the hash is not a member of the chain of most work.")
+            }
+        }
+    }
+}
+
+impl_sourceless_error!(FetchBlockError);

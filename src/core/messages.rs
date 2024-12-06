@@ -11,7 +11,10 @@ use crate::{
     TxBroadcast,
 };
 
-use super::{error::FetchHeaderError, node::NodeState};
+use super::{
+    error::{FetchBlockError, FetchHeaderError},
+    node::NodeState,
+};
 
 /// Messages receivable by a running node.
 #[derive(Debug, Clone)]
@@ -143,7 +146,7 @@ pub(crate) enum ClientMessage {
     ContinueDownload,
     /// Explicitly request a block from the node.
     #[cfg(feature = "filter-control")]
-    GetBlock(BlockHash),
+    GetBlock(BlockRequest),
     /// Set a new connection timeout.
     SetDuration(Duration),
     /// Add another known peer to connect to.
@@ -163,6 +166,22 @@ pub(crate) struct HeaderRequest {
 impl HeaderRequest {
     pub(crate) fn new(oneshot: HeaderSender, height: u32) -> Self {
         Self { oneshot, height }
+    }
+}
+
+pub(crate) type BlockSender = tokio::sync::oneshot::Sender<Result<IndexedBlock, FetchBlockError>>;
+
+#[cfg(feature = "filter-control")]
+#[derive(Debug)]
+pub(crate) struct BlockRequest {
+    pub(crate) oneshot: BlockSender,
+    pub(crate) hash: BlockHash,
+}
+
+#[cfg(feature = "filter-control")]
+impl BlockRequest {
+    pub(crate) fn new(oneshot: BlockSender, hash: BlockHash) -> Self {
+        Self { oneshot, hash }
     }
 }
 

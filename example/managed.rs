@@ -4,12 +4,13 @@
 
 use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, BlockHash, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
 const NETWORK: Network = Network::Signet;
-const RECOVERY_HEIGHT: u32 = 170_000;
+const RECOVERY_HEIGHT: u32 = 201_000;
+const RECOVERY_HASH: &str = "0000002238d05b522875f9edc4c9f418dd89ccfde7e4c305e8448a87a5dc71b7";
 const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
 
 #[tokio::main]
@@ -18,7 +19,8 @@ async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
     // Use a predefined checkpoint
-    let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
+    let checkpoint =
+        HeaderCheckpoint::new(RECOVERY_HEIGHT, BlockHash::from_str(RECOVERY_HASH).unwrap());
     // Add Bitcoin scripts to scan the blockchain for
     let address = Address::from_str(ADDR)
         .unwrap()
@@ -61,11 +63,12 @@ async fn main() {
                     tracing::info!("Connected to all required peers");
                 }
                 NodeMessage::IndexedFilter(mut filter) => {
-                    let height = filter.height();
-                    tracing::info!("Checking filter {}", height);
                     if filter.contains_any(&addresses).await {
-                        let hash = filter.block_hash();
+                        let hash = *filter.block_hash();
                         tracing::info!("Found script at {}!", hash);
+                        let indexed_block = client.request_block(hash).await.unwrap();
+                        let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
+                        tracing::info!("Coinbase transaction ID: {}", coinbase);
                         break;
                     }
                 }

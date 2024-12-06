@@ -1,6 +1,10 @@
-use std::{collections::HashSet, path::PathBuf, time::Duration};
+#[cfg(not(feature = "filter-control"))]
+use std::collections::HashSet;
+use std::{path::PathBuf, time::Duration};
 
-use bitcoin::{Network, ScriptBuf};
+use bitcoin::Network;
+#[cfg(not(feature = "filter-control"))]
+use bitcoin::ScriptBuf;
 
 use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
 #[cfg(feature = "database")]
