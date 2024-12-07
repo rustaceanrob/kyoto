@@ -203,12 +203,8 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            pub async fn get_header(
-                &self,
-                height: u32,
-            ) -> Result<Option<Header>, FetchHeaderError> {
-                let (tx, rx) =
-                    tokio::sync::oneshot::channel::<Result<Option<Header>, FetchHeaderError>>();
+            pub async fn get_header(&self, height: u32) -> Result<Header, FetchHeaderError> {
+                let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
                 let message = HeaderRequest::new(tx, height);
                 self.ntx
                     .send(ClientMessage::GetHeader(message))
@@ -227,12 +223,8 @@ macro_rules! impl_core_client {
             /// # Errors
             ///
             /// If the node has stopped running.
-            pub fn get_header_blocking(
-                &self,
-                height: u32,
-            ) -> Result<Option<Header>, FetchHeaderError> {
-                let (tx, rx) =
-                    tokio::sync::oneshot::channel::<Result<Option<Header>, FetchHeaderError>>();
+            pub fn get_header_blocking(&self, height: u32) -> Result<Header, FetchHeaderError> {
+                let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
                 let message = HeaderRequest::new(tx, height);
                 self.ntx
                     .blocking_send(ClientMessage::GetHeader(message))

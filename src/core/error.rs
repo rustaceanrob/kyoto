@@ -132,6 +132,8 @@ pub enum FetchHeaderError {
     },
     /// The channel to the client was likely closed by the node and dropped from memory.
     RecvError,
+    /// The header at the requested height does not yet exist.
+    UnknownHeight,
 }
 
 impl core::fmt::Display for FetchHeaderError {
@@ -150,6 +152,9 @@ impl core::fmt::Display for FetchHeaderError {
                 f,
                 "the channel to the client was likely closed by the node and dropped from memory."
             ),
+            FetchHeaderError::UnknownHeight => {
+                write!(f, "the header at the requested height does not yet exist.")
+            }
         }
     }
 }
