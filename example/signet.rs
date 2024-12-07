@@ -85,7 +85,7 @@ async fn main() {
                     tracing::info!("Synced chain up to block {}", update.tip.height);
                     tracing::info!("Chain tip: {}", update.tip.hash);
                     let recent = update.recent_history;
-                    let header = client.get_header(update.tip.height).await.unwrap().unwrap();
+                    let header = client.get_header(update.tip.height).await.unwrap();
                     assert_eq!(header.block_hash(), update.tip.hash);
                     tracing::info!("Recent history:");
                     for (height, hash) in recent {

@@ -155,7 +155,7 @@ pub(crate) enum ClientMessage {
     GetHeader(HeaderRequest),
 }
 
-type HeaderSender = tokio::sync::oneshot::Sender<Result<Option<Header>, FetchHeaderError>>;
+type HeaderSender = tokio::sync::oneshot::Sender<Result<Header, FetchHeaderError>>;
 
 #[derive(Debug)]
 pub(crate) struct HeaderRequest {
