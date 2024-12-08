@@ -136,6 +136,21 @@ impl NodeBuilder {
         self
     }
 
+    /// Add a starting height for filters, only height is specified (no block hash).
+    /// This works in conjunction with `anchor_checkpoint`:
+    /// if `anchor_checkpoint` is set, that will also be used as starting point for filters, and
+    /// if `filter_startpoint` is set, the closest earlier known checkpoint will be used as anchor checkpoint.
+    pub fn filter_startpoint(mut self, start_height: u32) -> Self {
+        self.config.filter_startpoint = Some(start_height);
+        // This also implies a default checkpoint (if not yet set)
+        if self.config.header_checkpoint.is_none() {
+            let checkpoint =
+                HeaderCheckpoint::closest_checkpoint_below_height(start_height, self.network);
+            return self.anchor_checkpoint(checkpoint);
+        }
+        self
+    }
+
     /// Set the desired communication channel. Either directly over TCP or over the Tor network.
     pub fn set_connection_type(mut self, connection_type: ConnectionType) -> Self {
         self.config.connection_type = connection_type;
