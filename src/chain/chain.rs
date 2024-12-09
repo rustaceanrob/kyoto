@@ -67,6 +67,7 @@ impl<H: HeaderStore> Chain<H> {
         network: Network,
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
+        filter_startpoint_opt: Option<u32>,
         checkpoints: HeaderCheckpoints,
         dialog: Dialog,
         db: H,
@@ -74,7 +75,9 @@ impl<H: HeaderStore> Chain<H> {
     ) -> Self {
         let header_chain = HeaderChain::new(anchor);
         let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
-        let filter_chain = FilterChain::new(anchor);
+        // Use filter startpoint, or the checkpoint height
+        let filter_anchor = filter_startpoint_opt.unwrap_or(anchor.height);
+        let filter_chain = FilterChain::new(filter_anchor);
         Chain {
             header_chain,
             checkpoints,
@@ -614,7 +617,7 @@ impl<H: HeaderStore> Chain<H> {
                     self.header_chain = HeaderChain::new(older_anchor);
                     self.cf_header_chain =
                         CFHeaderChain::new(older_anchor, self.cf_header_chain.quorum_required());
-                    self.filter_chain = FilterChain::new(older_anchor);
+                    self.filter_chain = FilterChain::new(older_anchor.height);
                 }
             }
             None => return Err(HeaderSyncError::FloatingHeaders),
@@ -944,6 +947,7 @@ mod tests {
             bitcoin::Network::Regtest,
             HashSet::new(),
             anchor,
+            None,
             checkpoints,
             Dialog::new(sender),
             (),
@@ -959,6 +963,7 @@ mod tests {
             bitcoin::Network::Regtest,
             HashSet::new(),
             anchor,
+            None,
             checkpoints,
             Dialog::new(sender),
             (),

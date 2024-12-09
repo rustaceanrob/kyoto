@@ -53,12 +53,8 @@ let (node, client) = builder
     .add_peers(vec![TrustedPeer::from_ip(peer_1), TrustedPeer::from_ip(peer_1)])
     // The Bitcoin scripts to monitor
     .add_scripts(addresses)
-    // Only scan blocks strictly after an anchor checkpoint
-    .anchor_checkpoint(HeaderCheckpoint::new(
-        180_000,
-        BlockHash::from_str("0000000870f15246ba23c16e370a7ffb1fc8a3dcf8cb4492882ed4b0e3d4cd26")
-            .unwrap(),
-    ))
+    // Only scan blocks after a block height
+    .filter_startpoint(180_000)
     // The number of connections we would like to maintain
     .num_required_peers(2)
     // Create the node and client
