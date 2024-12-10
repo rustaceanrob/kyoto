@@ -655,12 +655,12 @@ impl<H: HeaderStore> Chain<H> {
         // Check for any obvious faults
         self.audit_cf_headers(&batch).await?;
         // We already have a message like this. Verify they are the same
-        if self.cf_header_chain.has_queue() {
-            Ok(self.cf_header_chain.verify(&mut batch).await)
-        } else {
-            // Associate the block hashes with the filter hashes and add them to the queue
-            let queue = self.construct_cf_header_queue(&mut batch).await?;
-            Ok(self.cf_header_chain.set_queue(queue).await)
+        match self.cf_header_chain.merged_queue.take() {
+            Some(queue) => Ok(self.cf_header_chain.verify(&mut batch, queue).await),
+            None => {
+                let queue = self.construct_cf_header_queue(&mut batch).await?;
+                Ok(self.cf_header_chain.set_queue(queue).await)
+            }
         }
     }
 

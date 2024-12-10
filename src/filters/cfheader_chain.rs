@@ -52,14 +52,14 @@ impl QueuedCFHeader {
     }
 }
 
-type Queue = Option<Vec<QueuedCFHeader>>;
+type Queue = Vec<QueuedCFHeader>;
 
 #[derive(Debug)]
 pub(crate) struct CFHeaderChain {
+    pub(crate) merged_queue: Option<Queue>,
     anchor_checkpoint: HeaderCheckpoint,
     // We only really care about this relationship
     hash_chain: HashMap<BlockHash, FilterHash>,
-    merged_queue: Queue,
     prev_stophash_request: Option<BlockHash>,
     prev_header: Option<FilterHeader>,
     quorum_required: usize,
@@ -82,18 +82,18 @@ impl CFHeaderChain {
 
     // Set a reference point for the block hashes and associated filter hash.
     pub(crate) async fn set_queue(&mut self, cf_headers: Vec<QueuedCFHeader>) -> AppendAttempt {
-        self.merged_queue = Some(cf_headers);
         self.current_quorum += 1;
-        self.attempt_merge().await
+        self.attempt_merge(cf_headers).await
     }
 
     // Verify a batch of filter headers and hashes is what we expect.
-    pub(crate) async fn verify(&mut self, cf_headers: &mut CFHeaderBatch) -> AppendAttempt {
+    pub(crate) async fn verify(
+        &mut self,
+        cf_headers: &mut CFHeaderBatch,
+        queue: Vec<QueuedCFHeader>,
+    ) -> AppendAttempt {
         // The caller is responsible for knowing if there is a queue or not
-        for ((block_hash, header_one, hash_one), (header_two, hash_two)) in self
-            .merged_queue
-            .as_ref()
-            .unwrap()
+        for ((block_hash, header_one, hash_one), (header_two, hash_two)) in queue
             .iter()
             .map(|queue| queue.tuple())
             .zip(cf_headers.take_inner())
@@ -105,12 +105,11 @@ impl CFHeaderChain {
             }
         }
         self.current_quorum += 1;
-        self.attempt_merge().await
+        self.attempt_merge(queue).await
     }
 
     // If enough peers have responded, insert those block hashes and filter hashes into a map.
-    async fn attempt_merge(&mut self) -> AppendAttempt {
-        let queue = self.merged_queue.as_ref().unwrap();
+    async fn attempt_merge(&mut self, queue: Vec<QueuedCFHeader>) -> AppendAttempt {
         if self.current_quorum.ge(&self.quorum_required) {
             for (block_hash, filter_hash) in queue.iter().map(|queue| queue.hash_tuple()) {
                 self.hash_chain.insert(block_hash, filter_hash);
@@ -121,6 +120,8 @@ impl CFHeaderChain {
             self.merged_queue = None;
             return AppendAttempt::Extended;
         }
+        // The merge was not successful and we need to reset the queue
+        self.merged_queue = Some(queue);
         AppendAttempt::AddedToQueue
     }
 
