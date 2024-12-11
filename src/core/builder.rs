@@ -21,6 +21,9 @@ use crate::{ConnectionType, PeerStoreSizeConfig, TrustedPeer};
 /// The default node returned from the [`NodeBuilder`](crate::core).
 pub type NodeDefault = Node<SqliteHeaderDb, SqlitePeerDb>;
 
+const MIN_PEERS: u8 = 1;
+const MAX_PEERS: u8 = 15;
+
 /// Build a [`Node`] in an additive way.
 ///
 /// # Examples
@@ -112,8 +115,9 @@ impl NodeBuilder {
     /// Add the minimum number of peer connections that should be maintained by the node.
     /// Adding more connections increases the node's anonymity, but requires waiting for more responses,
     /// higher bandwidth, and higher memory requirements. If none is provided, a single connection will be maintained.
+    /// The number of connections will be clamped to a range of 1 to 15.
     pub fn num_required_peers(mut self, num_peers: u8) -> Self {
-        self.config.required_peers = num_peers;
+        self.config.required_peers = num_peers.clamp(MIN_PEERS, MAX_PEERS);
         self
     }
 
