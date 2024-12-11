@@ -516,7 +516,9 @@ impl HeaderCheckpoint {
             Network::Regtest => Self::headers_from_const(REGTEST_HEADER_CP),
             _ => unreachable!(),
         };
-        let mut cp = *checkpoints.first().unwrap();
+        let mut cp = *checkpoints
+            .first()
+            .expect("at least one checkpoint exists for all networks");
         for checkpoint in checkpoints {
             if height.ge(&checkpoint.height) {
                 cp = checkpoint;
@@ -531,7 +533,10 @@ impl HeaderCheckpoint {
         headers
             .iter()
             .map(|(height, hash)| {
-                HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap())
+                HeaderCheckpoint::new(
+                    *height,
+                    BlockHash::from_str(hash).expect("checkpoint hash is hardcoded"),
+                )
             })
             .collect()
     }
@@ -557,10 +562,12 @@ impl HeaderCheckpoints {
         cp_list.iter().for_each(|(height, hash)| {
             checkpoints.push_back(HeaderCheckpoint {
                 height: *height,
-                hash: BlockHash::from_str(hash).unwrap(),
+                hash: BlockHash::from_str(hash).expect("checkpoint hash is hardcoded"),
             })
         });
-        let last = *checkpoints.back().unwrap();
+        let last = *checkpoints
+            .back()
+            .expect("at least one checkpoint exists for all networks");
         HeaderCheckpoints { checkpoints, last }
     }
 
