@@ -66,7 +66,7 @@ async fn main() {
                     if filter.contains_any(&addresses).await {
                         let hash = *filter.block_hash();
                         tracing::info!("Found script at {}!", hash);
-                        let indexed_block = client.request_block(hash).await.unwrap();
+                        let indexed_block = client.get_block(hash).await.unwrap();
                         let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
                         tracing::info!("Coinbase transaction ID: {}", coinbase);
                         break;

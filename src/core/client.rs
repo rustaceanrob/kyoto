@@ -11,7 +11,7 @@ use tokio::sync::mpsc::Sender;
 use crate::{IndexedBlock, TrustedPeer, TxBroadcast};
 
 #[cfg(feature = "filter-control")]
-use super::{error::FetchBlockError, messages::BlockRequest};
+use super::{error::FetchBlockError, messages::BlockRequest, BlockReceiver};
 use super::{
     error::{ClientError, FetchHeaderError},
     messages::{ClientMessage, HeaderRequest, NodeMessage, SyncUpdate},
@@ -241,7 +241,7 @@ macro_rules! impl_core_client {
             ///
             /// If the node has stopped running.
             #[cfg(feature = "filter-control")]
-            pub async fn request_block(
+            pub async fn get_block(
                 &self,
                 block_hash: BlockHash,
             ) -> Result<IndexedBlock, FetchBlockError> {
@@ -253,6 +253,27 @@ macro_rules! impl_core_client {
                     .await
                     .map_err(|_| FetchBlockError::SendError)?;
                 rx.await.map_err(|_| FetchBlockError::RecvError)?
+            }
+
+            /// Request a block be fetched and receive a [`tokio::sync::oneshot::Receiver`]
+            /// to await the resulting block.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            #[cfg(feature = "filter-control")]
+            pub async fn request_block(
+                &self,
+                block_hash: BlockHash,
+            ) -> Result<BlockReceiver, FetchBlockError> {
+                let (tx, rx) =
+                    tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
+                let message = BlockRequest::new(tx, block_hash);
+                self.ntx
+                    .send(ClientMessage::GetBlock(message))
+                    .await
+                    .map_err(|_| FetchBlockError::SendError)?;
+                Ok(rx)
             }
 
             /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
