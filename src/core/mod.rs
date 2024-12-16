@@ -27,6 +27,14 @@ pub mod messages;
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
 mod peer_map;
+#[cfg(feature = "filter-control")]
+use crate::IndexedBlock;
+#[cfg(feature = "filter-control")]
+use error::FetchBlockError;
+
+/// Receive an [`IndexedBlock`] from a request.
+#[cfg(feature = "filter-control")]
+pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>;
 
 const THIRTY_MINS: u64 = 60 * 30;
 
