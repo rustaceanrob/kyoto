@@ -3,6 +3,7 @@ use bitcoin::block::Header;
 use bitcoin::BlockHash;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
+use bitcoin::Transaction;
 use std::time::Duration;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver;
@@ -145,6 +146,19 @@ macro_rules! impl_core_client {
             pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
                 self.ntx
                     .send(ClientMessage::Broadcast(tx))
+                    .await
+                    .map_err(|_| ClientError::SendError)
+            }
+
+            /// Broadcast a new transaction to the network to a random peer.
+            ///
+            /// # Errors
+            ///
+            /// If the node has stopped running.
+            pub async fn broadcast_random(&self, tx: Transaction) -> Result<(), ClientError> {
+                let tx_broadcast = TxBroadcast::random_broadcast(tx);
+                self.ntx
+                    .send(ClientMessage::Broadcast(tx_broadcast))
                     .await
                     .map_err(|_| ClientError::SendError)
             }
