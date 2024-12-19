@@ -529,6 +529,24 @@ impl HeaderCheckpoint {
         cp
     }
 
+    /// Get the most recent header checkpoint for a given network.
+    /// For instance, if the current height of the network is 800,400.
+    /// The most recent checkpoint is height 800,000. Useful for scanning
+    /// scripts that are known to be new.
+    pub fn most_recent(network: Network) -> Self {
+        let checkpoints: Vec<HeaderCheckpoint> = match network {
+            Network::Bitcoin => Self::headers_from_const(MAINNET_HEADER_CP),
+            Network::Testnet => panic!("unimplemented network"),
+            Network::Testnet4 => Self::headers_from_const(TESTNET4_HEADER_CP),
+            Network::Signet => Self::headers_from_const(SIGNET_HEADER_CP),
+            Network::Regtest => Self::headers_from_const(REGTEST_HEADER_CP),
+            _ => unreachable!(),
+        };
+        *checkpoints
+            .last()
+            .expect("at least one checkpoint exists for all networks")
+    }
+
     fn headers_from_const(headers: &[(u32, &str)]) -> Vec<HeaderCheckpoint> {
         headers
             .iter()
@@ -651,5 +669,8 @@ mod tests {
             BlockHash::from_str("000000000000000000011d55599ed27d7efca05f5849b755319c89eb2cffbc1f")
                 .unwrap()
         );
+
+        let checkpoint = HeaderCheckpoint::most_recent(Network::Signet);
+        assert!(checkpoint.height > 200_000);
     }
 }
