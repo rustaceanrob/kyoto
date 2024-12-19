@@ -63,7 +63,7 @@ async fn main() {
                     tracing::info!("Connected to all required peers");
                 }
                 NodeMessage::IndexedFilter(mut filter) => {
-                    if filter.contains_any(&addresses).await {
+                    if filter.contains_any(&addresses) {
                         let hash = *filter.block_hash();
                         tracing::info!("Found script at {}!", hash);
                         let indexed_block = client.get_block(hash).await.unwrap();

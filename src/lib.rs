@@ -205,10 +205,9 @@ impl IndexedFilter {
     }
 
     /// Does the filter contain a positive match for any of the provided scripts
-    pub async fn contains_any(&mut self, scripts: &HashSet<ScriptBuf>) -> bool {
+    pub fn contains_any(&mut self, scripts: &HashSet<ScriptBuf>) -> bool {
         self.filter
             .contains_any(scripts)
-            .await
             .expect("vec reader is infallible")
     }
 }

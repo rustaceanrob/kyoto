@@ -768,7 +768,6 @@ impl<H: HeaderStore> Chain<H> {
         if !self.block_queue.contains(&filter_message.block_hash)
             && filter
                 .contains_any(&self.scripts)
-                .await
                 .map_err(CFilterSyncError::Filter)?
         {
             // Add to the block queue
