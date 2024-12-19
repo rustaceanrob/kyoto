@@ -42,10 +42,7 @@ impl Filter {
         &self.block_hash
     }
 
-    pub async fn contains_any(
-        &mut self,
-        scripts: &HashSet<ScriptBuf>,
-    ) -> Result<bool, FilterError> {
+    pub fn contains_any(&mut self, scripts: &HashSet<ScriptBuf>) -> Result<bool, FilterError> {
         self.block_filter
             .match_any(
                 &self.block_hash,
