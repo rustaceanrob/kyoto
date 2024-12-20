@@ -16,9 +16,9 @@ use super::{
     node::NodeState,
 };
 
-/// Messages receivable by a running node.
+/// Informational messages emitted by a node
 #[derive(Debug, Clone)]
-pub enum NodeMessage {
+pub enum Log {
     /// Human readable dialog of what the node is currently doing.
     Dialog(String),
     /// A warning that may effect the function of the node.
@@ -27,20 +27,25 @@ pub enum NodeMessage {
     StateChange(NodeState),
     /// The node is connected to all required peers.
     ConnectionsMet,
+    /// The progress of the node during the block filter download process.
+    Progress(Progress),
+    /// A transaction was sent to one or more connected peers.
+    /// This does not guarentee the transaction will be relayed or accepted by the peers,
+    /// only that the message was sent over the wire.
+    TxSent(Txid),
+}
+
+/// Data and structures useful for a consumer, such as a wallet.
+#[derive(Debug, Clone)]
+pub enum Event {
     /// A relevant [`Block`](crate) based on the user provided scripts.
     /// Note that the block may not contain any transactions contained in the script set.
     /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
     /// The node is fully synced, having scanned the requested range.
     Synced(SyncUpdate),
-    /// The progress of the node during the block filter download process.
-    Progress(Progress),
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
-    /// A transaction was sent to one or more connected peers.
-    /// This does not guarentee the transaction will be relayed or accepted by the peers,
-    /// only that the message was sent over the wire.
-    TxSent(Txid),
     /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
     TxBroadcastFailure(FailurePayload),
     /// A connection has a minimum transaction fee requirement to enter its mempool. For proper transaction propagation,

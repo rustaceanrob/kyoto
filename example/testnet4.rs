@@ -1,8 +1,7 @@
 //! Usual sync on Testnet.
 
-use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{Address, Network, PeerStoreSizeConfig, TrustedPeer};
+use kyoto::{Address, Client, Event, Log, Network, PeerStoreSizeConfig, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
@@ -50,29 +49,44 @@ async fn main() {
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
-    let (sender, mut receiver) = client.split();
+    let Client {
+        sender,
+        mut log_rx,
+        mut event_rx,
+    } = client;
     // Continually listen for events until the node is synced to its peers.
     loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{d}"),
-                NodeMessage::Warning(e) => tracing::warn!("{e}"),
-                NodeMessage::Block(b) => drop(b),
-                NodeMessage::BlocksDisconnected(r) => {
-                    for dc in r {
-                        let warning = format!("Block disconnected {}", dc.height);
-                        tracing::warn!(warning);
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    match event {
+                        Event::Synced(update) => {
+                            tracing::info!("Synced chain up to block {}",update.tip().height);
+                            tracing::info!("Chain tip: {}",update.tip().hash);
+                            break;
+                        },
+                        Event::Block(indexed_block) => {
+                            let hash = indexed_block.block.block_hash();
+                            tracing::info!("Received block: {}", hash);
+                        },
+                        Event::BlocksDisconnected(_) => {
+                            tracing::warn!("Some blocks were reorganized")
+                        },
+                        Event::FeeFilter(fee_rate) => tracing::info!("Minimum broadcast fee: {fee_rate}"),
+                        _ => (),
                     }
                 }
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip.height);
-                    tracing::info!("Chain tip: {}", update.tip.hash);
-                    break;
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d)=> tracing::info!("{d}"),
+                        Log::Warning(warning)=> tracing::warn!("{warning}"),
+                        Log::StateChange(node_state) => tracing::info!("{node_state}"),
+                        Log::ConnectionsMet => tracing::info!("All required connections met"),
+                        _ => (),
+                    }
                 }
-                NodeMessage::ConnectionsMet => {
-                    tracing::info!("Connected to all required peers");
-                }
-                _ => (),
             }
         }
     }

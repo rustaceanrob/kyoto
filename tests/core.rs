@@ -12,12 +12,12 @@ use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
     core::{
         client::{Client, Receiver},
-        messages::NodeMessage,
         node::Node,
     },
     db::memory::peers::StatelessPeerStore,
-    BlockHash, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
+    BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
 };
+use tokio::sync::mpsc::UnboundedReceiver;
 
 // Start the bitcoin daemon either through an environment variable or by download
 fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(BitcoinD, SocketAddrV4)> {
@@ -113,17 +113,29 @@ async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) 
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
-async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut Receiver<NodeMessage>) {
-    while let Ok(message) = channel.recv().await {
-        match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::Synced(update) => {
-                assert_eq!(update.tip().hash, *best);
-                println!("Correct sync");
-                break;
+async fn sync_assert(
+    best: &bitcoin::BlockHash,
+    channel: &mut UnboundedReceiver<Event>,
+    log: &mut Receiver<Log>,
+) {
+    loop {
+        tokio::select! {
+            event = channel.recv() => {
+                if let Some(Event::Synced(update)) = event {
+                    assert_eq!(update.tip().hash, *best);
+                    println!("Correct sync");
+                    break;
+                };
             }
-            _ => {}
+            log = log.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d) => println!("{d}"),
+                        Log::Warning(warning) => println!("{warning}"),
+                        _ => (),
+                    }
+                }
+            }
         }
     }
 }
@@ -148,8 +160,12 @@ async fn test_reorg() {
     scripts.insert(other.into());
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
-    let (sender, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -157,16 +173,14 @@ async fn test_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the reorg was caught
-    while let Ok(message) = recv.recv().await {
+    while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 sender.shutdown().await.unwrap();
                 break;
@@ -174,7 +188,7 @@ async fn test_reorg() {
             _ => {}
         }
     }
-    client.shutdown().await.unwrap();
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -198,27 +212,29 @@ async fn test_mine_after_reorg() {
     scripts.insert(other.into());
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
-    let fetched_header = client.get_header(10).await.unwrap();
+    let fetched_header = sender.get_header(10).await.unwrap();
     assert_eq!(old_best, fetched_header.block_hash());
     invalidate_block(rpc, &best).await;
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the reorg was caught
-    while let Ok(message) = recv.recv().await {
+    while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 break;
             }
@@ -227,8 +243,8 @@ async fn test_mine_after_reorg() {
     }
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -251,8 +267,12 @@ async fn test_long_chain() {
     scripts.insert(other.into());
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
-    let (sender, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -277,9 +297,13 @@ async fn test_sql_reorg() {
     scripts.insert(other.into());
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -289,18 +313,20 @@ async fn test_sql_reorg() {
     // Spin up the node on a cold start
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: _,
+        event_rx: mut channel,
+    } = client;
     // Make sure the reorganization is caught after a cold start
-    while let Ok(message) = recv.recv().await {
+    while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -308,17 +334,21 @@ async fn test_sql_reorg() {
             _ => {}
         }
     }
-    client.shutdown().await.unwrap();
+    sender.shutdown().await.unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -342,9 +372,13 @@ async fn test_two_deep_reorg() {
     scripts.insert(other.into());
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_height = num_blocks(rpc);
     let old_best = best;
@@ -356,17 +390,19 @@ async fn test_two_deep_reorg() {
     // Make sure the reorganization is caught after a cold start
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
-    while let Ok(message) = recv.recv().await {
+    let Client {
+        sender,
+        log_rx: _,
+        event_rx: mut channel,
+    } = client;
+    while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 2);
                 assert_eq!(blocks.last().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.last().unwrap().height);
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -374,17 +410,21 @@ async fn test_two_deep_reorg() {
             _ => {}
         }
     }
-    client.shutdown().await.unwrap();
+    sender.shutdown().await.unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -407,9 +447,13 @@ async fn test_sql_stale_anchor() {
     scripts.insert(other.into());
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -425,18 +469,20 @@ async fn test_sql_stale_anchor() {
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: _,
+        event_rx: mut channel,
+    } = client;
     // Ensure SQL is able to catch the fork by loading in headers from the database
-    while let Ok(message) = recv.recv().await {
+    while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::BlocksDisconnected(blocks) => {
+            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
+            kyoto::core::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -444,7 +490,7 @@ async fn test_sql_stale_anchor() {
             _ => {}
         }
     }
-    client.shutdown().await.unwrap();
+    sender.shutdown().await.unwrap();
     // Don't do anything, but reload the node from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -458,10 +504,14 @@ async fn test_sql_stale_anchor() {
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     // Mine more blocks and reload from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -476,10 +526,14 @@ async fn test_sql_stale_anchor() {
     )
     .await;
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut recv).await;
-    client.shutdown().await.unwrap();
+    sync_assert(&best, &mut channel, &mut log).await;
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -511,28 +565,35 @@ async fn test_halting_works() {
         .build_with_databases((), ());
 
     tokio::task::spawn(async move { node.run().await });
-    let (_, mut recv) = client.split();
+    let Client {
+        sender,
+        log_rx: mut log,
+        event_rx: mut channel,
+    } = client;
     // Ensure SQL is able to catch the fork by loading in headers from the database
-    while let Ok(message) = recv.recv().await {
+    while let Some(message) = log.recv().await {
         match message {
-            kyoto::core::messages::NodeMessage::Dialog(d) => println!("{d}"),
-            kyoto::core::messages::NodeMessage::Warning(e) => println!("{e}"),
-            kyoto::core::messages::NodeMessage::StateChange(s) => {
-                if let kyoto::NodeState::FilterHeadersSynced = s {
+            Log::Dialog(d) => println!("{d}"),
+            Log::Warning(warning) => println!("{warning}"),
+            Log::StateChange(node_state) => {
+                if let NodeState::FilterHeadersSynced = node_state {
                     println!("Sleeping for one second...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                    client.continue_download().await.unwrap();
+                    sender.continue_download().await.unwrap();
+                    break;
                 }
             }
-            kyoto::core::messages::NodeMessage::Synced(update) => {
-                println!("Done");
-                assert_eq!(update.tip().hash, best);
-                break;
-            }
-            _ => {}
+            _ => (),
         }
     }
-    client.shutdown().await.unwrap();
+    while let Some(message) = channel.recv().await {
+        if let kyoto::core::messages::Event::Synced(update) = message {
+            println!("Done");
+            assert_eq!(update.tip().hash, best);
+            break;
+        }
+    }
+    sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -552,15 +613,24 @@ async fn test_signet_syncs() {
         .add_scripts(set)
         .build_with_databases(StatelessPeerStore::new(), ());
     tokio::task::spawn(async move { node.run().await });
-    async fn print_and_sync(client: Client) {
-        let mut receiver = client.receiver();
+    async fn print_and_sync(mut client: Client) {
         loop {
-            if let Ok(message) = receiver.recv().await {
-                match message {
-                    NodeMessage::Dialog(d) => println!("{d}"),
-                    NodeMessage::Warning(w) => println!("{w}"),
-                    NodeMessage::Synced(_) => break,
-                    _ => (),
+            tokio::select! {
+                event = client.event_rx.recv() => {
+                    if let Some(Event::Synced(update)) = event {
+                        println!("Synced chain up to block {}", update.tip().height);
+                        println!("Chain tip: {}", update.tip().hash);
+                        break;
+                    }
+                }
+                log = client.log_rx.recv() => {
+                    if let Some(log) = log {
+                        match log {
+                            Log::Dialog(d) => println!("{d}"),
+                            Log::Warning(warning) => tracing::warn!("{warning}"),
+                            _ => (),
+                        }
+                    }
                 }
             }
         }

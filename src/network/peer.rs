@@ -21,7 +21,7 @@ use crate::{
         PeerTimeoutConfig,
     },
     network::outbound_messages::V1OutboundMessage,
-    NodeMessage,
+    Event,
 };
 
 use super::{
@@ -297,7 +297,7 @@ impl Peer {
             }
             PeerMessage::Pong(_) => Ok(()),
             PeerMessage::FeeFilter(fee) => {
-                self.dialog.send_data(NodeMessage::FeeFilter(fee)).await;
+                self.dialog.send_event(Event::FeeFilter(fee)).await;
                 Ok(())
             }
             PeerMessage::Reject(payload) => {

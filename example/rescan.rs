@@ -2,9 +2,8 @@
 //! the filters for inclusions of these scripts and download the relevant
 //! blocks.
 
-use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{Address, Network};
+use kyoto::{Address, Client, Event, Log, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -43,19 +42,29 @@ async fn main() {
     tokio::task::spawn(async move { node.run().await });
     tracing::info!("Running the node and waiting for a sync message. Please wait a minute!");
     // Split the client into components that send messages and listen to messages
-    let (sender, mut receiver) = client.split();
+    let Client {
+        sender,
+        mut log_rx,
+        mut event_rx,
+    } = client;
     // Sync with the single script added
     loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{}", d),
-                NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::Synced(update) => {
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(Event::Synced(update)) = event {
                     tracing::info!("Synced chain up to block {}", update.tip().height);
                     tracing::info!("Chain tip: {}", update.tip().hash);
                     break;
                 }
-                _ => (),
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d) => tracing::info!("{d}"),
+                        Log::Warning(warning) => tracing::warn!("{warning}"),
+                        _ => (),
+                    }
+                }
             }
         }
     }
@@ -70,16 +79,22 @@ async fn main() {
     sender.rescan().await.unwrap();
     tracing::info!("Starting rescan");
     loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{}", d),
-                NodeMessage::Warning(e) => tracing::warn!("{}", e),
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip.height);
-                    tracing::info!("Chain tip: {}", update.tip.hash);
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(Event::Synced(update)) = event {
+                    tracing::info!("Synced chain up to block {}", update.tip().height);
+                    tracing::info!("Chain tip: {}", update.tip().hash);
                     break;
                 }
-                _ => (),
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d) => tracing::info!("{d}"),
+                        Log::Warning(warning) => tracing::warn!("{warning}"),
+                        _ => (),
+                    }
+                }
             }
         }
     }

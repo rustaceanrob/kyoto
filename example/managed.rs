@@ -2,8 +2,8 @@
 //! many possible scripts to check. Enable the `filter-control` feature to check filters
 //! manually in your program.
 
-use kyoto::core::messages::NodeMessage;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
+use kyoto::core::messages::{Event, Log};
+use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder, Client};
 use kyoto::{AddrV2, Address, BlockHash, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
@@ -51,28 +51,43 @@ async fn main() {
 
     tokio::task::spawn(async move { node.run().await });
 
-    let (sender, mut receiver) = client.split();
+    let Client {
+        sender,
+        mut log_rx,
+        mut event_rx,
+    } = client;
+
     // Continually listen for events until the node is synced to its peers.
     loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{d}"),
-                NodeMessage::Warning(e) => tracing::warn!("{e}"),
-                NodeMessage::Synced(_) => break,
-                NodeMessage::ConnectionsMet => {
-                    tracing::info!("Connected to all required peers");
-                }
-                NodeMessage::IndexedFilter(mut filter) => {
-                    if filter.contains_any(&addresses) {
-                        let hash = *filter.block_hash();
-                        tracing::info!("Found script at {}!", hash);
-                        let indexed_block = client.get_block(hash).await.unwrap();
-                        let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
-                        tracing::info!("Coinbase transaction ID: {}", coinbase);
-                        break;
+        tokio::select! {
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d) => tracing::info!("{d}"),
+                        Log::Warning(e) => tracing::warn!("{e}"),
+                        _ => (),
                     }
                 }
-                _ => (),
+            }
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    match event {
+                        Event::IndexedFilter(mut filter) => {
+                            let height = filter.height();
+                            tracing::info!("Checking filter: {height}");
+                            if filter.contains_any(&addresses) {
+                                let hash = *filter.block_hash();
+                                tracing::info!("Found script at {}!", hash);
+                                let indexed_block = sender.get_block(hash).await.unwrap();
+                                let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
+                                tracing::info!("Coinbase transaction ID: {}", coinbase);
+                                break;
+                            }
+                        },
+                        Event::Synced(_) => break,
+                        _ => (),
+                    }
+                }
             }
         }
     }

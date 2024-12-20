@@ -1,8 +1,7 @@
 //! Usual sync on Signet.
 
-use kyoto::core::messages::NodeMessage;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{AddrV2, Address, Network, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, Client, Event, Log, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -57,47 +56,44 @@ async fn main() {
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
-    let (sender, mut receiver) = client.split();
+    let Client {
+        sender,
+        mut log_rx,
+        mut event_rx,
+    } = client;
     // Continually listen for events until the node is synced to its peers.
     loop {
-        if let Ok(message) = receiver.recv().await {
-            match message {
-                NodeMessage::Dialog(d) => tracing::info!("{d}"),
-                NodeMessage::Warning(e) => tracing::warn!("{e}"),
-                NodeMessage::StateChange(s) => tracing::info!("State update: {s}"),
-                NodeMessage::Block(b) => {
-                    let block = b.block.block_hash();
-                    tracing::info!("Received block: {block}");
-                }
-                NodeMessage::BlocksDisconnected(r) => {
-                    let _ = r;
-                }
-                NodeMessage::TxSent(t) => {
-                    tracing::info!("Transaction sent. TXID: {t}");
-                }
-                NodeMessage::TxBroadcastFailure(t) => {
-                    tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
-                }
-                NodeMessage::FeeFilter(fee) => {
-                    tracing::info!("Fee filter received: {fee} kwu");
-                }
-                NodeMessage::Synced(update) => {
-                    tracing::info!("Synced chain up to block {}", update.tip.height);
-                    tracing::info!("Chain tip: {}", update.tip.hash);
-                    let recent = update.recent_history;
-                    let header = client.get_header(update.tip.height).await.unwrap();
-                    assert_eq!(header.block_hash(), update.tip.hash);
-                    tracing::info!("Recent history:");
-                    for (height, hash) in recent {
-                        tracing::info!("Height: {}", height);
-                        tracing::info!("Hash: {}", hash.block_hash());
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    match event {
+                        Event::Synced(update) => {
+                            tracing::info!("Synced chain up to block {}",update.tip().height);
+                            tracing::info!("Chain tip: {}",update.tip().hash);
+                            break;
+                        },
+                        Event::Block(indexed_block) => {
+                            let hash = indexed_block.block.block_hash();
+                            tracing::info!("Received block: {}", hash);
+                        },
+                        Event::BlocksDisconnected(_) => {
+                            tracing::warn!("Some blocks were reorganized")
+                        },
+                        Event::FeeFilter(fee_rate) => tracing::info!("Minimum broadcast fee: {fee_rate}"),
+                        _ => (),
                     }
-                    break;
                 }
-                NodeMessage::ConnectionsMet => {
-                    tracing::info!("Connected to all required peers");
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d)=> tracing::info!("{d}"),
+                        Log::Warning(warning)=> tracing::warn!("{warning}"),
+                        Log::StateChange(node_state) => tracing::info!("{node_state}"),
+                        Log::ConnectionsMet => tracing::info!("All required connections met"),
+                        _ => (),
+                    }
                 }
-                _ => (),
             }
         }
     }

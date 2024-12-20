@@ -10,7 +10,7 @@
 //! ```no_run
 //! use std::str::FromStr;
 //! use std::collections::HashSet;
-//! use kyoto::{NodeBuilder, NodeMessage, Address, Network, HeaderCheckpoint, BlockHash};
+//! use kyoto::{NodeBuilder, Log, Event, Client, Address, Network, HeaderCheckpoint, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -42,17 +42,29 @@
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
-//!     let (sender, mut receiver) = client.split();
+//!     let Client { sender, mut log_rx, mut event_rx } = client;
 //!     // Sync with the single script added
-//!     if let Ok(message) = receiver.recv().await {
-//!         match message {
-//!             NodeMessage::Dialog(d) => tracing::info!("{}", d),
-//!             NodeMessage::Warning(e) => tracing::warn!("{}", e),
-//!             NodeMessage::Synced(update) => {
-//!                 tracing::info!("Synced chain up to block {}", update.tip().height);
-//!                 tracing::info!("Chain tip: {}", update.tip().hash);
+//!     loop {
+//!         tokio::select! {
+//!             log = log_rx.recv() => {
+//!                 if let Some(log) = log {
+//!                     match log {
+//!                         Log::Dialog(d) => tracing::info!("{d}"),
+//!                         _ => (),
+//!                     }
+//!                 }
 //!             }
-//!             _ => (),
+//!             event = event_rx.recv() => {
+//!                 if let Some(event) = event {
+//!                     match event {
+//!                         Event::Synced(_) => {
+//!                             tracing::info!("Sync complete!");
+//!                             break;
+//!                         },
+//!                         _ => (),
+//!                     }
+//!                 }
+//!             }
 //!         }
 //!     }
 //!     sender.shutdown().await;
@@ -115,9 +127,9 @@ pub use tokio::sync::broadcast::Receiver;
 #[doc(inline)]
 pub use {
     crate::core::builder::NodeBuilder,
-    crate::core::client::{Client, ClientSender},
+    crate::core::client::{Client, EventSender},
     crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{FailurePayload, NodeMessage, Progress, SyncUpdate, Warning},
+    crate::core::messages::{Event, FailurePayload, Log, Progress, SyncUpdate, Warning},
     crate::core::node::{Node, NodeState},
 };
 

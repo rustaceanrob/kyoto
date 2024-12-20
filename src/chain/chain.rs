@@ -28,7 +28,7 @@ use crate::{
     core::{
         dialog::Dialog,
         error::HeaderPersistenceError,
-        messages::{NodeMessage, Warning},
+        messages::{Event, Warning},
     },
     db::traits::HeaderStore,
     filters::{
@@ -466,7 +466,7 @@ impl<H: HeaderStore> Chain<H> {
                 self.filter_chain.remove(removed_hashes);
                 self.block_queue.remove(removed_hashes);
                 self.dialog
-                    .send_data(NodeMessage::BlocksDisconnected(reorged))
+                    .send_event(Event::BlocksDisconnected(reorged))
                     .await;
                 self.flush_over_height(stem).await;
                 Ok(())
@@ -760,7 +760,7 @@ impl<H: HeaderStore> Chain<H> {
                 .ok_or(CFilterSyncError::UnknownFilterHash)?;
             let indexed_filter = IndexedFilter::new(height, filter);
             self.dialog
-                .send_data(NodeMessage::IndexedFilter(indexed_filter))
+                .send_event(Event::IndexedFilter(indexed_filter))
                 .await;
         }
 
@@ -857,7 +857,7 @@ impl<H: HeaderStore> Chain<H> {
             }
             None => {
                 self.dialog
-                    .send_data(NodeMessage::Block(IndexedBlock::new(height, block)))
+                    .send_event(Event::Block(IndexedBlock::new(height, block)))
                     .await;
             }
         }
@@ -929,14 +929,18 @@ mod tests {
             checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
             error::HeaderSyncError,
         },
-        core::{dialog::Dialog, messages::NodeMessage},
+        core::{
+            dialog::Dialog,
+            messages::{Event, Log},
+        },
         filters::cfheader_chain::AppendAttempt,
     };
 
     use super::Chain;
 
     fn new_regtest(anchor: HeaderCheckpoint) -> Chain<()> {
-        let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
+        let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
+        let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
         Chain::new(
@@ -944,14 +948,15 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(sender),
+            Dialog::new(log_tx, event_tx),
             (),
             1,
         )
     }
 
     fn new_regtest_two_peers(anchor: HeaderCheckpoint) -> Chain<()> {
-        let (sender, _) = tokio::sync::broadcast::channel::<NodeMessage>(1);
+        let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
+        let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
         Chain::new(
@@ -959,7 +964,7 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(sender),
+            Dialog::new(log_tx, event_tx),
             (),
             2,
         )
