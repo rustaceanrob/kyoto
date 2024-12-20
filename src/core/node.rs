@@ -14,7 +14,7 @@ use bitcoin::{
     },
     Block, BlockHash, Network, ScriptBuf,
 };
-use tokio::sync::{broadcast, mpsc::Receiver, Mutex, RwLock};
+use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
     sync::mpsc::{self},
@@ -42,7 +42,7 @@ use super::{
     config::NodeConfig,
     dialog::Dialog,
     error::NodeError,
-    messages::{ClientMessage, NodeMessage, SyncUpdate, Warning},
+    messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
     FilterSyncPolicy, LastBlockMonitor, PeerTimeoutConfig,
 };
 
@@ -98,11 +98,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         header_store: H,
     ) -> (Self, Client) {
         // Set up a communication channel between the node and client
-        let (ntx, _) = broadcast::channel::<NodeMessage>(32);
+        let (log_tx, log_rx) = mpsc::channel::<Log>(32);
+        let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
-        let client = Client::new(ntx.clone(), ctx);
+        let client = Client::new(log_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Dialog::new(ntx);
+        let dialog = Dialog::new(log_tx, event_tx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
@@ -274,7 +275,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
                                         .send_warning(Warning::TransactionRejected).await;
-                                    self.dialog.send_data(NodeMessage::TxBroadcastFailure(payload)).await;
+                                    self.dialog.send_event(Event::TxBroadcastFailure(payload)).await;
                                 }
                                 _ => continue,
                             }
@@ -408,12 +409,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     }
                 };
                 if did_broadcast {
-                    self.dialog.send_data(NodeMessage::TxSent(txid)).await;
+                    self.dialog.send_info(Log::TxSent(txid)).await;
                 } else {
                     self.dialog
-                        .send_data(NodeMessage::TxBroadcastFailure(FailurePayload::from_txid(
-                            txid,
-                        )))
+                        .send_event(Event::TxBroadcastFailure(FailurePayload::from_txid(txid)))
                         .await;
                 }
             }
@@ -429,7 +428,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 if header_chain.is_synced() {
                     header_chain.flush_to_disk().await;
                     self.dialog
-                        .send_data(NodeMessage::StateChange(NodeState::HeadersSynced))
+                        .send_info(Log::StateChange(NodeState::HeadersSynced))
                         .await;
                     *state = NodeState::HeadersSynced;
                 }
@@ -438,7 +437,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_cf_headers_synced() {
                     self.dialog
-                        .send_data(NodeMessage::StateChange(NodeState::FilterHeadersSynced))
+                        .send_info(Log::StateChange(NodeState::FilterHeadersSynced))
                         .await;
                     *state = NodeState::FilterHeadersSynced;
                 }
@@ -447,7 +446,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_filters_synced() {
                     self.dialog
-                        .send_data(NodeMessage::StateChange(NodeState::FiltersSynced))
+                        .send_info(Log::StateChange(NodeState::FiltersSynced))
                         .await;
                     *state = NodeState::FiltersSynced;
                 }
@@ -461,9 +460,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         header_chain.last_ten(),
                     );
                     self.dialog
-                        .send_data(NodeMessage::StateChange(NodeState::TransactionsSynced))
+                        .send_info(Log::StateChange(NodeState::TransactionsSynced))
                         .await;
-                    let _ = self.dialog.send_data(NodeMessage::Synced(update)).await;
+                    let _ = self.dialog.send_event(Event::Synced(update)).await;
                 }
             }
             NodeState::TransactionsSynced => {
@@ -555,7 +554,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         }
         // Inform the user we are connected to all required peers
         if peer_map.live().eq(&self.required_peers) {
-            self.dialog.send_data(NodeMessage::ConnectionsMet).await
+            self.dialog.send_info(Log::ConnectionsMet).await
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let next_headers = GetHeaderConfig {
@@ -742,7 +741,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             _ => {
                 if blocks.into_iter().any(|block| !chain.contains_hash(block)) {
                     self.dialog
-                        .send_data(NodeMessage::StateChange(NodeState::Behind))
+                        .send_info(Log::StateChange(NodeState::Behind))
                         .await;
                     *state = NodeState::Behind;
                     let next_headers = GetHeaderConfig {
@@ -774,7 +773,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             _ => {
                 chain.clear_filters().await;
                 self.dialog
-                    .send_data(NodeMessage::StateChange(NodeState::FilterHeadersSynced))
+                    .send_info(Log::StateChange(NodeState::FilterHeadersSynced))
                     .await;
                 *state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(
