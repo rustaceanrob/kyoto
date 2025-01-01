@@ -49,11 +49,10 @@ tor = ["arti-client", "tor-rtcompat"]
 filter-control = []
 
 [dev-dependencies]
-corepc-node = { version = "0.4.0", default-features = false, features = [
-    "27_0",
+corepc-node = { version = "0.5.0", default-features = false, features = [
+    "28_0",
 ] }
 hex = { version = "0.4.0" }
-serde_json = "1.0.115"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tempfile = "3"
