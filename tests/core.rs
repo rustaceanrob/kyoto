@@ -7,7 +7,8 @@ use std::{
 };
 
 use bitcoin::{address::NetworkChecked, ScriptBuf};
-use corepc_node::{anyhow, exe_path, BitcoinD};
+use corepc_node::serde_json;
+use corepc_node::{anyhow, exe_path};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
     core::{
@@ -20,7 +21,7 @@ use kyoto::{
 use tokio::sync::mpsc::UnboundedReceiver;
 
 // Start the bitcoin daemon either through an environment variable or by download
-fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(BitcoinD, SocketAddrV4)> {
+fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node, SocketAddrV4)> {
     let path = exe_path()?;
     let mut conf = corepc_node::Conf::default();
     conf.p2p = corepc_node::P2P::Yes;
@@ -36,7 +37,7 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(BitcoinD, SocketAd
     } else {
         conf.args.push("--v2transport=0");
     }
-    let bitcoind = BitcoinD::with_conf(path, &conf)?;
+    let bitcoind = corepc_node::Node::with_conf(path, &conf)?;
     let socket_addr = bitcoind.params.p2p_socket.unwrap();
     Ok((bitcoind, socket_addr))
 }
@@ -108,8 +109,8 @@ async fn mine_blocks(
 }
 
 async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) {
-    rpc.call::<()>("invalidateblock", &[serde_json::to_value(hash).unwrap()])
-        .unwrap();
+    let value = serde_json::to_value(hash).unwrap();
+    rpc.call::<()>("invalidateblock", &[value]).unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
