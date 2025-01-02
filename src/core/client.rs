@@ -74,6 +74,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has already stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn shutdown_blocking(&self) -> Result<(), ClientError> {
         self.ntx
             .blocking_send(ClientMessage::Shutdown)
@@ -119,6 +123,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn broadcast_tx_blocking(&self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .blocking_send(ClientMessage::Broadcast(tx))
@@ -145,6 +153,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     #[cfg(not(feature = "filter-control"))]
     pub fn add_script_blocking(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
         self.ntx
@@ -182,6 +194,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn get_header_blocking(&self, height: u32) -> Result<Header, FetchHeaderError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
         let message = HeaderRequest::new(tx, height);
