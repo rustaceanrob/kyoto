@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::block::{Header, Version};
 use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, params_from_iter, Connection, Result};
 use tokio::sync::Mutex;
 
 use crate::db::error::{SqlHeaderStoreError, SqlInitializationError};
@@ -34,6 +35,9 @@ const INITIAL_HEADER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     bits INTEGER NOT NULL,
     nonce INTEGER NOT NULL
 ) STRICT";
+
+const LOAD_QUERY_SELECT_PREFIX: &str = "SELECT * FROM headers ";
+const LOAD_QUERY_ORDERBY_SUFFIX: &str = "ORDER BY height";
 
 /// Header storage implementation with SQL Lite.
 #[derive(Debug)]
@@ -81,21 +85,47 @@ impl SqliteHeaderDb {
         Ok(())
     }
 
-    async fn load_after(
+    async fn load<'a>(
         &mut self,
-        anchor_height: u32,
+        range: impl RangeBounds<u32> + Send + Sync + 'a,
     ) -> Result<BTreeMap<u32, Header>, SqlHeaderStoreError> {
+        let mut param_list = Vec::new();
+        let mut stmt = LOAD_QUERY_SELECT_PREFIX.to_string();
+
+        match range.start_bound() {
+            Bound::Unbounded => {
+                stmt.push_str("WHERE height >= 0 ");
+            }
+            Bound::Included(h) => {
+                stmt.push_str("WHERE height >= ? ");
+                param_list.push(*h);
+            }
+            Bound::Excluded(h) => {
+                stmt.push_str("WHERE height > ? ");
+                param_list.push(*h);
+            }
+        };
+
+        match range.end_bound() {
+            Bound::Unbounded => (),
+            Bound::Included(h) => {
+                stmt.push_str("AND height <= ? ");
+                param_list.push(*h);
+            }
+            Bound::Excluded(h) => {
+                stmt.push_str("AND height < ? ");
+                param_list.push(*h);
+            }
+        };
+
+        stmt.push_str(LOAD_QUERY_ORDERBY_SUFFIX);
+
         let mut headers = BTreeMap::<u32, Header>::new();
-        let stmt = "SELECT * FROM headers ORDER BY height";
         let write_lock = self.conn.lock().await;
-        let mut query = write_lock.prepare(stmt)?;
-        let mut rows = query.query([])?;
+        let mut query = write_lock.prepare(&stmt)?;
+        let mut rows = query.query(params_from_iter(param_list.iter()))?;
         while let Some(row) = rows.next()? {
             let height: u32 = row.get(0)?;
-            // The anchor height should not be included in the chain, as the anchor is non-inclusive
-            if height.le(&anchor_height) {
-                continue;
-            }
             let hash: String = row.get(1)?;
             let version: i32 = row.get(2)?;
             let prev_hash: String = row.get(3)?;
@@ -287,11 +317,12 @@ impl SqliteHeaderDb {
 
 impl HeaderStore for SqliteHeaderDb {
     type Error = SqlHeaderStoreError;
-    fn load_after(
-        &mut self,
-        anchor_height: u32,
-    ) -> FutureResult<BTreeMap<u32, Header>, Self::Error> {
-        Box::pin(self.load_after(anchor_height))
+
+    fn load<'a>(
+        &'a mut self,
+        range: impl RangeBounds<u32> + Send + Sync + 'a,
+    ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error> {
+        Box::pin(self.load(range))
     }
 
     fn write<'a>(
@@ -350,7 +381,7 @@ mod tests {
         assert_eq!(get_hash_9, block_hash_9);
         let get_height_8 = db.height_of(&block_hash_8).await.unwrap().unwrap();
         assert_eq!(get_height_8, 8);
-        let load = db.load_after(7).await.unwrap();
+        let load = db.load(7..).await.unwrap();
         assert_eq!(map, load);
         let get_header_9 = db.header_at(9).await.unwrap().unwrap();
         assert_eq!(get_header_9, block_9);
@@ -402,7 +433,34 @@ mod tests {
         map.insert(9, block_9);
         map.insert(10, new_block_10);
         map.insert(11, block_11);
-        let load = db.load_after(7).await.unwrap();
+        let load = db.load(7..).await.unwrap();
+        assert_eq!(map, load);
+        drop(db);
+        binding.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_range_loads_properly() {
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
+        let mut db = SqliteHeaderDb::new(Network::Regtest, Some(path.into())).unwrap();
+        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
+        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
+        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert(8, block_8);
+        map.insert(9, block_9);
+        map.insert(10, block_10);
+        let w = db.write(&map).await;
+        assert!(w.is_ok());
+        let load = db.load(7..).await.unwrap();
+        assert_eq!(map, load);
+        let load = db.load(8..).await.unwrap();
+        assert_eq!(map, load);
+        let load = db.load(8..10).await.unwrap();
+        map.remove(&10);
+        assert_eq!(map, load);
+        let load = db.load(..10).await.unwrap();
         assert_eq!(map, load);
         drop(db);
         binding.close().unwrap();
