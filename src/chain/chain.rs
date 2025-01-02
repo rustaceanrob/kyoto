@@ -279,7 +279,7 @@ impl<H: HeaderStore> Chain<H> {
             .db
             .lock()
             .await
-            .load_after(self.height())
+            .load(self.height() + 1..)
             .await
             .map_err(HeaderPersistenceError::Database)?;
         if let Some(first) = loaded_headers.values().next() {

@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::ops::RangeBounds;
 use std::{collections::BTreeMap, convert::Infallible, fmt::Display};
 
 use bitcoin::{block::Header, BlockHash};
@@ -13,10 +14,10 @@ pub trait HeaderStore: Debug + Send + Sync {
     /// Errors that may occur within a [`HeaderStore`].
     type Error: Debug + Display;
     /// Load all headers with heights *strictly after* the specified anchor height.
-    fn load_after(
-        &mut self,
-        anchor_height: u32,
-    ) -> FutureResult<BTreeMap<u32, Header>, Self::Error>;
+    fn load<'a>(
+        &'a mut self,
+        range: impl RangeBounds<u32> + Send + Sync + 'a,
+    ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error>;
 
     /// Write an indexed map of block headers to the database, ignoring if they already exist.
     fn write<'a>(
@@ -47,14 +48,14 @@ pub trait HeaderStore: Debug + Send + Sync {
 /// This is a simple wrapper for the unit type, signifying that no headers will be stored between sessions.
 impl HeaderStore for () {
     type Error = Infallible;
-    fn load_after(
-        &mut self,
-        _anchor_height: u32,
-    ) -> FutureResult<BTreeMap<u32, Header>, Self::Error> {
-        async fn do_load_after() -> Result<BTreeMap<u32, Header>, Infallible> {
+    fn load<'a>(
+        &'a mut self,
+        _range: impl RangeBounds<u32> + Send + Sync + 'a,
+    ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error> {
+        async fn do_load() -> Result<BTreeMap<u32, Header>, Infallible> {
             Ok(BTreeMap::new())
         }
-        Box::pin(do_load_after())
+        Box::pin(do_load())
     }
 
     fn write<'a>(
