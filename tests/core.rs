@@ -274,6 +274,8 @@ async fn test_long_chain() {
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
+    let batch = sender.get_header_range(10_000..10_002).await.unwrap();
+    assert!(batch.is_empty());
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -304,6 +306,8 @@ async fn test_sql_reorg() {
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
+    let batch = sender.get_header_range(0..10).await.unwrap();
+    assert!(!batch.is_empty());
     sender.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
