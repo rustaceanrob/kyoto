@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
@@ -158,6 +158,8 @@ pub(crate) enum ClientMessage {
     AddPeer(TrustedPeer),
     /// Request a header from a specified height.
     GetHeader(HeaderRequest),
+    /// Request a range of headers.
+    GetHeaderBatch(BatchHeaderRequest),
 }
 
 type HeaderSender = tokio::sync::oneshot::Sender<Result<Header, FetchHeaderError>>;
@@ -171,6 +173,21 @@ pub(crate) struct HeaderRequest {
 impl HeaderRequest {
     pub(crate) fn new(oneshot: HeaderSender, height: u32) -> Self {
         Self { oneshot, height }
+    }
+}
+
+type BatchHeaderSender =
+    tokio::sync::oneshot::Sender<Result<BTreeMap<u32, Header>, FetchHeaderError>>;
+
+#[derive(Debug)]
+pub(crate) struct BatchHeaderRequest {
+    pub(crate) oneshot: BatchHeaderSender,
+    pub(crate) range: Range<u32>,
+}
+
+impl BatchHeaderRequest {
+    pub(crate) fn new(oneshot: BatchHeaderSender, range: Range<u32>) -> Self {
+        Self { oneshot, range }
     }
 }
 

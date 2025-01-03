@@ -1,6 +1,7 @@
 extern crate alloc;
 use std::{
     collections::{BTreeMap, HashSet},
+    ops::Range,
     sync::Arc,
 };
 
@@ -892,6 +893,23 @@ impl<H: HeaderStore> Chain<H> {
                 .await;
             self.block_queue.add(request)
         }
+    }
+
+    pub(crate) async fn fetch_header_range(
+        &self,
+        range: Range<u32>,
+    ) -> Result<BTreeMap<u32, Header>, HeaderPersistenceError<H::Error>> {
+        let mut db = self.db.lock().await;
+        let range_opt = db.load(range).await;
+        if range_opt.is_err() {
+            self.dialog
+                .send_warning(Warning::FailedPersistance {
+                    warning: "Unexpected error fetching a range of headers from the header store"
+                        .to_string(),
+                })
+                .await;
+        }
+        range_opt.map_err(HeaderPersistenceError::Database)
     }
 
     // Reset the compact filter queue because we received a new block
