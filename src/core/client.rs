@@ -4,7 +4,7 @@ use bitcoin::BlockHash;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
-use std::time::Duration;
+use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
 pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
@@ -16,7 +16,7 @@ use crate::{Event, Log, TrustedPeer, TxBroadcast};
 use super::{error::FetchBlockError, messages::BlockRequest, BlockReceiver, IndexedBlock};
 use super::{
     error::{ClientError, FetchHeaderError},
-    messages::{ClientMessage, HeaderRequest},
+    messages::{BatchHeaderRequest, ClientMessage, HeaderRequest},
 };
 
 /// A [`Client`] allows for communication with a running node.
@@ -206,6 +206,25 @@ impl EventSender {
             .map_err(|_| FetchHeaderError::SendError)?;
         rx.blocking_recv()
             .map_err(|_| FetchHeaderError::RecvError)?
+    }
+
+    /// Get a range of headers by the specified range.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn get_header_range(
+        &self,
+        range: Range<u32>,
+    ) -> Result<BTreeMap<u32, Header>, FetchHeaderError> {
+        let (tx, rx) =
+            tokio::sync::oneshot::channel::<Result<BTreeMap<u32, Header>, FetchHeaderError>>();
+        let message = BatchHeaderRequest::new(tx, range);
+        self.ntx
+            .send(ClientMessage::GetHeaderBatch(message))
+            .await
+            .map_err(|_| FetchHeaderError::SendError)?;
+        rx.await.map_err(|_| FetchHeaderError::RecvError)?
     }
 
     /// Request a block be fetched. Note that this method will request a block
