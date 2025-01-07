@@ -5,6 +5,27 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0
+
+## Added
+
+- Request a block using the `Client`
+- Add `broadcast_random` convenience method on `Client`
+- Request a `Range` of block headers from `Client`
+
+## Changed
+
+- Separate logs from events into different event channels
+    - The `Log` channel is bounded in size and contains informational, but non-critical information
+    - The `Event` channel is unbounded and contains data that must be handled, like `IndexedBlock`
+- Switch to `corepc-node` instead of unmaintained `bitcoincore-rpc`
+- Load block headers with `RangeBounds`
+
+## Fixes
+
+- Remove unnecessary `unwrap` when managing filter headers
+- Clamp connections to a defined range
+
 ## v0.6.0
 
 ## Added
