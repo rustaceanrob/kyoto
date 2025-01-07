@@ -324,6 +324,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };
+                            },
+                            ClientMessage::GetHeaderBatch(request) => {
+                                let chain = self.chain.lock().await;
+                                let range_opt = chain.fetch_header_range(request.range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
+                                let send_result = request.oneshot.send(range_opt);
+                                if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                };
                             }
                         }
                     }

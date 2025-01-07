@@ -4,7 +4,7 @@ use bitcoin::BlockHash;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
-use std::time::Duration;
+use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
 pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
@@ -16,7 +16,7 @@ use crate::{Event, Log, TrustedPeer, TxBroadcast};
 use super::{error::FetchBlockError, messages::BlockRequest, BlockReceiver, IndexedBlock};
 use super::{
     error::{ClientError, FetchHeaderError},
-    messages::{ClientMessage, HeaderRequest},
+    messages::{BatchHeaderRequest, ClientMessage, HeaderRequest},
 };
 
 /// A [`Client`] allows for communication with a running node.
@@ -74,6 +74,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has already stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn shutdown_blocking(&self) -> Result<(), ClientError> {
         self.ntx
             .blocking_send(ClientMessage::Shutdown)
@@ -119,6 +123,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn broadcast_tx_blocking(&self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .blocking_send(ClientMessage::Broadcast(tx))
@@ -145,6 +153,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     #[cfg(not(feature = "filter-control"))]
     pub fn add_script_blocking(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
         self.ntx
@@ -182,6 +194,10 @@ impl EventSender {
     /// # Errors
     ///
     /// If the node has stopped running.
+    ///
+    /// # Panics
+    ///
+    /// When called within an asynchronus context (e.g `tokio::main`).
     pub fn get_header_blocking(&self, height: u32) -> Result<Header, FetchHeaderError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
         let message = HeaderRequest::new(tx, height);
@@ -190,6 +206,25 @@ impl EventSender {
             .map_err(|_| FetchHeaderError::SendError)?;
         rx.blocking_recv()
             .map_err(|_| FetchHeaderError::RecvError)?
+    }
+
+    /// Get a range of headers by the specified range.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn get_header_range(
+        &self,
+        range: Range<u32>,
+    ) -> Result<BTreeMap<u32, Header>, FetchHeaderError> {
+        let (tx, rx) =
+            tokio::sync::oneshot::channel::<Result<BTreeMap<u32, Header>, FetchHeaderError>>();
+        let message = BatchHeaderRequest::new(tx, range);
+        self.ntx
+            .send(ClientMessage::GetHeaderBatch(message))
+            .await
+            .map_err(|_| FetchHeaderError::SendError)?;
+        rx.await.map_err(|_| FetchHeaderError::RecvError)?
     }
 
     /// Request a block be fetched. Note that this method will request a block
