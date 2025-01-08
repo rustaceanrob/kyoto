@@ -122,7 +122,9 @@ pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 pub use db::traits::{HeaderStore, PeerStore};
 
 #[doc(inline)]
-pub use tokio::sync::broadcast::Receiver;
+pub use tokio::sync::mpsc::Receiver;
+#[doc(inline)]
+pub use tokio::sync::mpsc::UnboundedReceiver;
 
 #[doc(inline)]
 pub use {
