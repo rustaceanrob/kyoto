@@ -35,6 +35,22 @@ pub enum Log {
     TxSent(Txid),
 }
 
+impl core::fmt::Display for Log {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Log::Dialog(d) => write!(f, "{}", d),
+            Log::Warning(w) => write!(f, "{}", w),
+            Log::StateChange(s) => write!(f, "{}", s),
+            Log::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
+            Log::ConnectionsMet => write!(f, "Required connections met"),
+            Log::Progress(p) => {
+                let progress_percent = p.percentage_complete();
+                write!(f, "Percent complete: {}", progress_percent)
+            }
+        }
+    }
+}
+
 /// Data and structures useful for a consumer, such as a wallet.
 #[derive(Debug, Clone)]
 pub enum Event {
