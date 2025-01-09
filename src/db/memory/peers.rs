@@ -28,10 +28,15 @@ impl StatelessPeerStore {
     }
 
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), StatelessPeerStoreError> {
-        // Don't add back peers we already connected to this session.
         match peer.status {
             PeerStatus::New => {
-                self.list.entry(peer.clone().addr).or_insert(peer);
+                self.list
+                    .entry(peer.clone().addr)
+                    .and_modify(|stored| {
+                        stored.port = peer.port;
+                        stored.services = peer.services;
+                    })
+                    .or_insert(peer);
                 Ok(())
             }
             PeerStatus::Tried => Ok(()),
