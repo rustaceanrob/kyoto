@@ -315,7 +315,7 @@ impl<P: PeerStore> PeerMap<P> {
                     peer.addr.clone(),
                     peer.port,
                     peer.services,
-                    PeerStatus::New,
+                    PeerStatus::Gossiped,
                 ))
                 .await
             {
@@ -412,7 +412,7 @@ impl<P: PeerStore> PeerMap<P> {
                     peer,
                     default_port_from_network(&self.network),
                     ServiceFlags::NONE,
-                    PeerStatus::New,
+                    PeerStatus::Gossiped,
                 ))
                 .await
                 .map_err(PeerManagerError::Database)?;

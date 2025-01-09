@@ -80,11 +80,11 @@ impl SqlitePeerDb {
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
-            PeerStatus::New => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
+            PeerStatus::Gossiped => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
             _ => "INSERT OR REPLACE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
         };
         let (tried, banned) = match peer.status {
-            PeerStatus::New => (false, false),
+            PeerStatus::Gossiped => (false, false),
             PeerStatus::Tried => (true, false),
             PeerStatus::Ban => (true, true),
         };
@@ -111,7 +111,7 @@ impl SqlitePeerDb {
             let status = if tried {
                 PeerStatus::Tried
             } else {
-                PeerStatus::New
+                PeerStatus::Gossiped
             };
             let ip = deserialize(&ip_addr)?;
             let services: ServiceFlags = ServiceFlags::from(service_flags);
@@ -161,9 +161,19 @@ mod tests {
         let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
         let ip_2 = Ipv4Addr::new(2, 2, 2, 2);
         let tor = AddrV2::TorV2([8; 10]);
-        let peer_1 = PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_2 = PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_1 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_1),
+            0,
+            ServiceFlags::NONE,
+            PeerStatus::Gossiped,
+        );
+        let peer_2 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_2),
+            0,
+            ServiceFlags::NONE,
+            PeerStatus::Gossiped,
+        );
+        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::Gossiped);
         let try_peer_2 =
             PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::Tried);
         let ban_peer_1 =

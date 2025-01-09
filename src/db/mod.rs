@@ -54,8 +54,8 @@ impl From<PersistedPeer> for (AddrV2, u16) {
 /// The status of a peer in the database.
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum PeerStatus {
-    /// A newly found peer from DNS or the peer-to-peer network.
-    New,
+    /// A peer was gossiped via DNS or the peer-to-peer network.
+    Gossiped,
     /// The node successfully connected to this peer.
     Tried,
     /// A connected peer responded with faulty or malicious behavior.
@@ -65,7 +65,7 @@ pub enum PeerStatus {
 impl Distribution<PeerStatus> for Standard {
     fn sample<R: bitcoin::key::rand::Rng + ?Sized>(&self, rng: &mut R) -> PeerStatus {
         match rng.gen_range(0..=1) {
-            0 => PeerStatus::New,
+            0 => PeerStatus::Gossiped,
             _ => PeerStatus::Tried,
         }
     }
