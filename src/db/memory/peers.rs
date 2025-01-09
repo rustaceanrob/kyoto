@@ -29,7 +29,7 @@ impl StatelessPeerStore {
 
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), StatelessPeerStoreError> {
         match peer.status {
-            PeerStatus::New => {
+            PeerStatus::Gossiped => {
                 self.list
                     .entry(peer.clone().addr)
                     .and_modify(|stored| {
@@ -108,10 +108,20 @@ mod tests {
         let mut peer_store = StatelessPeerStore::new();
         let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
         let ip_2 = Ipv4Addr::new(2, 2, 2, 2);
-        let peer_1 = PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::New);
-        let peer_2 = PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_1 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_1),
+            0,
+            ServiceFlags::NONE,
+            PeerStatus::Gossiped,
+        );
+        let peer_2 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_2),
+            0,
+            ServiceFlags::NONE,
+            PeerStatus::Gossiped,
+        );
         let tor = AddrV2::TorV2([0; 10]);
-        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::New);
+        let peer_3 = PersistedPeer::new(tor, 0, ServiceFlags::NONE, PeerStatus::Gossiped);
         let try_peer_2 =
             PersistedPeer::new(AddrV2::Ipv4(ip_2), 0, ServiceFlags::NONE, PeerStatus::Tried);
         let ban_peer_1 =
