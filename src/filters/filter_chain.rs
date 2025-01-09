@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bitcoin::BlockHash;
 
-use crate::chain::checkpoints::HeaderCheckpoint;
+type Height = u32;
 
 const INITIAL_BUFFER_SIZE: usize = 20_000;
 
@@ -11,16 +11,16 @@ const INITIAL_BUFFER_SIZE: usize = 20_000;
 // storing them. Instead we keep track of the filters we have seen by saving their block hash.
 #[derive(Debug)]
 pub(crate) struct FilterChain {
-    anchor_checkpoint: HeaderCheckpoint,
+    anchor_startpoint: Height,
     // Because we are checking the filters on the fly, we don't actually store them
     chain: HashSet<BlockHash>,
     prev_stophash_request: Option<BlockHash>,
 }
 
 impl FilterChain {
-    pub(crate) fn new(anchor_checkpoint: HeaderCheckpoint) -> Self {
+    pub(crate) fn new(anchor_startpoint: Height) -> Self {
         Self {
-            anchor_checkpoint,
+            anchor_startpoint,
             chain: HashSet::with_capacity(INITIAL_BUFFER_SIZE),
             prev_stophash_request: None,
         }
@@ -42,7 +42,7 @@ impl FilterChain {
     }
 
     pub(crate) fn height(&self) -> u32 {
-        self.anchor_checkpoint.height + self.chain.len() as u32
+        self.anchor_startpoint + self.chain.len() as u32
     }
 
     pub(crate) fn set_last_stop_hash(&mut self, stop_hash: BlockHash) {
