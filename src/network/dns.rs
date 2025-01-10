@@ -64,7 +64,7 @@ pub(crate) struct Dns<'a> {
     seeds: Vec<&'a str>,
 }
 
-impl<'a> Dns<'a> {
+impl Dns<'_> {
     #[cfg(feature = "dns")]
     pub fn new(network: Network) -> Self {
         let seeds = match network {
