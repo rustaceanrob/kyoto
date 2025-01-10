@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Txid};
 
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
@@ -171,6 +171,8 @@ pub(crate) enum ClientMessage {
     GetHeader(HeaderRequest),
     /// Request a range of headers.
     GetHeaderBatch(BatchHeaderRequest),
+    /// Request the broadcast minimum fee rate.
+    GetBroadcastMinFeeRate(FeeRateSender),
 }
 
 type HeaderSender = tokio::sync::oneshot::Sender<Result<Header, FetchHeaderError>>;
@@ -203,6 +205,8 @@ impl BatchHeaderRequest {
 }
 
 pub(crate) type BlockSender = tokio::sync::oneshot::Sender<Result<IndexedBlock, FetchBlockError>>;
+
+pub(crate) type FeeRateSender = tokio::sync::oneshot::Sender<FeeRate>;
 
 #[cfg(feature = "filter-control")]
 #[derive(Debug)]

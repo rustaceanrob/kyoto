@@ -1,9 +1,9 @@
-use bitcoin::block::Header;
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
+use bitcoin::{block::Header, FeeRate};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
 pub use tokio::sync::mpsc::Receiver;
@@ -15,7 +15,7 @@ use crate::{Event, Log, TrustedPeer, TxBroadcast};
 #[cfg(feature = "filter-control")]
 use super::{error::FetchBlockError, messages::BlockRequest, BlockReceiver, IndexedBlock};
 use super::{
-    error::{ClientError, FetchHeaderError},
+    error::{ClientError, FetchFeeRateError, FetchHeaderError},
     messages::{BatchHeaderRequest, ClientMessage, HeaderRequest},
 };
 
@@ -131,6 +131,20 @@ impl EventSender {
         self.ntx
             .blocking_send(ClientMessage::Broadcast(tx))
             .map_err(|_| ClientError::SendError)
+    }
+
+    /// A connection has a minimum transaction fee requirement to enter its mempool. For proper transaction propagation,
+    /// transactions should have a fee rate at least as high as the maximum fee filter received.
+    /// This method returns the maximum fee rate requirement of all connected peers.
+    ///
+    /// For more information, refer to BIP133
+    pub async fn broadcast_min_feerate(&self) -> Result<FeeRate, FetchFeeRateError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<FeeRate>();
+        self.ntx
+            .send(ClientMessage::GetBroadcastMinFeeRate(tx))
+            .await
+            .map_err(|_| FetchFeeRateError::SendError)?;
+        rx.await.map_err(|_| FetchFeeRateError::RecvError)
     }
 
     /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.

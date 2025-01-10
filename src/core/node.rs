@@ -336,6 +336,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };
+                            },
+                            ClientMessage::GetBroadcastMinFeeRate(request) => {
+                                let peer_map = self.peer_map.lock().await;
+                                let fee_rate = peer_map.broadcast_min();
+                                let send_result = request.send(fee_rate);
+                                if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                };
                             }
                         }
                     }

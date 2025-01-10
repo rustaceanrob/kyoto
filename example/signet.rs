@@ -70,6 +70,9 @@ async fn main() {
                         Event::Synced(update) => {
                             tracing::info!("Synced chain up to block {}",update.tip().height);
                             tracing::info!("Chain tip: {}",update.tip().hash);
+                            // Request information from the node
+                            let fee = sender.broadcast_min_feerate().await.unwrap();
+                            tracing::info!("Minimum transaction broadcast fee rate: {}", fee);
                             break;
                         },
                         Event::Block(indexed_block) => {
