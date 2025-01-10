@@ -160,9 +160,9 @@ impl SqliteHeaderDb {
         Ok(headers)
     }
 
-    async fn write<'a>(
+    async fn write(
         &mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
+        header_chain: &BTreeMap<u32, Header>,
     ) -> Result<(), SqlHeaderStoreError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction()?;
@@ -197,9 +197,9 @@ impl SqliteHeaderDb {
         Ok(())
     }
 
-    async fn write_over<'a>(
+    async fn write_over(
         &mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
+        header_chain: &BTreeMap<u32, Header>,
         height: u32,
     ) -> Result<(), SqlHeaderStoreError> {
         let mut write_lock = self.conn.lock().await;
@@ -233,9 +233,9 @@ impl SqliteHeaderDb {
         Ok(())
     }
 
-    async fn height_of<'a>(
+    async fn height_of(
         &mut self,
-        block_hash: &'a BlockHash,
+        block_hash: &BlockHash,
     ) -> Result<Option<u32>, SqlHeaderStoreError> {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT height FROM headers WHERE block_hash = ?1";
