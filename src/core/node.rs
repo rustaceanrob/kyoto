@@ -277,6 +277,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                         .send_warning(Warning::TransactionRejected).await;
                                     self.dialog.send_event(Event::TxBroadcastFailure(payload)).await;
                                 }
+                                PeerMessage::FeeFilter(feerate) => {
+                                    let mut peer_map = self.peer_map.lock().await;
+                                    peer_map.set_broadcast_min(peer_thread.nonce, feerate);
+                                }
                                 _ => continue,
                             }
                         },
@@ -329,6 +333,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 let chain = self.chain.lock().await;
                                 let range_opt = chain.fetch_header_range(request.range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
                                 let send_result = request.oneshot.send(range_opt);
+                                if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                };
+                            },
+                            ClientMessage::GetBroadcastMinFeeRate(request) => {
+                                let peer_map = self.peer_map.lock().await;
+                                let fee_rate = peer_map.broadcast_min();
+                                let send_result = request.send(fee_rate);
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };

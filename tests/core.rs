@@ -250,7 +250,7 @@ async fn test_mine_after_reorg() {
 }
 
 #[tokio::test]
-async fn test_long_chain() {
+async fn test_various_client_methods() {
     let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -275,6 +275,7 @@ async fn test_long_chain() {
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
     let batch = sender.get_header_range(10_000..10_002).await.unwrap();
+    let _ = sender.broadcast_min_feerate().await.unwrap();
     assert!(batch.is_empty());
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
