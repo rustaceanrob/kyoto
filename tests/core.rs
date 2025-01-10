@@ -274,8 +274,11 @@ async fn test_various_client_methods() {
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
     let batch = sender.get_header_range(10_000..10_002).await.unwrap();
-    let _ = sender.broadcast_min_feerate().await.unwrap();
     assert!(batch.is_empty());
+    let _ = sender.broadcast_min_feerate().await.unwrap();
+    let _ = sender.get_header(3).await.unwrap();
+    let script = rpc.new_address().unwrap();
+    sender.add_script(script).await.unwrap();
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
