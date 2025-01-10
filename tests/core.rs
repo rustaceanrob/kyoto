@@ -15,7 +15,6 @@ use kyoto::{
         client::{Client, Receiver},
         node::Node,
     },
-    db::memory::peers::StatelessPeerStore,
     BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -615,9 +614,9 @@ async fn test_signet_syncs() {
     let host = (IpAddr::from(Ipv4Addr::new(68, 47, 229, 218)), None);
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Signet);
     let (node, client) = builder
-        .add_peers(vec![host.into()])
+        .add_peer(host)
         .add_scripts(set)
-        .build_with_databases(StatelessPeerStore::new(), ());
+        .build_with_databases((), ());
     tokio::task::spawn(async move { node.run().await });
     async fn print_and_sync(mut client: Client) {
         loop {
