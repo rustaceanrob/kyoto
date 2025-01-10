@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Txid};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, ScriptBuf, Txid};
 
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
@@ -64,11 +64,6 @@ pub enum Event {
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
     TxBroadcastFailure(FailurePayload),
-    /// A connection has a minimum transaction fee requirement to enter its mempool. For proper transaction propagation,
-    /// transactions should have a fee rate at least as high as the maximum fee filter received.
-    ///
-    /// For more information, refer to BIP133.
-    FeeFilter(FeeRate),
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),

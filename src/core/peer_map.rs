@@ -8,7 +8,7 @@ use std::{
 use bitcoin::{
     key::rand,
     p2p::{address::AddrV2, ServiceFlags},
-    Network,
+    FeeRate, Network,
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
@@ -50,6 +50,7 @@ pub(crate) struct ManagedPeer {
     address: AddrV2,
     port: u16,
     service_flags: Option<ServiceFlags>,
+    broadcast_min: FeeRate,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
 }
@@ -198,12 +199,20 @@ impl<P: PeerStore> PeerMap<P> {
                 service_flags: None,
                 address: loaded_peer.addr,
                 port: loaded_peer.port,
+                broadcast_min: FeeRate::BROADCAST_MIN,
                 net_time: 0,
                 ptx,
                 handle,
             },
         );
         Ok(())
+    }
+
+    // Set the minimum fee rate this peer will accept
+    pub fn set_broadcast_min(&mut self, nonce: u32, fee_rate: FeeRate) {
+        if let Some(peer) = self.map.get_mut(&nonce) {
+            peer.broadcast_min = fee_rate;
+        }
     }
 
     // Set the services of a peer
@@ -228,6 +237,15 @@ impl<P: PeerStore> PeerMap<P> {
     // The best height of all known or connected peers
     pub fn best_height(&self) -> Option<&u32> {
         self.heights.values().max()
+    }
+
+    // The minimum fee rate to successfully broadcast a transaction to all peers
+    pub fn broadcast_min(&self) -> FeeRate {
+        self.map
+            .values()
+            .map(|peer| peer.broadcast_min)
+            .max()
+            .unwrap_or(FeeRate::BROADCAST_MIN)
     }
 
     // Send a message to the specified peer

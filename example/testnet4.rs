@@ -72,7 +72,6 @@ async fn main() {
                         Event::BlocksDisconnected(_) => {
                             tracing::warn!("Some blocks were reorganized")
                         },
-                        Event::FeeFilter(fee_rate) => tracing::info!("Minimum broadcast fee: {fee_rate}"),
                         _ => (),
                     }
                 }

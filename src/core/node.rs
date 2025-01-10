@@ -277,6 +277,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                         .send_warning(Warning::TransactionRejected).await;
                                     self.dialog.send_event(Event::TxBroadcastFailure(payload)).await;
                                 }
+                                PeerMessage::FeeFilter(feerate) => {
+                                    let mut peer_map = self.peer_map.lock().await;
+                                    peer_map.set_broadcast_min(peer_thread.nonce, feerate);
+                                }
                                 _ => continue,
                             }
                         },
