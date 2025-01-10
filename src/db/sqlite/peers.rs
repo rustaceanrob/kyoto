@@ -80,7 +80,7 @@ impl SqlitePeerDb {
     async fn update(&mut self, peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
-            PeerStatus::Gossiped => "INSERT OR IGNORE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
+            PeerStatus::Gossiped => "INSERT INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(ip_addr) DO UPDATE SET port = excluded.port, service_flags = excluded.service_flags",
             _ => "INSERT OR REPLACE INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5)",
         };
         let (tried, banned) = match peer.status {
@@ -197,6 +197,44 @@ mod tests {
         let _ = peer_store.random().await.unwrap();
         let random = peer_store.random().await.unwrap();
         assert_ne!(ban_peer_1.addr, random.addr);
+        drop(peer_store);
+        binding.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_gossiped_peer_updates() {
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
+        let mut peer_store =
+            SqlitePeerDb::new(bitcoin::Network::Testnet, Some(path.into())).unwrap();
+        let ip_1 = Ipv4Addr::new(1, 1, 1, 1);
+        let peer_1 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_1),
+            0,
+            ServiceFlags::NONE,
+            PeerStatus::Gossiped,
+        );
+        peer_store.update(peer_1).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
+        let try_peer_1 =
+            PersistedPeer::new(AddrV2::Ipv4(ip_1), 0, ServiceFlags::NONE, PeerStatus::Tried);
+        peer_store.update(try_peer_1).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
+        let peer = peer_store.random().await.unwrap();
+        assert!(matches!(peer.status, PeerStatus::Tried));
+        assert_eq!(peer.services, ServiceFlags::NONE);
+        let gossip_peer_1 = PersistedPeer::new(
+            AddrV2::Ipv4(ip_1),
+            2,
+            ServiceFlags::NETWORK_LIMITED,
+            PeerStatus::Gossiped,
+        );
+        peer_store.update(gossip_peer_1).await.unwrap();
+        assert_eq!(peer_store.num_unbanned().await.unwrap(), 1);
+        let peer = peer_store.random().await.unwrap();
+        assert!(matches!(peer.status, PeerStatus::Tried));
+        assert_eq!(peer.port, 2);
+        assert_eq!(peer.services, ServiceFlags::NETWORK_LIMITED);
         drop(peer_store);
         binding.close().unwrap();
     }
