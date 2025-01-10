@@ -12,8 +12,6 @@ use bitcoin::p2p::ServiceFlags;
 
 /// Errors a database backend may produce.
 pub mod error;
-/// In-memory persistence trait implementations for light-weight nodes running on constrained or semi-trusted setups.
-pub mod memory;
 /// Persistence traits defined with SQL Lite to store data between sessions.
 #[cfg(feature = "database")]
 pub mod sqlite;
