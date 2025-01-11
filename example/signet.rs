@@ -49,10 +49,8 @@ async fn main() {
         // Create the node and client
         .build_node()
         .unwrap();
-    // Check if the node is running. Another part of the program may be giving us the node.
-    if !node.is_running() {
-        tokio::task::spawn(async move { node.run().await });
-    }
+    // Run the node on a separate task
+    tokio::task::spawn(async move { node.run().await });
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
