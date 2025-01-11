@@ -279,6 +279,7 @@ async fn test_various_client_methods() {
     let _ = sender.get_header(3).await.unwrap();
     let script = rpc.new_address().unwrap();
     sender.add_script(script).await.unwrap();
+    assert!(sender.is_running().await);
     sender.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }

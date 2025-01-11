@@ -138,6 +138,10 @@ impl EventSender {
     /// This method returns the maximum fee rate requirement of all connected peers.
     ///
     /// For more information, refer to BIP133
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
     pub async fn broadcast_min_feerate(&self) -> Result<FeeRate, FetchFeeRateError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<FeeRate>();
         self.ntx
@@ -326,6 +330,11 @@ impl EventSender {
             .send(ClientMessage::ContinueDownload)
             .await
             .map_err(|_| ClientError::SendError)
+    }
+
+    /// Check if the node is running.
+    pub async fn is_running(&self) -> bool {
+        self.ntx.send(ClientMessage::NoOp).await.is_ok()
     }
 }
 

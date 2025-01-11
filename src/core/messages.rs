@@ -173,6 +173,8 @@ pub(crate) enum ClientMessage {
     GetHeaderBatch(BatchHeaderRequest),
     /// Request the broadcast minimum fee rate.
     GetBroadcastMinFeeRate(FeeRateSender),
+    /// Send an empty message to see if the node is running.
+    NoOp,
 }
 
 type HeaderSender = tokio::sync::oneshot::Sender<Result<Header, FetchHeaderError>>;

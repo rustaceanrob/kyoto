@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    ops::DerefMut,
-    sync::{atomic::AtomicBool, Arc},
-    time::Duration,
-};
+use std::{collections::HashSet, ops::DerefMut, sync::Arc, time::Duration};
 
 use bitcoin::{
     block::Header,
@@ -78,7 +73,6 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
     dialog: Dialog,
     client_recv: Arc<Mutex<Receiver<ClientMessage>>>,
     peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
-    is_running: AtomicBool,
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
 
@@ -145,7 +139,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 dialog,
                 client_recv: Arc::new(Mutex::new(crx)),
                 peer_recv: Arc::new(Mutex::new(mrx)),
-                is_running: AtomicBool::new(false),
                 filter_sync_policy: Arc::new(RwLock::new(filter_sync_policy)),
             },
             client,
@@ -175,11 +168,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         )
     }
 
-    /// Has [`Node::run`] been called.
-    pub fn is_running(&self) -> bool {
-        self.is_running.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
     /// Run the node continuously. Typically run on a separate thread than the underlying application.
     ///
     /// # Errors
@@ -193,8 +181,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 self.required_peers
             ))
             .await;
-        self.is_running
-            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut peer_recv = self.peer_recv.lock().await;
@@ -345,6 +331,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };
                             }
+                            ClientMessage::NoOp => (),
                         }
                     }
                 }
