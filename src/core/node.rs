@@ -331,6 +331,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.dialog.send_warning(Warning::ChannelDropped).await
                                 };
                             }
+                            ClientMessage::NoOp => (),
                         }
                     }
                 }
