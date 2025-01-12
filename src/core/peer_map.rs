@@ -296,7 +296,10 @@ impl<P: PeerStore> PeerMap<P> {
         let desired_status = PeerStatus::random();
         while tries < MAX_TRIES {
             let peer = peer_manager.random().await?;
-            if self.net_groups.contains(&peer.addr.netgroup()) || desired_status.ne(&peer.status) {
+            if self.net_groups.contains(&peer.addr.netgroup())
+                || desired_status.ne(&peer.status)
+                || !peer.services.has(ServiceFlags::COMPACT_FILTERS)
+            {
                 tries += 1;
                 continue;
             } else {
