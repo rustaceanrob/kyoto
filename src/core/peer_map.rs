@@ -49,7 +49,7 @@ pub(crate) struct ManagedPeer {
     net_time: i64,
     address: AddrV2,
     port: u16,
-    service_flags: Option<ServiceFlags>,
+    service_flags: ServiceFlags,
     broadcast_min: FeeRate,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
@@ -128,13 +128,7 @@ impl<P: PeerStore> PeerMap<P> {
         self.map
             .values()
             .filter(|peer| !peer.handle.is_finished())
-            .filter(|peer| {
-                if let Some(flags) = peer.service_flags {
-                    flags.has(ServiceFlags::COMPACT_FILTERS)
-                } else {
-                    false
-                }
-            })
+            .filter(|peer| peer.service_flags.has(ServiceFlags::COMPACT_FILTERS))
             .count()
     }
 
@@ -196,7 +190,7 @@ impl<P: PeerStore> PeerMap<P> {
         self.map.insert(
             peer_num,
             ManagedPeer {
-                service_flags: None,
+                service_flags: loaded_peer.services,
                 address: loaded_peer.addr,
                 port: loaded_peer.port,
                 broadcast_min: FeeRate::BROADCAST_MIN,
@@ -218,7 +212,7 @@ impl<P: PeerStore> PeerMap<P> {
     // Set the services of a peer
     pub fn set_services(&mut self, nonce: u32, flags: ServiceFlags) {
         if let Some(peer) = self.map.get_mut(&nonce) {
-            peer.service_flags = Some(flags)
+            peer.service_flags = flags
         }
     }
 
@@ -302,7 +296,10 @@ impl<P: PeerStore> PeerMap<P> {
         let desired_status = PeerStatus::random();
         while tries < MAX_TRIES {
             let peer = peer_manager.random().await?;
-            if self.net_groups.contains(&peer.addr.netgroup()) || desired_status.ne(&peer.status) {
+            if self.net_groups.contains(&peer.addr.netgroup())
+                || desired_status.ne(&peer.status)
+                || !peer.services.has(ServiceFlags::COMPACT_FILTERS)
+            {
                 tries += 1;
                 continue;
             } else {
@@ -357,7 +354,7 @@ impl<P: PeerStore> PeerMap<P> {
                 .update(PersistedPeer::new(
                     peer.address.clone(),
                     peer.port,
-                    peer.service_flags.unwrap_or(ServiceFlags::NONE),
+                    peer.service_flags,
                     PeerStatus::Tried,
                 ))
                 .await
@@ -366,9 +363,7 @@ impl<P: PeerStore> PeerMap<P> {
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
                             "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.address,
-                            peer.port,
-                            peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                            peer.address, peer.port, peer.service_flags
                         ),
                     })
                     .await;
@@ -384,7 +379,7 @@ impl<P: PeerStore> PeerMap<P> {
                 .update(PersistedPeer::new(
                     peer.address.clone(),
                     peer.port,
-                    peer.service_flags.unwrap_or(ServiceFlags::NONE),
+                    peer.service_flags,
                     PeerStatus::Ban,
                 ))
                 .await
@@ -393,9 +388,7 @@ impl<P: PeerStore> PeerMap<P> {
                     .send_warning(Warning::FailedPersistance {
                         warning: format!(
                             "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.address,
-                            peer.port,
-                            peer.service_flags.unwrap_or(ServiceFlags::NONE)
+                            peer.address, peer.port, peer.service_flags
                         ),
                     })
                     .await;
