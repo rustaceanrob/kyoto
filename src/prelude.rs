@@ -125,3 +125,24 @@ pub(crate) fn encode_qname(domain: &str) -> Vec<u8> {
     qname.push(0x00);
     qname
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Median;
+
+    #[test]
+    fn test_median() {
+        let mut empty: Vec<u32> = Vec::new();
+        assert_eq!(empty.median(), 0);
+        let mut single: Vec<u32> = vec![4];
+        assert_eq!(single.median(), 4);
+        let mut odd: Vec<u32> = vec![2, 3, 4, 5, 1];
+        assert_eq!(odd.median(), 3);
+        let mut even: Vec<u32> = vec![2, 3, 4, 5, 6, 1];
+        assert_eq!(even.median(), 3);
+        let mut even: Vec<i64> = vec![2, 3, 4, 5, 6, 1];
+        assert_eq!(even.median(), 3.5 as i64);
+        let mut mtp: Vec<u64> = vec![420, 120, 120, 120, 120, 120, 620, 620, 620, 620, 620];
+        assert_eq!(mtp.median(), 420);
+    }
+}
