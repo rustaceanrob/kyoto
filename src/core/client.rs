@@ -6,9 +6,7 @@ use bitcoin::Transaction;
 use bitcoin::{block::Header, FeeRate};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
-pub use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
-pub use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{Event, Log, TrustedPeer, TxBroadcast};
 

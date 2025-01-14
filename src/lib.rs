@@ -138,6 +138,8 @@ pub use bitcoin::{
     Address, Block, BlockHash, FeeRate, Network, ScriptBuf, Transaction, Txid,
 };
 
+pub extern crate tokio;
+
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
