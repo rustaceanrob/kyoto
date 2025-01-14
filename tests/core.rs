@@ -11,12 +11,10 @@ use corepc_node::serde_json;
 use corepc_node::{anyhow, exe_path};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
-    core::{
-        client::{Client, Receiver},
-        node::Node,
-    },
+    core::{client::Client, node::Node},
     BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
 };
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 // Start the bitcoin daemon either through an environment variable or by download
