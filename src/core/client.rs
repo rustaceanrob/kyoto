@@ -21,7 +21,7 @@ use super::{
 #[derive(Debug)]
 pub struct Client {
     /// Send events to a node, such as broadcasting a transaction.
-    pub sender: EventSender,
+    pub requester: Requester,
     /// Receive log messages from a node.
     pub log_rx: mpsc::Receiver<Log>,
     /// Receive [`Event`] from a node to act on.
@@ -35,7 +35,7 @@ impl Client {
         ntx: Sender<ClientMessage>,
     ) -> Self {
         Self {
-            sender: EventSender::new(ntx),
+            requester: Requester::new(ntx),
             log_rx,
             event_rx,
         }
@@ -44,17 +44,15 @@ impl Client {
 
 /// Send messages to a node that is running so the node may complete a task.
 #[derive(Debug, Clone)]
-pub struct EventSender {
+pub struct Requester {
     ntx: Sender<ClientMessage>,
 }
 
-impl EventSender {
+impl Requester {
     fn new(ntx: Sender<ClientMessage>) -> Self {
         Self { ntx }
     }
-}
 
-impl EventSender {
     /// Tell the node to shut down.
     ///
     /// # Errors
@@ -356,7 +354,7 @@ mod tests {
         let (_, event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
         let Client {
-            sender,
+            requester,
             mut log_rx,
             event_rx: _,
         } = Client::new(log_rx, event_rx, ctx);
@@ -375,7 +373,7 @@ mod tests {
         let message = log_rx.recv().await;
         assert!(message.is_some());
         drop(log_rx);
-        let broadcast = sender
+        let broadcast = requester
             .broadcast_tx(TxBroadcast::new(
                 transaction.clone(),
                 crate::TxBroadcastPolicy::AllPeers,
@@ -383,7 +381,7 @@ mod tests {
             .await;
         assert!(broadcast.is_ok());
         drop(crx);
-        let broadcast = sender.shutdown().await;
+        let broadcast = requester.shutdown().await;
         assert!(broadcast.is_err());
     }
 }

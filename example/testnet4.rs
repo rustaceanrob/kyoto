@@ -50,7 +50,7 @@ async fn main() {
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
     let Client {
-        sender,
+        requester,
         mut log_rx,
         mut event_rx,
     } = client;
@@ -89,6 +89,6 @@ async fn main() {
             }
         }
     }
-    let _ = sender.shutdown().await;
+    let _ = requester.shutdown().await;
     tracing::info!("Shutting down");
 }

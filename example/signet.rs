@@ -55,7 +55,7 @@ async fn main() {
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
     let Client {
-        sender,
+        requester,
         mut log_rx,
         mut event_rx,
     } = client;
@@ -69,7 +69,7 @@ async fn main() {
                             tracing::info!("Synced chain up to block {}",update.tip().height);
                             tracing::info!("Chain tip: {}",update.tip().hash);
                             // Request information from the node
-                            let fee = sender.broadcast_min_feerate().await.unwrap();
+                            let fee = requester.broadcast_min_feerate().await.unwrap();
                             tracing::info!("Minimum transaction broadcast fee rate: {}", fee);
                             break;
                         },
@@ -97,6 +97,6 @@ async fn main() {
             }
         }
     }
-    let _ = sender.shutdown().await;
+    let _ = requester.shutdown().await;
     tracing::info!("Shutting down");
 }
