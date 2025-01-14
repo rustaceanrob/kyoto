@@ -159,7 +159,7 @@ async fn test_reorg() {
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
@@ -180,13 +180,13 @@ async fn test_reorg() {
             }
             kyoto::core::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
-                sender.shutdown().await.unwrap();
+                requester.shutdown().await.unwrap();
                 break;
             }
             _ => {}
         }
     }
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -211,7 +211,7 @@ async fn test_mine_after_reorg() {
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
@@ -219,7 +219,7 @@ async fn test_mine_after_reorg() {
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
-    let fetched_header = sender.get_header(10).await.unwrap();
+    let fetched_header = requester.get_header(10).await.unwrap();
     assert_eq!(old_best, fetched_header.block_hash());
     invalidate_block(rpc, &best).await;
     mine_blocks(rpc, &miner, 2, 1).await;
@@ -242,7 +242,7 @@ async fn test_mine_after_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -266,19 +266,19 @@ async fn test_various_client_methods() {
     let (node, client) = new_node(scripts.clone(), socket_addr).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
-    let batch = sender.get_header_range(10_000..10_002).await.unwrap();
+    let batch = requester.get_header_range(10_000..10_002).await.unwrap();
     assert!(batch.is_empty());
-    let _ = sender.broadcast_min_feerate().await.unwrap();
-    let _ = sender.get_header(3).await.unwrap();
+    let _ = requester.broadcast_min_feerate().await.unwrap();
+    let _ = requester.get_header(3).await.unwrap();
     let script = rpc.new_address().unwrap();
-    sender.add_script(script).await.unwrap();
-    assert!(sender.is_running().await);
-    sender.shutdown().await.unwrap();
+    requester.add_script(script).await.unwrap();
+    assert!(requester.is_running().await);
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -303,14 +303,14 @@ async fn test_sql_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
-    let batch = sender.get_header_range(0..10).await.unwrap();
+    let batch = requester.get_header_range(0..10).await.unwrap();
     assert!(!batch.is_empty());
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -321,7 +321,7 @@ async fn test_sql_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: _,
         event_rx: mut channel,
     } = client;
@@ -341,7 +341,7 @@ async fn test_sql_reorg() {
             _ => {}
         }
     }
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -349,13 +349,13 @@ async fn test_sql_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -380,12 +380,12 @@ async fn test_two_deep_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_height = num_blocks(rpc);
     let old_best = best;
@@ -398,7 +398,7 @@ async fn test_two_deep_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: _,
         event_rx: mut channel,
     } = client;
@@ -417,7 +417,7 @@ async fn test_two_deep_reorg() {
             _ => {}
         }
     }
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -425,13 +425,13 @@ async fn test_two_deep_reorg() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -455,12 +455,12 @@ async fn test_sql_stale_anchor() {
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -477,7 +477,7 @@ async fn test_sql_stale_anchor() {
     .await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: _,
         event_rx: mut channel,
     } = client;
@@ -497,7 +497,7 @@ async fn test_sql_stale_anchor() {
             _ => {}
         }
     }
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Don't do anything, but reload the node from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -512,13 +512,13 @@ async fn test_sql_stale_anchor() {
     .await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     // Mine more blocks and reload from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -534,13 +534,13 @@ async fn test_sql_stale_anchor() {
     .await;
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel, &mut log).await;
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 
@@ -573,7 +573,7 @@ async fn test_halting_works() {
 
     tokio::task::spawn(async move { node.run().await });
     let Client {
-        sender,
+        requester,
         log_rx: mut log,
         event_rx: mut channel,
     } = client;
@@ -586,7 +586,7 @@ async fn test_halting_works() {
                 if let NodeState::FilterHeadersSynced = node_state {
                     println!("Sleeping for one second...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                    sender.continue_download().await.unwrap();
+                    requester.continue_download().await.unwrap();
                     break;
                 }
             }
@@ -600,7 +600,7 @@ async fn test_halting_works() {
             break;
         }
     }
-    sender.shutdown().await.unwrap();
+    requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
 

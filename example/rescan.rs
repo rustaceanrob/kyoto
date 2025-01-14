@@ -43,7 +43,7 @@ async fn main() {
     tracing::info!("Running the node and waiting for a sync message. Please wait a minute!");
     // Split the client into components that send messages and listen to messages
     let Client {
-        sender,
+        requester,
         mut log_rx,
         mut event_rx,
     } = client;
@@ -74,9 +74,9 @@ async fn main() {
             .unwrap()
             .require_network(NETWORK)
             .unwrap();
-    sender.add_script(new_script).await.unwrap();
+    requester.add_script(new_script).await.unwrap();
     // // Tell the node to look for these new scripts
-    sender.rescan().await.unwrap();
+    requester.rescan().await.unwrap();
     tracing::info!("Starting rescan");
     loop {
         tokio::select! {
@@ -98,6 +98,6 @@ async fn main() {
             }
         }
     }
-    let _ = sender.shutdown().await;
+    let _ = requester.shutdown().await;
     tracing::info!("Shutting down");
 }

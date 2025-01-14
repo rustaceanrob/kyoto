@@ -52,7 +52,7 @@ async fn main() {
     tokio::task::spawn(async move { node.run().await });
 
     let Client {
-        sender,
+        requester,
         mut log_rx,
         mut event_rx,
     } = client;
@@ -78,7 +78,7 @@ async fn main() {
                             if filter.contains_any(&addresses) {
                                 let hash = *filter.block_hash();
                                 tracing::info!("Found script at {}!", hash);
-                                let indexed_block = sender.get_block(hash).await.unwrap();
+                                let indexed_block = requester.get_block(hash).await.unwrap();
                                 let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
                                 tracing::info!("Coinbase transaction ID: {}", coinbase);
                                 break;
@@ -91,6 +91,6 @@ async fn main() {
             }
         }
     }
-    let _ = sender.shutdown().await;
+    let _ = requester.shutdown().await;
     tracing::info!("Shutting down");
 }
