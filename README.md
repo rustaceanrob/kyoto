@@ -36,39 +36,70 @@ just example
 The following snippet demonstrates how to build a Kyoto node. See the [docs](https://docs.rs/kyoto-cbf) for more details on the `NodeBuilder`, `Node`, `Client`, and more.
 
 ```rust
+use std::str::FromStr;
 use std::collections::HashSet;
-use kyoto::{NodeBuilder, NodeMessage, Address, Network, HeaderCheckpoint, BlockHash, TrustedPeer};
-
-let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
-    .unwrap()
-    .require_network(Network::Signet)
-    .unwrap()
-    .into();
-let mut addresses = HashSet::new();
-addresses.insert(address);
-let builder = NodeBuilder::new(bitcoin::Network::Signet);
-// Add node preferences and build the node/client
-let (node, client) = builder
-    // Add the peers
-    .add_peers(vec![TrustedPeer::from_ip(peer_1), TrustedPeer::from_ip(peer_1)])
-    // The Bitcoin scripts to monitor
-    .add_scripts(addresses)
-    // Only scan blocks strictly after an anchor checkpoint
-    .anchor_checkpoint(HeaderCheckpoint::new(
-        180_000,
-        BlockHash::from_str("0000000870f15246ba23c16e370a7ffb1fc8a3dcf8cb4492882ed4b0e3d4cd26")
-            .unwrap(),
-    ))
-    // The number of connections we would like to maintain
-    .num_required_peers(2)
-    // Create the node and client
-    .build_node()
-    .unwrap();
+use kyoto::{NodeBuilder, Log, Event, Client, Address, Network, HeaderCheckpoint, BlockHash};
+#[tokio::main]
+async fn main() {
+    // Add third-party logging
+    let subscriber = tracing_subscriber::FmtSubscriber::new();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    // Add Bitcoin scripts to scan the blockchain for
+    let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+        .unwrap()
+        .require_network(Network::Signet)
+        .unwrap()
+        .into();
+    let mut addresses = HashSet::new();
+    addresses.insert(address);
+    // Start the scan after a specified header
+    let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(170_000, Network::Signet);
+    // Create a new node builder
+    let builder = NodeBuilder::new(Network::Signet);
+    // Add node preferences and build the node/client
+    let (mut node, client) = builder
+        // The Bitcoin scripts to monitor
+        .add_scripts(addresses)
+        // Only scan blocks strictly after an anchor checkpoint
+        .anchor_checkpoint(checkpoint)
+        // The number of connections we would like to maintain
+        .num_required_peers(2)
+        .build_node()
+        .unwrap();
+    // Run the node and wait for the sync message;
+    tokio::task::spawn(async move { node.run().await });
+    // Split the client into components that send messages and listen to messages
+    let Client { requester, mut log_rx, mut event_rx } = client;
+    // Sync with the single script added
+    loop {
+        tokio::select! {
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d) => tracing::info!("{d}"),
+                        _ => (),
+                    }
+                }
+            }
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    match event {
+                        Event::Synced(_) => {
+                            tracing::info!("Sync complete!");
+                            break;
+                        },
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+    requester.shutdown().await;
 ```
 
 ## Minimum Supported Rust Version (MSRV) Policy
 
-The `kyoto` core library with default features supports an MSRV of Rust 1.63. To build the library with Rust 1.63, the `database` feature requires a pinned dependency: `cargo update -p allocator-api2 --precise "0.2.9"`.
+The `kyoto` core library with default features supports an MSRV of Rust 1.63.
 
 While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
 
