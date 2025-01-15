@@ -261,7 +261,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
-                                        .send_warning(Warning::TransactionRejected(payload)).await;
+                                        .send_warning(Warning::TransactionRejected(payload));
                                 }
                                 PeerMessage::FeeFilter(feerate) => {
                                     let mut peer_map = self.peer_map.lock().await;
@@ -312,7 +312,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 let header_opt = chain.fetch_header(request.height).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }).and_then(|opt| opt.ok_or(FetchHeaderError::UnknownHeight));
                                 let send_result = request.oneshot.send(header_opt);
                                 if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                    self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             },
                             ClientMessage::GetHeaderBatch(request) => {
@@ -320,7 +320,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 let range_opt = chain.fetch_header_range(request.range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
                                 let send_result = request.oneshot.send(range_opt);
                                 if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                    self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             },
                             ClientMessage::GetBroadcastMinFeeRate(request) => {
@@ -328,7 +328,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 let fee_rate = peer_map.broadcast_min();
                                 let send_result = request.send(fee_rate);
                                 if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped).await
+                                    self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
                             ClientMessage::NoOp => (),
@@ -363,12 +363,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_map.clean().await;
         // Find more peers when lower than the desired threshold.
         if peer_map.live() < self.next_required_peers().await {
-            self.dialog
-                .send_warning(Warning::NotEnoughConnections)
-                .await;
+            self.dialog.send_warning(Warning::NotEnoughConnections);
             let address = peer_map.next_peer().await?;
             if peer_map.dispatch(address).await.is_err() {
-                self.dialog.send_warning(Warning::CouldNotConnect).await;
+                self.dialog.send_warning(Warning::CouldNotConnect);
             }
         }
         Ok(())
@@ -419,8 +417,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     self.dialog.send_info(Log::TxSent(txid)).await;
                 } else {
                     self.dialog
-                        .send_warning(Warning::TransactionRejected(RejectPayload::from_txid(txid)))
-                        .await;
+                        .send_warning(Warning::TransactionRejected(RejectPayload::from_txid(txid)));
                 }
             }
         }
@@ -474,7 +471,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             }
             NodeState::TransactionsSynced => {
                 if last_block.stale() {
-                    self.dialog.send_warning(Warning::PotentialStaleTip).await;
+                    self.dialog.send_warning(Warning::PotentialStaleTip);
                     self.dialog
                         .send_dialog("Disconnecting from remote nodes to find new connections")
                         .await;
@@ -531,7 +528,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 if !version_message.services.has(ServiceFlags::COMPACT_FILTERS)
                     || !version_message.services.has(ServiceFlags::NETWORK)
                 {
-                    self.dialog.send_warning(Warning::NoCompactFilters).await;
+                    self.dialog.send_warning(Warning::NoCompactFilters);
                     return Ok(MainThreadMessage::Disconnect);
                 }
             }
@@ -599,19 +596,15 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     return self.next_stateful_message(chain.deref_mut()).await;
                 }
                 HeaderSyncError::LessWorkFork => {
-                    self.dialog
-                        .send_warning(Warning::UnexpectedSyncError {
-                            warning: "A peer sent us a fork with less work.".into(),
-                        })
-                        .await;
+                    self.dialog.send_warning(Warning::UnexpectedSyncError {
+                        warning: "A peer sent us a fork with less work.".into(),
+                    });
                     return Some(MainThreadMessage::Disconnect);
                 }
                 _ => {
-                    self.dialog
-                        .send_warning(Warning::UnexpectedSyncError {
-                            warning: format!("Unexpected header syncing error: {}", e),
-                        })
-                        .await;
+                    self.dialog.send_warning(Warning::UnexpectedSyncError {
+                        warning: format!("Unexpected header syncing error: {}", e),
+                    });
                     let mut lock = self.peer_map.lock().await;
                     lock.ban(peer_id).await;
                     return Some(MainThreadMessage::Disconnect);
@@ -634,24 +627,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 AppendAttempt::Extended => self.next_stateful_message(chain.deref_mut()).await,
                 AppendAttempt::Conflict(_) => {
                     // TODO: Request the filter and block from the peer
-                    self.dialog
-                        .send_warning(Warning::UnexpectedSyncError {
-                            warning: "Found a conflict while peers are sending filter headers"
-                                .into(),
-                        })
-                        .await;
+                    self.dialog.send_warning(Warning::UnexpectedSyncError {
+                        warning: "Found a conflict while peers are sending filter headers".into(),
+                    });
                     Some(MainThreadMessage::Disconnect)
                 }
             },
             Err(e) => {
-                self.dialog
-                    .send_warning(Warning::UnexpectedSyncError {
-                        warning: format!(
-                            "Compact filter header syncing encountered an error: {}",
-                            e
-                        ),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::UnexpectedSyncError {
+                    warning: format!("Compact filter header syncing encountered an error: {}", e),
+                });
                 let mut lock = self.peer_map.lock().await;
                 lock.ban(peer_id).await;
                 Some(MainThreadMessage::Disconnect)
@@ -665,11 +650,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         match chain.sync_filter(filter).await {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
             Err(e) => {
-                self.dialog
-                    .send_warning(Warning::UnexpectedSyncError {
-                        warning: format!("Compact filter syncing encountered an error: {}", e),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::UnexpectedSyncError {
+                    warning: format!("Compact filter syncing encountered an error: {}", e),
+                });
                 match e {
                     CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
                     _ => {
@@ -686,11 +669,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn handle_block(&self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.check_send_block(block).await {
-            self.dialog
-                .send_warning(Warning::UnexpectedSyncError {
-                    warning: format!("Unexpected block scanning error: {}", e),
-                })
-                .await;
+            self.dialog.send_warning(Warning::UnexpectedSyncError {
+                warning: format!("Unexpected block scanning error: {}", e),
+            });
             let mut lock = self.peer_map.lock().await;
             lock.ban(peer_id).await;
             return Some(MainThreadMessage::Disconnect);

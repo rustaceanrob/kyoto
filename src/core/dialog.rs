@@ -48,7 +48,7 @@ impl Dialog {
         let _ = self.log_tx.send(Log::Dialog(message)).await;
     }
 
-    pub(crate) async fn send_warning(&self, warning: Warning) {
+    pub(crate) fn send_warning(&self, warning: Warning) {
         let _ = self.warn_tx.send(warning);
     }
 

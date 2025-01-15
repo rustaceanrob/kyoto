@@ -137,8 +137,7 @@ impl<H: HeaderStore> Chain<H> {
                             warning: format!(
                                 "Unexpected error fetching a header from the header store at height {height}"
                             ),
-                        })
-                        .await;
+                        });
                 }
                 header_opt.map_err(HeaderPersistenceError::Database)
             }
@@ -249,11 +248,9 @@ impl<H: HeaderStore> Chain<H> {
             .write(self.header_chain.headers())
             .await
         {
-            self.dialog
-                .send_warning(Warning::FailedPersistance {
-                    warning: format!("Could not save headers to disk: {e}"),
-                })
-                .await;
+            self.dialog.send_warning(Warning::FailedPersistance {
+                warning: format!("Could not save headers to disk: {e}"),
+            });
         }
     }
 
@@ -266,11 +263,9 @@ impl<H: HeaderStore> Chain<H> {
             .write_over(self.header_chain.headers(), height)
             .await
         {
-            self.dialog
-                .send_warning(Warning::FailedPersistance {
-                    warning: format!("Could not save headers to disk: {e}"),
-                })
-                .await;
+            self.dialog.send_warning(Warning::FailedPersistance {
+                warning: format!("Could not save headers to disk: {e}"),
+            });
         }
     }
 
@@ -285,7 +280,7 @@ impl<H: HeaderStore> Chain<H> {
             .map_err(HeaderPersistenceError::Database)?;
         if let Some(first) = loaded_headers.values().next() {
             if first.prev_blockhash.ne(&self.tip()) {
-                self.dialog.send_warning(Warning::UnlinkableAnchor).await;
+                self.dialog.send_warning(Warning::UnlinkableAnchor);
                 // The header chain did not align, so just start from the anchor
                 return Err(HeaderPersistenceError::CannotLocateHistory);
             } else if loaded_headers
@@ -293,7 +288,7 @@ impl<H: HeaderStore> Chain<H> {
                 .zip(loaded_headers.iter().skip(1))
                 .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
             {
-                self.dialog.send_warning(Warning::CorruptedHeaders).await;
+                self.dialog.send_warning(Warning::CorruptedHeaders);
                 return Err(HeaderPersistenceError::HeadersDoNotLink);
             }
             loaded_headers.iter().for_each(|header| {
@@ -418,8 +413,7 @@ impl<H: HeaderStore> Chain<H> {
                 self.dialog
                     .send_warning(
                         Warning::UnexpectedSyncError { warning: "Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into() }
-                    )
-                    .await;
+                    );
                 return Err(HeaderSyncError::InvalidCheckpoint);
             }
         }
@@ -432,7 +426,7 @@ impl<H: HeaderStore> Chain<H> {
     // we only accept it if there is more work provided. otherwise, we disconnect the peer sending
     // us this fork
     async fn evaluate_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        self.dialog.send_warning(Warning::EvaluatingFork).await;
+        self.dialog.send_warning(Warning::EvaluatingFork);
         // We only care about the headers these two chains do not have in common
         let uncommon: Vec<Header> = header_batch
             .inner()
@@ -472,11 +466,9 @@ impl<H: HeaderStore> Chain<H> {
                 self.flush_over_height(stem).await;
                 Ok(())
             } else {
-                self.dialog
-                    .send_warning(Warning::UnexpectedSyncError {
-                        warning: "Peer sent us a fork with less work than the current chain".into(),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::UnexpectedSyncError {
+                    warning: "Peer sent us a fork with less work than the current chain".into(),
+                });
                 Err(HeaderSyncError::LessWorkFork)
             }
         } else {
@@ -515,8 +507,7 @@ impl<H: HeaderStore> Chain<H> {
                         warning:
                             "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
                                 .into(),
-                    })
-                    .await;
+                    });
                     return Err(HeaderSyncError::MiscalculatedDifficulty);
                 }
             }
@@ -558,8 +549,7 @@ impl<H: HeaderStore> Chain<H> {
                                     warning:
                                         "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
                                             .into(),
-                                })
-                                .await;
+                                });
                             return Err(HeaderSyncError::MiscalculatedDifficulty);
                         }
                     }
@@ -577,13 +567,10 @@ impl<H: HeaderStore> Chain<H> {
                 }
             },
             None => {
-                self.dialog
-                    .send_warning(Warning::UnexpectedSyncError {
-                        warning:
-                            "Unable to audit the difficulty adjustment due to an index overflow"
-                                .into(),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::UnexpectedSyncError {
+                    warning: "Unable to audit the difficulty adjustment due to an index overflow"
+                        .into(),
+                });
             }
         }
         Ok(())
@@ -853,7 +840,7 @@ impl<H: HeaderStore> Chain<H> {
             Some(sender) => {
                 let send_result = sender.send(Ok(IndexedBlock::new(height, block)));
                 if send_result.is_err() {
-                    self.dialog.send_warning(Warning::ChannelDropped).await
+                    self.dialog.send_warning(Warning::ChannelDropped)
                 };
             }
             None => {
@@ -885,7 +872,7 @@ impl<H: HeaderStore> Chain<H> {
         if height_opt.is_none() {
             let err_reponse = request.oneshot.send(Err(FetchBlockError::UnknownHash));
             if err_reponse.is_err() {
-                self.dialog.send_warning(Warning::ChannelDropped).await;
+                self.dialog.send_warning(Warning::ChannelDropped);
             }
         } else {
             self.dialog
@@ -902,12 +889,10 @@ impl<H: HeaderStore> Chain<H> {
         let mut db = self.db.lock().await;
         let range_opt = db.load(range).await;
         if range_opt.is_err() {
-            self.dialog
-                .send_warning(Warning::FailedPersistance {
-                    warning: "Unexpected error fetching a range of headers from the header store"
-                        .to_string(),
-                })
-                .await;
+            self.dialog.send_warning(Warning::FailedPersistance {
+                warning: "Unexpected error fetching a range of headers from the header store"
+                    .to_string(),
+            });
         }
         range_opt.map_err(HeaderPersistenceError::Database)
     }
