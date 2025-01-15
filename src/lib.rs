@@ -128,7 +128,7 @@ pub use {
     crate::core::builder::NodeBuilder,
     crate::core::client::{Client, Requester},
     crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{Event, FailurePayload, Log, Progress, SyncUpdate, Warning},
+    crate::core::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
     crate::core::node::{Node, NodeState},
 };
 

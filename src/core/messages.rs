@@ -63,7 +63,7 @@ pub enum Event {
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
     /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
-    TxBroadcastFailure(FailurePayload),
+    TxBroadcastFailure(RejectPayload),
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
@@ -132,14 +132,14 @@ impl Progress {
 
 /// An attempt to broadcast a tranasction failed.
 #[derive(Debug, Clone, Copy)]
-pub struct FailurePayload {
+pub struct RejectPayload {
     /// An enumeration of the reason for the transaction failure. If none is provided, the message could not be sent over the wire.
     pub reason: Option<RejectReason>,
     /// The transaction that was rejected or failed to broadcast.
     pub txid: Txid,
 }
 
-impl FailurePayload {
+impl RejectPayload {
     pub(crate) fn from_txid(txid: Txid) -> Self {
         Self { reason: None, txid }
     }

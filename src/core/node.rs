@@ -24,7 +24,7 @@ use crate::{
     core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    ConnectionType, FailurePayload, PeerStoreSizeConfig, TrustedPeer, TxBroadcastPolicy,
+    ConnectionType, PeerStoreSizeConfig, RejectPayload, TrustedPeer, TxBroadcastPolicy,
 };
 
 use super::{
@@ -419,7 +419,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     self.dialog.send_info(Log::TxSent(txid)).await;
                 } else {
                     self.dialog
-                        .send_event(Event::TxBroadcastFailure(FailurePayload::from_txid(txid)))
+                        .send_event(Event::TxBroadcastFailure(RejectPayload::from_txid(txid)))
                         .await;
                 }
             }
