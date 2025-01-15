@@ -460,9 +460,7 @@ impl<H: HeaderStore> Chain<H> {
                 self.cf_header_chain.remove(removed_hashes);
                 self.filter_chain.remove(removed_hashes);
                 self.block_queue.remove(removed_hashes);
-                self.dialog
-                    .send_event(Event::BlocksDisconnected(reorged))
-                    .await;
+                self.dialog.send_event(Event::BlocksDisconnected(reorged));
                 self.flush_over_height(stem).await;
                 Ok(())
             } else {
@@ -747,9 +745,7 @@ impl<H: HeaderStore> Chain<H> {
                 .await
                 .ok_or(CFilterSyncError::UnknownFilterHash)?;
             let indexed_filter = IndexedFilter::new(height, filter);
-            self.dialog
-                .send_event(Event::IndexedFilter(indexed_filter))
-                .await;
+            self.dialog.send_event(Event::IndexedFilter(indexed_filter));
         }
 
         #[cfg(not(feature = "filter-control"))]
@@ -845,8 +841,7 @@ impl<H: HeaderStore> Chain<H> {
             }
             None => {
                 self.dialog
-                    .send_event(Event::Block(IndexedBlock::new(height, block)))
-                    .await;
+                    .send_event(Event::Block(IndexedBlock::new(height, block)));
             }
         }
         Ok(())
