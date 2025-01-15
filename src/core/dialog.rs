@@ -56,7 +56,7 @@ impl Dialog {
         let _ = self.log_tx.send(info).await;
     }
 
-    pub(crate) async fn send_event(&self, message: Event) {
+    pub(crate) fn send_event(&self, message: Event) {
         let _ = self.event_tx.send(message);
     }
 }

@@ -466,7 +466,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     self.dialog
                         .send_info(Log::StateChange(NodeState::TransactionsSynced))
                         .await;
-                    let _ = self.dialog.send_event(Event::Synced(update)).await;
+                    self.dialog.send_event(Event::Synced(update));
                 }
             }
             NodeState::TransactionsSynced => {
