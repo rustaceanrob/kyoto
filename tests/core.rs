@@ -13,6 +13,7 @@ use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
     core::{client::Client, node::Node},
     BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
+    Warning,
 };
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -111,11 +112,7 @@ async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) 
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
-async fn sync_assert(
-    best: &bitcoin::BlockHash,
-    channel: &mut UnboundedReceiver<Event>,
-    log: &mut Receiver<Log>,
-) {
+async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<Event>) {
     loop {
         tokio::select! {
             event = channel.recv() => {
@@ -125,9 +122,21 @@ async fn sync_assert(
                     break;
                 };
             }
-            log = log.recv() => {
+        }
+    }
+}
+
+async fn print_logs(mut log_rx: Receiver<Log>, mut warn_rx: UnboundedReceiver<Warning>) {
+    loop {
+        tokio::select! {
+            log = log_rx.recv() => {
                 if let Some(log) = log {
-                    println!("{log}");
+                    println!("{log}")
+                }
+            }
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    println!("{warn}")
                 }
             }
         }
@@ -156,11 +165,12 @@ async fn test_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -209,11 +219,12 @@ async fn test_mine_after_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -239,7 +250,7 @@ async fn test_mine_after_reorg() {
     }
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
-    sync_assert(&best, &mut channel, &mut log).await;
+    sync_assert(&best, &mut channel).await;
     requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -265,11 +276,12 @@ async fn test_various_client_methods() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
     let batch = requester.get_header_range(10_000..10_002).await.unwrap();
     assert!(batch.is_empty());
     let _ = requester.broadcast_min_feerate().await.unwrap();
@@ -303,11 +315,12 @@ async fn test_sql_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
     let batch = requester.get_header_range(0..10).await.unwrap();
     assert!(!batch.is_empty());
     requester.shutdown().await.unwrap();
@@ -322,10 +335,11 @@ async fn test_sql_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: _,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // Make sure the reorganization is caught after a cold start
     while let Some(message) = channel.recv().await {
         match message {
@@ -343,6 +357,7 @@ async fn test_sql_reorg() {
         }
     }
     requester.shutdown().await.unwrap();
+    drop(handle);
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -351,12 +366,13 @@ async fn test_sql_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel, &mut log).await;
+    sync_assert(&best, &mut channel).await;
     requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -383,11 +399,12 @@ async fn test_two_deep_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
     requester.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_height = num_blocks(rpc);
@@ -397,15 +414,17 @@ async fn test_two_deep_reorg() {
     invalidate_block(rpc, &best).await;
     mine_blocks(rpc, &miner, 3, 1).await;
     let best = best_hash(rpc);
+    drop(handle);
     // Make sure the reorganization is caught after a cold start
     let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: _,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     while let Some(message) = channel.recv().await {
         match message {
             kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
@@ -421,6 +440,7 @@ async fn test_two_deep_reorg() {
             _ => {}
         }
     }
+    drop(handle);
     requester.shutdown().await.unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
@@ -430,12 +450,13 @@ async fn test_two_deep_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel, &mut log).await;
+    sync_assert(&best, &mut channel).await;
     requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
@@ -461,11 +482,13 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
-    sync_assert(&best, &mut channel, &mut log).await;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
+    drop(handle);
     requester.shutdown().await.unwrap();
     // Reorganize the blocks
     let old_best = best;
@@ -483,10 +506,11 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: _,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = channel.recv().await {
         match message {
@@ -503,6 +527,7 @@ async fn test_sql_stale_anchor() {
             _ => {}
         }
     }
+    drop(handle);
     requester.shutdown().await.unwrap();
     // Don't do anything, but reload the node from the checkpoint
     let cp = best_hash(rpc);
@@ -518,12 +543,14 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel, &mut log).await;
+    sync_assert(&best, &mut channel).await;
+    drop(handle);
     requester.shutdown().await.unwrap();
     // Mine more blocks and reload from the checkpoint
     let cp = best_hash(rpc);
@@ -540,12 +567,13 @@ async fn test_sql_stale_anchor() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
-        warn_rx: _,
+        log_rx,
+        warn_rx,
         event_rx: mut channel,
     } = client;
+    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel, &mut log).await;
+    sync_assert(&best, &mut channel).await;
     requester.shutdown().await.unwrap();
     rpc.stop().unwrap();
 }
