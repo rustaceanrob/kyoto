@@ -260,7 +260,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
-                                        .send_warning(Warning::TransactionRejected).await;
+                                        .send_warning(Warning::TransactionRejected(payload)).await;
                                     self.dialog.send_event(Event::TxBroadcastFailure(payload)).await;
                                 }
                                 PeerMessage::FeeFilter(feerate) => {
