@@ -261,7 +261,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
                                         .send_warning(Warning::TransactionRejected(payload)).await;
-                                    self.dialog.send_event(Event::TxBroadcastFailure(payload)).await;
                                 }
                                 PeerMessage::FeeFilter(feerate) => {
                                     let mut peer_map = self.peer_map.lock().await;
@@ -419,7 +418,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     self.dialog.send_info(Log::TxSent(txid)).await;
                 } else {
                     self.dialog
-                        .send_event(Event::TxBroadcastFailure(RejectPayload::from_txid(txid)))
+                        .send_warning(Warning::TransactionRejected(RejectPayload::from_txid(txid)))
                         .await;
                 }
             }

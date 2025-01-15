@@ -80,7 +80,6 @@ async fn main() {
                         Event::BlocksDisconnected(_) => {
                             tracing::warn!("Some blocks were reorganized")
                         },
-                        _ => (),
                     }
                 }
             }

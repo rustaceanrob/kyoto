@@ -62,8 +62,6 @@ pub enum Event {
     Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
-    /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
-    TxBroadcastFailure(RejectPayload),
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
