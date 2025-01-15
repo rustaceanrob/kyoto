@@ -3,4 +3,5 @@
 /kyoto
 .DS_Store
 .idea/
+/.vscode
 src/.DS_Store
