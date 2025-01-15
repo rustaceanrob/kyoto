@@ -39,7 +39,7 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     Ok((bitcoind, socket_addr))
 }
 
-async fn new_node(addrs: HashSet<ScriptBuf>, socket_addr: SocketAddrV4) -> (Node<(), ()>, Client) {
+fn new_node(addrs: HashSet<ScriptBuf>, socket_addr: SocketAddrV4) -> (Node<(), ()>, Client) {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
@@ -49,7 +49,7 @@ async fn new_node(addrs: HashSet<ScriptBuf>, socket_addr: SocketAddrV4) -> (Node
     (node, client)
 }
 
-async fn new_node_sql(
+fn new_node_sql(
     addrs: HashSet<ScriptBuf>,
     socket_addr: SocketAddrV4,
     tempdir_path: PathBuf,
@@ -67,7 +67,7 @@ async fn new_node_sql(
     (node, client)
 }
 
-async fn new_node_anchor_sql(
+fn new_node_anchor_sql(
     addrs: HashSet<ScriptBuf>,
     checkpoint: HeaderCheckpoint,
     socket_addr: SocketAddrV4,
@@ -152,7 +152,7 @@ async fn test_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -205,7 +205,7 @@ async fn test_mine_after_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -261,7 +261,7 @@ async fn test_various_client_methods() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr).await;
+    let (node, client) = new_node(scripts.clone(), socket_addr);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -299,7 +299,7 @@ async fn test_sql_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -318,7 +318,7 @@ async fn test_sql_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Spin up the node on a cold start
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -347,7 +347,7 @@ async fn test_sql_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -379,7 +379,7 @@ async fn test_two_deep_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -398,7 +398,7 @@ async fn test_two_deep_reorg() {
     mine_blocks(rpc, &miner, 3, 1).await;
     let best = best_hash(rpc);
     // Make sure the reorganization is caught after a cold start
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -426,7 +426,7 @@ async fn test_two_deep_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -457,7 +457,7 @@ async fn test_sql_stale_anchor() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone()).await;
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -479,8 +479,7 @@ async fn test_sql_stale_anchor() {
         HeaderCheckpoint::new(old_height as u32, old_best),
         socket_addr,
         tempdir.clone(),
-    )
-    .await;
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -515,8 +514,7 @@ async fn test_sql_stale_anchor() {
         HeaderCheckpoint::new(old_height as u32, cp),
         socket_addr,
         tempdir.clone(),
-    )
-    .await;
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -538,8 +536,7 @@ async fn test_sql_stale_anchor() {
         HeaderCheckpoint::new(old_height as u32, cp),
         socket_addr,
         tempdir,
-    )
-    .await;
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
