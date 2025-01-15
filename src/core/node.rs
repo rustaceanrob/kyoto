@@ -93,11 +93,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     ) -> (Self, Client) {
         // Set up a communication channel between the node and client
         let (log_tx, log_rx) = mpsc::channel::<Log>(32);
+        let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
-        let client = Client::new(log_rx, event_rx, ctx);
+        let client = Client::new(log_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Dialog::new(log_tx, event_tx);
+        let dialog = Dialog::new(log_tx, warn_tx, event_tx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager

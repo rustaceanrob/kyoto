@@ -42,7 +42,7 @@
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, mut log_rx, mut event_rx } = client;
+//!     let Client { requester, mut log_rx, warn_rx: _, mut event_rx } = client;
 //!     // Sync with the single script added
 //!     loop {
 //!         tokio::select! {

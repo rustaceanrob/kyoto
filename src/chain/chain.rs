@@ -949,7 +949,7 @@ mod tests {
         },
         core::{
             dialog::Dialog,
-            messages::{Event, Log},
+            messages::{Event, Log, Warning},
         },
         filters::cfheader_chain::AppendAttempt,
     };
@@ -958,6 +958,7 @@ mod tests {
 
     fn new_regtest(anchor: HeaderCheckpoint) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
+        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
@@ -966,7 +967,7 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(log_tx, event_tx),
+            Dialog::new(log_tx, warn_tx, event_tx),
             (),
             1,
         )
@@ -974,6 +975,7 @@ mod tests {
 
     fn new_regtest_two_peers(anchor: HeaderCheckpoint) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
+        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
         checkpoints.prune_up_to(anchor);
@@ -982,7 +984,7 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(log_tx, event_tx),
+            Dialog::new(log_tx, warn_tx, event_tx),
             (),
             2,
         )

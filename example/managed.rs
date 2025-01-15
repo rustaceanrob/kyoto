@@ -54,6 +54,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        warn_rx: _,
         mut event_rx,
     } = client;
 
@@ -62,10 +63,8 @@ async fn main() {
         tokio::select! {
             log = log_rx.recv() => {
                 if let Some(log) = log {
-                    match log {
-                        Log::Dialog(d) => tracing::info!("{d}"),
-                        Log::Warning(e) => tracing::warn!("{e}"),
-                        _ => (),
+                    if let Log::Dialog(log) = log {
+                        tracing::info!("{log}")
                     }
                 }
             }
