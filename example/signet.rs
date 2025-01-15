@@ -57,6 +57,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        mut warn_rx,
         mut event_rx,
     } = client;
     // Continually listen for events until the node is synced to its peers.
@@ -80,7 +81,6 @@ async fn main() {
                         Event::BlocksDisconnected(_) => {
                             tracing::warn!("Some blocks were reorganized")
                         },
-                        _ => (),
                     }
                 }
             }
@@ -88,11 +88,15 @@ async fn main() {
                 if let Some(log) = log {
                     match log {
                         Log::Dialog(d)=> tracing::info!("{d}"),
-                        Log::Warning(warning)=> tracing::warn!("{warning}"),
                         Log::StateChange(node_state) => tracing::info!("{node_state}"),
                         Log::ConnectionsMet => tracing::info!("All required connections met"),
                         _ => (),
                     }
+                }
+            }
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}");
                 }
             }
         }

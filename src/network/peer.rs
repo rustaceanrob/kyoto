@@ -100,7 +100,7 @@ impl Peer {
                 self.dialog
                     .send_dialog(format!("Failed to establish an encrypted connection: {e}"))
                     .await;
-                self.dialog.send_warning(Warning::CouldNotConnect).await;
+                self.dialog.send_warning(Warning::CouldNotConnect);
             }
             let (decryptor, encryptor) = handshake_result?;
             let message_mutex: MutexMessageGenerator =
@@ -140,11 +140,11 @@ impl Peer {
                 return Ok(());
             }
             if self.message_counter.unsolicited() {
-                self.dialog.send_warning(Warning::UnsolicitedMessage).await;
+                self.dialog.send_warning(Warning::UnsolicitedMessage);
                 return Ok(());
             }
             if self.message_counter.unresponsive() {
-                self.dialog.send_warning(Warning::PeerTimedOut).await;
+                self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {

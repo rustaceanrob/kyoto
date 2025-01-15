@@ -3,7 +3,7 @@
 //! blocks.
 
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
-use kyoto::{Address, Client, Event, Log, Network};
+use kyoto::{Address, Client, Event, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -45,6 +45,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        mut warn_rx,
         mut event_rx,
     } = client;
     // Sync with the single script added
@@ -59,11 +60,12 @@ async fn main() {
             }
             log = log_rx.recv() => {
                 if let Some(log) = log {
-                    match log {
-                        Log::Dialog(d) => tracing::info!("{d}"),
-                        Log::Warning(warning) => tracing::warn!("{warning}"),
-                        _ => (),
-                    }
+                    tracing::info!("{log}");
+                }
+            }
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}");
                 }
             }
         }
@@ -89,11 +91,12 @@ async fn main() {
             }
             log = log_rx.recv() => {
                 if let Some(log) = log {
-                    match log {
-                        Log::Dialog(d) => tracing::info!("{d}"),
-                        Log::Warning(warning) => tracing::warn!("{warning}"),
-                        _ => (),
-                    }
+                    tracing::info!("{log}");
+                }
+            }
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}");
                 }
             }
         }

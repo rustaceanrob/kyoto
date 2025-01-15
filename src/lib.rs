@@ -42,7 +42,7 @@
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, mut log_rx, mut event_rx } = client;
+//!     let Client { requester, mut log_rx, warn_rx: _, mut event_rx } = client;
 //!     // Sync with the single script added
 //!     loop {
 //!         tokio::select! {
@@ -128,7 +128,7 @@ pub use {
     crate::core::builder::NodeBuilder,
     crate::core::client::{Client, Requester},
     crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{Event, FailurePayload, Log, Progress, SyncUpdate, Warning},
+    crate::core::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
     crate::core::node::{Node, NodeState},
 };
 

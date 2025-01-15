@@ -287,7 +287,7 @@ impl<P: PeerStore> PeerMap<P> {
             peer_manager.num_unbanned().await?
         };
         if current_count < 1 {
-            self.dialog.send_warning(Warning::EmptyPeerDatabase).await;
+            self.dialog.send_warning(Warning::EmptyPeerDatabase);
             #[cfg(feature = "dns")]
             self.bootstrap().await?;
         }
@@ -334,14 +334,12 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog
-                    .send_warning(Warning::FailedPersistance {
-                        warning: format!(
-                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.addr, peer.port, peer.services
-                        ),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::FailedPersistance {
+                    warning: format!(
+                        "Encountered an error adding {:?}:{} flags: {} ... {e}",
+                        peer.addr, peer.port, peer.services
+                    ),
+                });
             }
         }
     }
@@ -359,14 +357,12 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog
-                    .send_warning(Warning::FailedPersistance {
-                        warning: format!(
-                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.address, peer.port, peer.service_flags
-                        ),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::FailedPersistance {
+                    warning: format!(
+                        "Encountered an error adding {:?}:{} flags: {} ... {e}",
+                        peer.address, peer.port, peer.service_flags
+                    ),
+                });
             }
         }
     }
@@ -384,14 +380,12 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog
-                    .send_warning(Warning::FailedPersistance {
-                        warning: format!(
-                            "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                            peer.address, peer.port, peer.service_flags
-                        ),
-                    })
-                    .await;
+                self.dialog.send_warning(Warning::FailedPersistance {
+                    warning: format!(
+                        "Encountered an error adding {:?}:{} flags: {} ... {e}",
+                        peer.address, peer.port, peer.service_flags
+                    ),
+                });
             }
         }
     }

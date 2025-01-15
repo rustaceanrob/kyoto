@@ -5,12 +5,21 @@ use super::messages::{Event, Log, Progress, Warning};
 #[derive(Debug, Clone)]
 pub(crate) struct Dialog {
     log_tx: Sender<Log>,
+    warn_tx: UnboundedSender<Warning>,
     event_tx: UnboundedSender<Event>,
 }
 
 impl Dialog {
-    pub(crate) fn new(log_tx: Sender<Log>, event_tx: UnboundedSender<Event>) -> Self {
-        Self { log_tx, event_tx }
+    pub(crate) fn new(
+        log_tx: Sender<Log>,
+        warn_tx: UnboundedSender<Warning>,
+        event_tx: UnboundedSender<Event>,
+    ) -> Self {
+        Self {
+            log_tx,
+            warn_tx,
+            event_tx,
+        }
     }
 
     pub(crate) async fn send_dialog(&self, dialog: impl Into<String>) {
@@ -39,8 +48,8 @@ impl Dialog {
         let _ = self.log_tx.send(Log::Dialog(message)).await;
     }
 
-    pub(crate) async fn send_warning(&self, warning: Warning) {
-        let _ = self.log_tx.send(Log::Warning(warning)).await;
+    pub(crate) fn send_warning(&self, warning: Warning) {
+        let _ = self.warn_tx.send(warning);
     }
 
     pub(crate) async fn send_info(&self, info: Log) {

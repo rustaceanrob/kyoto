@@ -127,11 +127,7 @@ async fn sync_assert(
             }
             log = log.recv() => {
                 if let Some(log) = log {
-                    match log {
-                        Log::Dialog(d) => println!("{d}"),
-                        Log::Warning(warning) => println!("{warning}"),
-                        _ => (),
-                    }
+                    println!("{log}");
                 }
             }
         }
@@ -161,6 +157,7 @@ async fn test_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -213,6 +210,7 @@ async fn test_mine_after_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -268,6 +266,7 @@ async fn test_various_client_methods() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -305,6 +304,7 @@ async fn test_sql_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -323,6 +323,7 @@ async fn test_sql_reorg() {
     let Client {
         requester,
         log_rx: _,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // Make sure the reorganization is caught after a cold start
@@ -351,6 +352,7 @@ async fn test_sql_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
@@ -382,6 +384,7 @@ async fn test_two_deep_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -400,6 +403,7 @@ async fn test_two_deep_reorg() {
     let Client {
         requester,
         log_rx: _,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     while let Some(message) = channel.recv().await {
@@ -427,6 +431,7 @@ async fn test_two_deep_reorg() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
@@ -457,6 +462,7 @@ async fn test_sql_stale_anchor() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     sync_assert(&best, &mut channel, &mut log).await;
@@ -479,6 +485,7 @@ async fn test_sql_stale_anchor() {
     let Client {
         requester,
         log_rx: _,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // Ensure SQL is able to catch the fork by loading in headers from the database
@@ -514,6 +521,7 @@ async fn test_sql_stale_anchor() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
@@ -536,6 +544,7 @@ async fn test_sql_stale_anchor() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // The node properly syncs after persisting a reorg
@@ -575,13 +584,13 @@ async fn test_halting_works() {
     let Client {
         requester,
         log_rx: mut log,
+        warn_rx: _,
         event_rx: mut channel,
     } = client;
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = log.recv().await {
         match message {
             Log::Dialog(d) => println!("{d}"),
-            Log::Warning(warning) => println!("{warning}"),
             Log::StateChange(node_state) => {
                 if let NodeState::FilterHeadersSynced = node_state {
                     println!("Sleeping for one second...");
@@ -632,11 +641,12 @@ async fn test_signet_syncs() {
                 }
                 log = client.log_rx.recv() => {
                     if let Some(log) = log {
-                        match log {
-                            Log::Dialog(d) => println!("{d}"),
-                            Log::Warning(warning) => tracing::warn!("{warning}"),
-                            _ => (),
-                        }
+                        println!("{log}");
+                    }
+                }
+                warn = client.warn_rx.recv() => {
+                    if let Some(warn) = warn {
+                        println!("{warn}")
                     }
                 }
             }

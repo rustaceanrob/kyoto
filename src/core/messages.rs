@@ -21,8 +21,6 @@ use super::{
 pub enum Log {
     /// Human readable dialog of what the node is currently doing.
     Dialog(String),
-    /// A warning that may effect the function of the node.
-    Warning(Warning),
     /// The current state of the node in the syncing process.
     StateChange(NodeState),
     /// The node is connected to all required peers.
@@ -39,7 +37,6 @@ impl core::fmt::Display for Log {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Log::Dialog(d) => write!(f, "{}", d),
-            Log::Warning(w) => write!(f, "{}", w),
             Log::StateChange(s) => write!(f, "{}", s),
             Log::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
             Log::ConnectionsMet => write!(f, "Required connections met"),
@@ -62,8 +59,6 @@ pub enum Event {
     Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected(Vec<DisconnectedHeader>),
-    /// A problem occured sending a transaction. Either the remote node disconnected or the transaction was rejected.
-    TxBroadcastFailure(FailurePayload),
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
@@ -132,14 +127,14 @@ impl Progress {
 
 /// An attempt to broadcast a tranasction failed.
 #[derive(Debug, Clone, Copy)]
-pub struct FailurePayload {
+pub struct RejectPayload {
     /// An enumeration of the reason for the transaction failure. If none is provided, the message could not be sent over the wire.
     pub reason: Option<RejectReason>,
     /// The transaction that was rejected or failed to broadcast.
     pub txid: Txid,
 }
 
-impl FailurePayload {
+impl RejectPayload {
     pub(crate) fn from_txid(txid: Txid) -> Self {
         Self { reason: None, txid }
     }
@@ -245,7 +240,7 @@ pub enum Warning {
     /// The headers in the database do not link together. Recoverable by deleting the database.
     CorruptedHeaders,
     /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
-    TransactionRejected,
+    TransactionRejected(RejectPayload),
     /// A database failed to persist some data.
     FailedPersistance {
         /// Additional context for the persistance failure.
@@ -286,7 +281,9 @@ impl core::fmt::Display for Warning {
                     "The node has been running for a long duration without receiving new blocks."
                 )
             }
-            Warning::TransactionRejected => write!(f, "A transaction got rejected."),
+            Warning::TransactionRejected(r) => {
+                write!(f, "A transaction got rejected: TXID {}", r.txid)
+            }
             Warning::FailedPersistance { warning } => {
                 write!(f, "A database failed to persist some data: {}", warning)
             }

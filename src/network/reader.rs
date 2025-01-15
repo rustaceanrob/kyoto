@@ -6,7 +6,7 @@ use bitcoin::{FeeRate, Txid};
 use tokio::sync::mpsc::Sender;
 
 use crate::core::channel_messages::{CombinedAddr, PeerMessage};
-use crate::core::messages::FailurePayload;
+use crate::core::messages::RejectPayload;
 
 use super::error::PeerReadError;
 use super::traits::MessageParser;
@@ -133,7 +133,7 @@ impl Reader {
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
                 let txid = Txid::from(rejection.hash);
-                Some(PeerMessage::Reject(FailurePayload {
+                Some(PeerMessage::Reject(RejectPayload {
                     reason: Some(rejection.ccode),
                     txid,
                 }))
