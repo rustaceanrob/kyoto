@@ -56,15 +56,12 @@ impl HeadersBatch {
     // Do the blocks pass the time requirements
     pub(crate) async fn valid_median_time_past(&self, previous_buffer: &mut Vec<Header>) -> bool {
         previous_buffer.extend_from_slice(&self.batch);
-        let median_times: Vec<u32> = previous_buffer
+        previous_buffer
             .windows(MEDIAN_TIME_PAST)
             .map(|window| window.iter().map(|block| block.time).collect::<Vec<_>>())
             .map(|mut times| times.median())
-            .collect();
-        median_times
-            .iter()
             .zip(&self.batch)
-            .all(|(median, header)| header.time >= *median)
+            .all(|(median, header)| header.time >= median)
     }
 
     // The tip of the list
