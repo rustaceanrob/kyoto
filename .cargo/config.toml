@@ -1,4 +1,2 @@
-# uncomment to use tokio-console
-
-# [build]
-# rustflags = ["--cfg", "tokio_unstable"]
+[build]
+rustflags = ["--cfg", "tokio_unstable"]

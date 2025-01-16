@@ -14,9 +14,7 @@ const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
 
 #[tokio::main]
 async fn main() {
-    // Add third-party logging
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+    console_subscriber::init();
     // Use a predefined checkpoint
     let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
