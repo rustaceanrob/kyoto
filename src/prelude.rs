@@ -24,50 +24,29 @@ pub trait Median<T> {
     fn median(&mut self) -> T;
 }
 
-impl Median<i64> for Vec<i64> {
-    fn median(&mut self) -> i64 {
-        self.sort();
-        let len = self.len();
-        if len == 0 {
-            0
-        } else if len % 2 == 1 {
-            self[len / 2]
-        } else {
-            let mid = len / 2;
-            (self[mid - 1] + self[mid]) / 2
+macro_rules! impl_median_for {
+    ($t:ident) => {
+        impl Median<$t> for [$t] {
+            fn median(&mut self) -> $t {
+                self.sort();
+                let len = self.len();
+                if len == 0 {
+                    0
+                } else if len % 2 == 1 {
+                    self[len / 2]
+                } else {
+                    let mid = len / 2;
+                    (self[mid - 1] + self[mid]) / 2
+                }
+            }
         }
-    }
+    };
 }
 
-impl Median<u64> for Vec<u64> {
-    fn median(&mut self) -> u64 {
-        self.sort();
-        let len = self.len();
-        if len == 0 {
-            0
-        } else if len % 2 == 1 {
-            self[len / 2]
-        } else {
-            let mid = len / 2;
-            (self[mid - 1] + self[mid]) / 2
-        }
-    }
-}
-
-impl Median<u32> for Vec<u32> {
-    fn median(&mut self) -> u32 {
-        self.sort();
-        let len = self.len();
-        if len == 0 {
-            0
-        } else if len % 2 == 1 {
-            self[len / 2]
-        } else {
-            let mid = len / 2;
-            (self[mid - 1] + self[mid]) / 2
-        }
-    }
-}
+impl_median_for!(u32);
+impl_median_for!(u64);
+impl_median_for!(i32);
+impl_median_for!(i64);
 
 pub trait Netgroup {
     fn netgroup(&self) -> String;
