@@ -188,7 +188,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut client_recv = self.client_recv.lock().await;
         loop {
             // Try to advance the state of the node
-            self.advance_state(&last_block).await;
+            self.advance_state(&mut last_block).await;
             // Connect to more peers if we need them and remove old connections
             self.dispatch().await?;
             // If there are blocks we need in the queue, we should request them of a random peer
@@ -216,7 +216,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                                 PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                                 PeerMessage::Headers(headers) => {
-                                    last_block.update();
+                                    last_block.reset();
                                     self.dialog.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
                                         .await;
                                     match self.handle_headers(peer_thread.nonce, headers).await {
@@ -424,7 +424,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Try to continue with the syncing process
-    async fn advance_state(&self, last_block: &LastBlockMonitor) {
+    async fn advance_state(&self, last_block: &mut LastBlockMonitor) {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
@@ -476,6 +476,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         .send_dialog("Disconnecting from remote nodes to find new connections")
                         .await;
                     self.broadcast(MainThreadMessage::Disconnect).await;
+                    last_block.reset();
                 }
             }
         }

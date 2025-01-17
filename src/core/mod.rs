@@ -48,7 +48,7 @@ impl LastBlockMonitor {
         Self { last_block: None }
     }
 
-    pub(crate) fn update(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.last_block = Some(Instant::now())
     }
 
