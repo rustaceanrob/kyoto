@@ -58,9 +58,7 @@ tracing-subscriber = "0.3"
 tempfile = "3"
 tokio = { version = "1.37", default-features = false, features = [
     "full",
-] } # add feature "tracing" to use the console
-# Enable the tokio-console task and poll observations
-# console-subscriber = "0.3.0"
+] }
 
 [lib]
 name = "kyoto"
