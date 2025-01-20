@@ -5,6 +5,24 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.0
+
+## Added
+
+- Request the broadcast minimum fee rate from connected peers.
+
+## Changed
+
+- Removed the `StatelessPeerStore`, used primarily for development
+- Export the `tokio` crate
+- Further split `Log` and `Event` enumerations into `Log`, `Warning`, and `Event`
+
+## Fixes
+
+- Update the port and services when peers are gossiped
+- Reset the timer after disconnecting from peers due to a stale block
+- Remove case for invalid median time check
+
 ## 0.7.0
 
 ## Added
