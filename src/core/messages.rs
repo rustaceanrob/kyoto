@@ -240,7 +240,10 @@ pub enum Warning {
     /// The headers in the database do not link together. Recoverable by deleting the database.
     CorruptedHeaders,
     /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
-    TransactionRejected(RejectPayload),
+    TransactionRejected {
+        /// The transaction ID and reject reason, if it exists.
+        payload: RejectPayload,
+    },
     /// A database failed to persist some data.
     FailedPersistance {
         /// Additional context for the persistance failure.
@@ -281,8 +284,8 @@ impl core::fmt::Display for Warning {
                     "The node has been running for a long duration without receiving new blocks."
                 )
             }
-            Warning::TransactionRejected(r) => {
-                write!(f, "A transaction got rejected: TXID {}", r.txid)
+            Warning::TransactionRejected { payload } => {
+                write!(f, "A transaction got rejected: TXID {}", payload.txid)
             }
             Warning::FailedPersistance { warning } => {
                 write!(f, "A database failed to persist some data: {}", warning)
