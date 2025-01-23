@@ -223,7 +223,12 @@ impl BlockRequest {
 #[derive(Debug, Clone)]
 pub enum Warning {
     /// The node is looking for connections to peers.
-    NotEnoughConnections,
+    NeedConnections {
+        /// The number of live connections.
+        connected: usize,
+        /// The configured requirement.
+        required: usize,
+    },
     /// A connection to a peer timed out.
     PeerTimedOut,
     /// The node was unable to connect to a peer in the database.
@@ -265,8 +270,15 @@ pub enum Warning {
 impl core::fmt::Display for Warning {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Warning::NotEnoughConnections => {
-                write!(f, "Looking for connections to peers.")
+            Warning::NeedConnections {
+                connected,
+                required,
+            } => {
+                write!(
+                    f,
+                    "Looking for connections to peers. Connected: {}, Required: {}",
+                    connected, required
+                )
             }
             Warning::UnlinkableAnchor => write!(
                 f,
