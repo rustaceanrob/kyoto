@@ -241,7 +241,7 @@ pub enum Warning {
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
     /// Recoverable by deleting the headers from the database or starting from a higher point in the chain.
-    UnlinkableAnchor,
+    InvalidStartHeight,
     /// The headers in the database do not link together. Recoverable by deleting the database.
     CorruptedHeaders,
     /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
@@ -280,7 +280,7 @@ impl core::fmt::Display for Warning {
                     connected, required
                 )
             }
-            Warning::UnlinkableAnchor => write!(
+            Warning::InvalidStartHeight => write!(
                 f,
                 "The provided anchor is deeper than the database history."
             ),

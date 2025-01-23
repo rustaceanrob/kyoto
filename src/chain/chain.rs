@@ -280,7 +280,7 @@ impl<H: HeaderStore> Chain<H> {
             .map_err(HeaderPersistenceError::Database)?;
         if let Some(first) = loaded_headers.values().next() {
             if first.prev_blockhash.ne(&self.tip()) {
-                self.dialog.send_warning(Warning::UnlinkableAnchor);
+                self.dialog.send_warning(Warning::InvalidStartHeight);
                 // The header chain did not align, so just start from the anchor
                 return Err(HeaderPersistenceError::CannotLocateHistory);
             } else if loaded_headers
