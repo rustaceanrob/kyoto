@@ -133,7 +133,7 @@ impl<H: HeaderStore> Chain<H> {
                 let header_opt = db.header_at(height).await;
                 if header_opt.is_err() {
                     self.dialog
-                        .send_warning(Warning::FailedPersistance {
+                        .send_warning(Warning::FailedPersistence {
                             warning: format!(
                                 "Unexpected error fetching a header from the header store at height {height}"
                             ),
@@ -248,7 +248,7 @@ impl<H: HeaderStore> Chain<H> {
             .write(self.header_chain.headers())
             .await
         {
-            self.dialog.send_warning(Warning::FailedPersistance {
+            self.dialog.send_warning(Warning::FailedPersistence {
                 warning: format!("Could not save headers to disk: {e}"),
             });
         }
@@ -263,7 +263,7 @@ impl<H: HeaderStore> Chain<H> {
             .write_over(self.header_chain.headers(), height)
             .await
         {
-            self.dialog.send_warning(Warning::FailedPersistance {
+            self.dialog.send_warning(Warning::FailedPersistence {
                 warning: format!("Could not save headers to disk: {e}"),
             });
         }
@@ -886,7 +886,7 @@ impl<H: HeaderStore> Chain<H> {
         let mut db = self.db.lock().await;
         let range_opt = db.load(range).await;
         if range_opt.is_err() {
-            self.dialog.send_warning(Warning::FailedPersistance {
+            self.dialog.send_warning(Warning::FailedPersistence {
                 warning: "Unexpected error fetching a range of headers from the header store"
                     .to_string(),
             });

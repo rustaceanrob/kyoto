@@ -245,7 +245,7 @@ pub enum Warning {
         payload: RejectPayload,
     },
     /// A database failed to persist some data.
-    FailedPersistance {
+    FailedPersistence {
         /// Additional context for the persistance failure.
         warning: String,
     },
@@ -287,7 +287,7 @@ impl core::fmt::Display for Warning {
             Warning::TransactionRejected { payload } => {
                 write!(f, "A transaction got rejected: TXID {}", payload.txid)
             }
-            Warning::FailedPersistance { warning } => {
+            Warning::FailedPersistence { warning } => {
                 write!(f, "A database failed to persist some data: {}", warning)
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
