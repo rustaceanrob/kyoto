@@ -223,7 +223,12 @@ impl BlockRequest {
 #[derive(Debug, Clone)]
 pub enum Warning {
     /// The node is looking for connections to peers.
-    NotEnoughConnections,
+    NeedConnections {
+        /// The number of live connections.
+        connected: usize,
+        /// The configured requirement.
+        required: usize,
+    },
     /// A connection to a peer timed out.
     PeerTimedOut,
     /// The node was unable to connect to a peer in the database.
@@ -236,13 +241,16 @@ pub enum Warning {
     UnsolicitedMessage,
     /// The provided anchor is deeper than the database history.
     /// Recoverable by deleting the headers from the database or starting from a higher point in the chain.
-    UnlinkableAnchor,
+    InvalidStartHeight,
     /// The headers in the database do not link together. Recoverable by deleting the database.
     CorruptedHeaders,
     /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
-    TransactionRejected(RejectPayload),
+    TransactionRejected {
+        /// The transaction ID and reject reason, if it exists.
+        payload: RejectPayload,
+    },
     /// A database failed to persist some data.
-    FailedPersistance {
+    FailedPersistence {
         /// Additional context for the persistance failure.
         warning: String,
     },
@@ -262,10 +270,17 @@ pub enum Warning {
 impl core::fmt::Display for Warning {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Warning::NotEnoughConnections => {
-                write!(f, "Looking for connections to peers.")
+            Warning::NeedConnections {
+                connected,
+                required,
+            } => {
+                write!(
+                    f,
+                    "Looking for connections to peers. Connected: {}, Required: {}",
+                    connected, required
+                )
             }
-            Warning::UnlinkableAnchor => write!(
+            Warning::InvalidStartHeight => write!(
                 f,
                 "The provided anchor is deeper than the database history."
             ),
@@ -281,10 +296,10 @@ impl core::fmt::Display for Warning {
                     "The node has been running for a long duration without receiving new blocks."
                 )
             }
-            Warning::TransactionRejected(r) => {
-                write!(f, "A transaction got rejected: TXID {}", r.txid)
+            Warning::TransactionRejected { payload } => {
+                write!(f, "A transaction got rejected: TXID {}", payload.txid)
             }
-            Warning::FailedPersistance { warning } => {
+            Warning::FailedPersistence { warning } => {
                 write!(f, "A database failed to persist some data: {}", warning)
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),

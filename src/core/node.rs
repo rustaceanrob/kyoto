@@ -261,7 +261,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                                 PeerMessage::Reject(payload) => {
                                     self.dialog
-                                        .send_warning(Warning::TransactionRejected(payload));
+                                        .send_warning(Warning::TransactionRejected { payload });
                                 }
                                 PeerMessage::FeeFilter(feerate) => {
                                     let mut peer_map = self.peer_map.lock().await;
@@ -361,9 +361,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn dispatch(&self) -> Result<(), NodeError<H::Error, P::Error>> {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.clean().await;
+        let live = peer_map.live();
+        let required = self.next_required_peers().await;
         // Find more peers when lower than the desired threshold.
-        if peer_map.live() < self.next_required_peers().await {
-            self.dialog.send_warning(Warning::NotEnoughConnections);
+        if live < required {
+            self.dialog.send_warning(Warning::NeedConnections {
+                connected: live,
+                required,
+            });
             let address = peer_map.next_peer().await?;
             if peer_map.dispatch(address).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect);
@@ -416,8 +421,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 if did_broadcast {
                     self.dialog.send_info(Log::TxSent(txid)).await;
                 } else {
-                    self.dialog
-                        .send_warning(Warning::TransactionRejected(RejectPayload::from_txid(txid)));
+                    self.dialog.send_warning(Warning::TransactionRejected {
+                        payload: RejectPayload::from_txid(txid),
+                    });
                 }
             }
         }

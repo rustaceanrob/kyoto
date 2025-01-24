@@ -334,7 +334,7 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog.send_warning(Warning::FailedPersistance {
+                self.dialog.send_warning(Warning::FailedPersistence {
                     warning: format!(
                         "Encountered an error adding {:?}:{} flags: {} ... {e}",
                         peer.addr, peer.port, peer.services
@@ -357,7 +357,7 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog.send_warning(Warning::FailedPersistance {
+                self.dialog.send_warning(Warning::FailedPersistence {
                     warning: format!(
                         "Encountered an error adding {:?}:{} flags: {} ... {e}",
                         peer.address, peer.port, peer.service_flags
@@ -380,7 +380,7 @@ impl<P: PeerStore> PeerMap<P> {
                 ))
                 .await
             {
-                self.dialog.send_warning(Warning::FailedPersistance {
+                self.dialog.send_warning(Warning::FailedPersistence {
                     warning: format!(
                         "Encountered an error adding {:?}:{} flags: {} ... {e}",
                         peer.address, peer.port, peer.service_flags
