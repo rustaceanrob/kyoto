@@ -9,8 +9,8 @@ use std::{
 };
 
 const NETWORK: Network = Network::Signet;
-const RECOVERY_HEIGHT: u32 = 190_000;
-const ADDR: &str = "tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc";
+const RECOVERY_HEIGHT: u32 = 220_000;
+const ADDR: &str = "tb1qmfjfv35csd200t0cfpckvx4ccw6w7ytkvga2gn";
 
 #[tokio::main]
 async fn main() {

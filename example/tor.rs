@@ -2,13 +2,9 @@
 //! To do so, the `arti` project is used to build a Tor client.
 //! Enable Tor connections via the `tor` feature.
 
-use kyoto::chain::checkpoints::SIGNET_HEADER_CP;
-use kyoto::core::messages::NodeMessage;
-use kyoto::db::memory::peers::StatelessPeerStore;
-use kyoto::db::sqlite::headers::SqliteHeaderDb;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
 use kyoto::{
-    BlockHash, ConnectionType, PeerStoreSizeConfig, TorClient, TorClientConfig, TrustedPeer,
+    Client, ConnectionType, Event, HeaderCheckpoint, Log, Network, NodeBuilder,
+    PeerStoreSizeConfig, TorClient, TorClientConfig, TrustedPeer,
 };
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -17,6 +13,9 @@ const PEER_ONION: [u8; 32] = [
     122, 158, 138, 248, 80, 128, 65, 182, 7, 162, 120, 132, 58, 231, 181, 235, 247, 78, 128, 81,
     77, 117, 148, 234, 156, 5, 51, 150, 136, 144, 21, 22,
 ];
+const RECOVERY_HEIGHT: u32 = 220_000;
+const ADDR: &str = "tb1qmfjfv35csd200t0cfpckvx4ccw6w7ytkvga2gn";
+const NETWORK: Network = Network::Signet;
 
 #[tokio::main]
 async fn main() {
@@ -28,24 +27,19 @@ async fn main() {
         .await
         .unwrap();
     // Add Bitcoin scripts to scan the blockchain for
-    let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
+    let address = bitcoin::Address::from_str(ADDR)
         .unwrap()
-        .require_network(bitcoin::Network::Signet)
+        .require_network(NETWORK)
         .unwrap()
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // If you don't have any checkpoint stored yet, you can use a predefined header.
-    let (height, hash) = SIGNET_HEADER_CP.last().unwrap();
-    let anchor = HeaderCheckpoint::new(*height, BlockHash::from_str(hash).unwrap());
+    let anchor = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Define a peer to connect to
     let peer = TrustedPeer::from_tor_v3(PEER_ONION);
-    // Limited devices may not save any peers to disk
-    let peer_store = StatelessPeerStore::new();
-    // To handle reorgs, it is still recommended to store block headers
-    let header_store = SqliteHeaderDb::new(bitcoin::Network::Signet, None).unwrap();
     // Create a new node builder
-    let builder = NodeBuilder::new(bitcoin::Network::Signet);
+    let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Add the peer
@@ -56,43 +50,62 @@ async fn main() {
         .anchor_checkpoint(anchor)
         // The number of connections we would like to maintain
         .num_required_peers(2)
-        // We only maintain a list of 32 peers in memory
-        .peer_db_size(PeerStoreSizeConfig::Limit(32))
+        // We only maintain a list of 256 peers in memory
+        .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // Connect to peers over Tor
         .set_connection_type(ConnectionType::Tor(tor))
         // Build without the default databases
-        .build_with_databases(peer_store, header_store);
+        .build_node()
+        .unwrap();
     // Run the node
     tokio::task::spawn(async move { node.run().await });
-    // Split the client into components that send messages and listen to messages.
-    // With this construction, different parts of the program can take ownership of
-    // specific tasks.
-    let (sender, mut receiver) = client.split();
+
+    let Client {
+        requester,
+        mut log_rx,
+        mut warn_rx,
+        mut event_rx,
+    } = client;
     // Continually listen for events until the node is synced to its peers.
-    while let Ok(message) = receiver.recv().await {
-        match message {
-            NodeMessage::Dialog(d) => tracing::info!("{}", d),
-            NodeMessage::Warning(e) => tracing::warn!("{}", e),
-            NodeMessage::StateChange(_) => (),
-            NodeMessage::Block(b) => drop(b),
-            NodeMessage::BlocksDisconnected(r) => {
-                let _ = r;
+    loop {
+        tokio::select! {
+            event = event_rx.recv() => {
+                if let Some(event) = event {
+                    match event {
+                        Event::Synced(update) => {
+                            tracing::info!("Synced chain up to block {}",update.tip().height);
+                            tracing::info!("Chain tip: {}",update.tip().hash);
+                            // Request information from the node
+                            let fee = requester.broadcast_min_feerate().await.unwrap();
+                            tracing::info!("Minimum transaction broadcast fee rate: {}", fee);
+                            break;
+                        },
+                        Event::Block(indexed_block) => {
+                            let hash = indexed_block.block.block_hash();
+                            tracing::info!("Received block: {}", hash);
+                        },
+                        Event::BlocksDisconnected(_) => {
+                            tracing::warn!("Some blocks were reorganized")
+                        },
+                    }
+                }
             }
-            NodeMessage::TxSent(t) => {
-                tracing::info!("Transaction sent. TXID: {t}");
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    match log {
+                        Log::Dialog(d)=> tracing::info!("{d}"),
+                        Log::StateChange(node_state) => tracing::info!("{node_state}"),
+                        Log::ConnectionsMet => tracing::info!("All required connections met"),
+                        _ => (),
+                    }
+                }
             }
-            NodeMessage::TxBroadcastFailure(t) => {
-                tracing::error!("The transaction could not be broadcast. TXID: {}", t.txid);
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}");
+                }
             }
-            NodeMessage::Synced(update) => {
-                tracing::info!("Synced chain up to block {}", update.tip().height,);
-                tracing::info!("Chain tip: {}", update.tip().hash.to_string(),);
-                break;
-            }
-            NodeMessage::ConnectionsMet => tracing::info!("Connected to all required peers"),
-            _ => (),
         }
     }
-    let _ = sender.shutdown().await;
-    tracing::info!("Shutting down");
+    let _ = requester.shutdown().await;
 }
