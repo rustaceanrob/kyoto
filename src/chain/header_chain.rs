@@ -72,7 +72,7 @@ impl HeaderChain {
     }
 
     // The height of the blockhash in the chain
-    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<Height> {
+    pub(crate) fn height_of_hash(&self, blockhash: BlockHash) -> Option<Height> {
         if blockhash.eq(&self.anchor_checkpoint.hash) {
             return Some(self.anchor_checkpoint.height);
         }
@@ -411,7 +411,7 @@ mod tests {
             chain.values()
         );
         assert_eq!(chain.header_at_height(3), Some(&block_3));
-        let want = chain.height_of_hash(new_block_2.block_hash()).await;
+        let want = chain.height_of_hash(new_block_2.block_hash());
         assert_eq!(Some(2), want);
     }
 }

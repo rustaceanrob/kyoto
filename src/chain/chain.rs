@@ -106,7 +106,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // This header chain contains a block hash, potentially checking the disk
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        match self.header_chain.height_of_hash(blockhash).await {
+        match self.header_chain.height_of_hash(blockhash) {
             Some(height) => Some(height),
             None => {
                 let mut lock = self.db.lock().await;
