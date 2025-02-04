@@ -106,7 +106,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // This header chain contains a block hash, potentially checking the disk
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        match self.header_chain.height_of_hash(blockhash).await {
+        match self.header_chain.height_of_hash(blockhash) {
             Some(height) => Some(height),
             None => {
                 let mut lock = self.db.lock().await;
@@ -318,7 +318,7 @@ impl<H: HeaderStore> Chain<H> {
             return Ok(());
         }
         // We check first if the peer is sending us nonsense
-        self.sanity_check(&header_batch).await?;
+        self.sanity_check(&header_batch)?;
         // How we handle forks depends on if we are caught up through all checkpoints or not
         match self.checkpoints.next().cloned() {
             Some(checkpoint) => {
@@ -346,7 +346,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // These are invariants in all batches of headers we receive
-    async fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
+    fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // Some basic sanity checks that should result in peer bans on errors
 
@@ -356,16 +356,16 @@ impl<H: HeaderStore> Chain<H> {
         }
 
         // All the headers connect with each other and is the difficulty adjustment not absurd
-        if !header_batch.connected().await {
+        if !header_batch.connected() {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
         // All headers pass their own proof of work and the network minimum
-        if !header_batch.individually_valid_pow().await {
+        if !header_batch.individually_valid_pow() {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
-        if !header_batch.bits_adhere_transition(self.network).await {
+        if !header_batch.bits_adhere_transition(self.network) {
             return Err(HeaderSyncError::InvalidBits);
         }
 
@@ -628,10 +628,10 @@ impl<H: HeaderStore> Chain<H> {
         self.audit_cf_headers(&batch).await?;
         // We already have a message like this. Verify they are the same
         match self.cf_header_chain.merged_queue.take() {
-            Some(queue) => Ok(self.cf_header_chain.verify(&mut batch, queue).await),
+            Some(queue) => Ok(self.cf_header_chain.verify(&mut batch, queue)),
             None => {
                 let queue = self.construct_cf_header_queue(&mut batch).await?;
-                Ok(self.cf_header_chain.set_queue(queue).await)
+                Ok(self.cf_header_chain.set_queue(queue))
             }
         }
     }
@@ -750,7 +750,7 @@ impl<H: HeaderStore> Chain<H> {
                 .await;
         }
 
-        self.filter_chain.put_hash(filter_message.block_hash).await;
+        self.filter_chain.put_hash(filter_message.block_hash);
         let stop_hash = self
             .filter_chain
             .last_stop_hash_request()
@@ -890,8 +890,8 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Clear the filter header cache to rescan the filters for new scripts.
-    pub(crate) async fn clear_filters(&mut self) {
-        self.filter_chain.clear_cache().await;
+    pub(crate) fn clear_filters(&mut self) {
+        self.filter_chain.clear_cache();
     }
 }
 

@@ -766,7 +766,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::Behind => None,
             NodeState::HeadersSynced => None,
             _ => {
-                chain.clear_filters().await;
+                chain.clear_filters();
                 self.dialog
                     .send_info(Log::StateChange(NodeState::FilterHeadersSynced))
                     .await;
