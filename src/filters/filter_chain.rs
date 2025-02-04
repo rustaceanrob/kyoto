@@ -26,7 +26,7 @@ impl FilterChain {
         }
     }
 
-    pub(crate) async fn put_hash(&mut self, hash: BlockHash) {
+    pub(crate) fn put_hash(&mut self, hash: BlockHash) {
         self.chain.insert(hash);
     }
 
@@ -37,7 +37,7 @@ impl FilterChain {
         }
     }
 
-    pub(crate) async fn clear_cache(&mut self) {
+    pub(crate) fn clear_cache(&mut self) {
         self.chain.clear()
     }
 

@@ -750,7 +750,7 @@ impl<H: HeaderStore> Chain<H> {
                 .await;
         }
 
-        self.filter_chain.put_hash(filter_message.block_hash).await;
+        self.filter_chain.put_hash(filter_message.block_hash);
         let stop_hash = self
             .filter_chain
             .last_stop_hash_request()
@@ -890,8 +890,8 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Clear the filter header cache to rescan the filters for new scripts.
-    pub(crate) async fn clear_filters(&mut self) {
-        self.filter_chain.clear_cache().await;
+    pub(crate) fn clear_filters(&mut self) {
+        self.filter_chain.clear_cache();
     }
 }
 
