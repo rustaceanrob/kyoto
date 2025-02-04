@@ -39,7 +39,6 @@ use crate::{
         filter_chain::FilterChain,
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
-    prelude::MEDIAN_TIME_PAST,
     IndexedBlock,
 };
 
@@ -370,21 +369,6 @@ impl<H: HeaderStore> Chain<H> {
             return Err(HeaderSyncError::InvalidBits);
         }
 
-        // The headers have times that are greater than the median of the previous 11 blocks
-        let mut last_relevant_mtp = self.header_chain.last_median_time_past_window();
-        // If this batch does not extend from the current tip, the headers provided by `last_median_time_past_window` are invalid
-        if self.tip().eq(&header_batch.first().prev_blockhash)
-            && !header_batch
-                .valid_median_time_past(&mut last_relevant_mtp)
-                .await
-        {
-            // The first validation may be incorrect because of median miscalculation,
-            // but it is cheap to detect the peer is lying later from checkpoints
-            // and difficulty of the SHA256 algorithm
-            if self.header_chain.inner_len() > MEDIAN_TIME_PAST {
-                return Err(HeaderSyncError::InvalidHeaderTimes);
-            }
-        }
         Ok(())
     }
 

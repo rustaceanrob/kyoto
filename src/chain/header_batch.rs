@@ -2,10 +2,7 @@ use std::ops::RangeFrom;
 
 use bitcoin::{block::Header, params::Params, Target};
 
-use crate::{
-    impl_sourceless_error,
-    prelude::{Median, MEDIAN_TIME_PAST},
-};
+use crate::impl_sourceless_error;
 
 pub(crate) struct HeadersBatch {
     batch: Vec<Header>,
@@ -51,17 +48,6 @@ impl HeadersBatch {
                 let transition = Target::from_compact(first.bits).max_transition_threshold(params);
                 Target::from_compact(second.bits).le(&transition)
             })
-    }
-
-    // Do the blocks pass the time requirements
-    pub(crate) async fn valid_median_time_past(&self, previous_buffer: &mut Vec<Header>) -> bool {
-        previous_buffer.extend_from_slice(&self.batch);
-        previous_buffer
-            .windows(MEDIAN_TIME_PAST)
-            .map(|window| window.iter().map(|block| block.time).collect::<Vec<_>>())
-            .map(|mut times| times.median())
-            .zip(&self.batch)
-            .all(|(median, header)| header.time >= median)
     }
 
     // The tip of the list

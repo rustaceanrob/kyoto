@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use bitcoin::{block::Header, BlockHash, Work};
 
-use crate::{prelude::MEDIAN_TIME_PAST, DisconnectedHeader};
+use crate::DisconnectedHeader;
 
 use super::checkpoints::HeaderCheckpoint;
 
@@ -134,17 +134,6 @@ impl HeaderChain {
             .map(|header| header.work().log2())
             .reduce(|acc, next| acc + next);
         work.unwrap_or(0.0)
-    }
-
-    // The last 11 headers, if we have that many
-    pub(crate) fn last_median_time_past_window(&self) -> Vec<Header> {
-        self.headers
-            .values()
-            .rev()
-            .take(MEDIAN_TIME_PAST)
-            .rev()
-            .copied()
-            .collect()
     }
 
     // The block locators are a way to inform our peer of blocks we know about
