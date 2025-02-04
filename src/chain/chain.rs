@@ -628,10 +628,10 @@ impl<H: HeaderStore> Chain<H> {
         self.audit_cf_headers(&batch).await?;
         // We already have a message like this. Verify they are the same
         match self.cf_header_chain.merged_queue.take() {
-            Some(queue) => Ok(self.cf_header_chain.verify(&mut batch, queue).await),
+            Some(queue) => Ok(self.cf_header_chain.verify(&mut batch, queue)),
             None => {
                 let queue = self.construct_cf_header_queue(&mut batch).await?;
-                Ok(self.cf_header_chain.set_queue(queue).await)
+                Ok(self.cf_header_chain.set_queue(queue))
             }
         }
     }

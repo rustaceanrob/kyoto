@@ -81,13 +81,13 @@ impl CFHeaderChain {
     }
 
     // Set a reference point for the block hashes and associated filter hash.
-    pub(crate) async fn set_queue(&mut self, cf_headers: Vec<QueuedCFHeader>) -> AppendAttempt {
+    pub(crate) fn set_queue(&mut self, cf_headers: Vec<QueuedCFHeader>) -> AppendAttempt {
         self.current_quorum += 1;
-        self.attempt_merge(cf_headers).await
+        self.attempt_merge(cf_headers)
     }
 
     // Verify a batch of filter headers and hashes is what we expect.
-    pub(crate) async fn verify(
+    pub(crate) fn verify(
         &mut self,
         cf_headers: &mut CFHeaderBatch,
         queue: Vec<QueuedCFHeader>,
@@ -105,11 +105,11 @@ impl CFHeaderChain {
             }
         }
         self.current_quorum += 1;
-        self.attempt_merge(queue).await
+        self.attempt_merge(queue)
     }
 
     // If enough peers have responded, insert those block hashes and filter hashes into a map.
-    async fn attempt_merge(&mut self, queue: Vec<QueuedCFHeader>) -> AppendAttempt {
+    fn attempt_merge(&mut self, queue: Vec<QueuedCFHeader>) -> AppendAttempt {
         if self.current_quorum.ge(&self.quorum_required) {
             for (block_hash, filter_hash) in queue.iter().map(|queue| queue.hash_tuple()) {
                 self.hash_chain.insert(block_hash, filter_hash);
