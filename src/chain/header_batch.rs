@@ -19,7 +19,7 @@ impl HeadersBatch {
     }
 
     // Are they all logically connected?
-    pub(crate) async fn connected(&self) -> bool {
+    pub(crate) fn connected(&self) -> bool {
         self.batch
             .iter()
             .zip(self.batch.iter().skip(1))
@@ -27,7 +27,7 @@ impl HeadersBatch {
     }
 
     // Are all the blocks of sufficient work and meet their own target?
-    pub(crate) async fn individually_valid_pow(&self) -> bool {
+    pub(crate) fn individually_valid_pow(&self) -> bool {
         !self.batch.iter().any(|header| {
             let target = header.target();
             let valid_pow = header.validate_pow(target);
@@ -36,7 +36,7 @@ impl HeadersBatch {
     }
 
     // Do the targets not change drastically within the batch?
-    pub(crate) async fn bits_adhere_transition(&self, params: impl AsRef<Params>) -> bool {
+    pub(crate) fn bits_adhere_transition(&self, params: impl AsRef<Params>) -> bool {
         let params = params.as_ref();
         if params.allow_min_difficulty_blocks {
             return true;

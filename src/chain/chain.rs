@@ -318,7 +318,7 @@ impl<H: HeaderStore> Chain<H> {
             return Ok(());
         }
         // We check first if the peer is sending us nonsense
-        self.sanity_check(&header_batch).await?;
+        self.sanity_check(&header_batch)?;
         // How we handle forks depends on if we are caught up through all checkpoints or not
         match self.checkpoints.next().cloned() {
             Some(checkpoint) => {
@@ -346,7 +346,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // These are invariants in all batches of headers we receive
-    async fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
+    fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
         let initially_syncing = !self.checkpoints.is_exhausted();
         // Some basic sanity checks that should result in peer bans on errors
 
@@ -356,16 +356,16 @@ impl<H: HeaderStore> Chain<H> {
         }
 
         // All the headers connect with each other and is the difficulty adjustment not absurd
-        if !header_batch.connected().await {
+        if !header_batch.connected() {
             return Err(HeaderSyncError::HeadersNotConnected);
         }
 
         // All headers pass their own proof of work and the network minimum
-        if !header_batch.individually_valid_pow().await {
+        if !header_batch.individually_valid_pow() {
             return Err(HeaderSyncError::InvalidHeaderWork);
         }
 
-        if !header_batch.bits_adhere_transition(self.network).await {
+        if !header_batch.bits_adhere_transition(self.network) {
             return Err(HeaderSyncError::InvalidBits);
         }
 
