@@ -5,7 +5,6 @@ use bitcoin::{
 };
 
 pub(crate) mod counter;
-#[cfg(feature = "dns")]
 pub(crate) mod dns;
 #[allow(dead_code)]
 pub(crate) mod error;

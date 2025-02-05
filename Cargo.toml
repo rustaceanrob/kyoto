@@ -42,9 +42,8 @@ arti-client = { version = "0.21.0", features = [
 tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
 
 [features]
-default = ["database", "dns"]
+default = ["database"]
 database = ["rusqlite"]
-dns = []
 tor = ["arti-client", "tor-rtcompat"]
 filter-control = []
 

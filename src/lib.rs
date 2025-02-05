@@ -77,8 +77,6 @@
 //!
 //! # Features
 //!
-//! `dns`: if no peers are provided, query DNS seeds for Bitcoin nodes to connect to. Default and recommend feature.
-//!
 //! `database`: use the default `rusqlite` database implementations. Default and recommend feature.
 //!
 //! `filter-control`: check filters and request blocks directly. Recommended for silent payments or strict chain ordering implementations.

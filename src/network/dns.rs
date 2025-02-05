@@ -59,13 +59,11 @@ const A_RECORD: u16 = 0x01;
 const A_CLASS: u16 = 0x01;
 const EXPECTED_RDATA_LEN: u16 = 0x04;
 
-#[cfg(feature = "dns")]
 pub(crate) struct Dns<'a> {
     seeds: Vec<&'a str>,
 }
 
 impl Dns<'_> {
-    #[cfg(feature = "dns")]
     pub fn new(network: Network) -> Self {
         let seeds = match network {
             Network::Bitcoin => MAINNET_SEEDS.to_vec(),
@@ -78,7 +76,6 @@ impl Dns<'_> {
         Self { seeds }
     }
 
-    #[cfg(feature = "dns")]
     pub async fn bootstrap(&self) -> Result<Vec<IpAddr>, DnsBootstrapError> {
         let mut ip_addrs: Vec<IpAddr> = vec![];
 
