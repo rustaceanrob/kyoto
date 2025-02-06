@@ -288,7 +288,6 @@ impl<P: PeerStore> PeerMap<P> {
         };
         if current_count < 1 {
             self.dialog.send_warning(Warning::EmptyPeerDatabase);
-            #[cfg(feature = "dns")]
             self.bootstrap().await?;
         }
         let mut peer_manager = self.db.lock().await;
@@ -390,7 +389,6 @@ impl<P: PeerStore> PeerMap<P> {
         }
     }
 
-    #[cfg(feature = "dns")]
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
         use crate::network::dns::Dns;
         use std::net::IpAddr;
