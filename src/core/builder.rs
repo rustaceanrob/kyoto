@@ -1,5 +1,3 @@
-#[cfg(not(feature = "filter-control"))]
-use std::collections::HashSet;
 use std::{path::PathBuf, time::Duration};
 
 use bitcoin::Network;
@@ -87,8 +85,8 @@ impl NodeBuilder {
     }
 
     /// Add preferred peers to try to connect to.
-    pub fn add_peers(mut self, whitelist: Vec<TrustedPeer>) -> Self {
-        self.config.white_list = whitelist;
+    pub fn add_peers(mut self, whitelist: impl IntoIterator<Item = TrustedPeer>) -> Self {
+        self.config.white_list.extend(whitelist);
         self
     }
 
@@ -100,8 +98,11 @@ impl NodeBuilder {
 
     /// Add Bitcoin scripts to monitor for. You may add more later with the [`Client`].
     #[cfg(not(feature = "filter-control"))]
-    pub fn add_scripts(mut self, addresses: HashSet<ScriptBuf>) -> Self {
-        self.config.addresses = addresses;
+    pub fn add_scripts(mut self, scripts: impl IntoIterator<Item = ScriptBuf>) -> Self {
+        let script_iter = scripts.into_iter();
+        for script in script_iter {
+            self.config.addresses.insert(script);
+        }
         self
     }
 
