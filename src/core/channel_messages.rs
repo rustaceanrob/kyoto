@@ -11,6 +11,8 @@ use bitcoin::{
 
 use crate::core::messages::RejectPayload;
 
+use super::PeerId;
+
 #[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {
     GetAddr,
@@ -36,7 +38,7 @@ pub struct GetBlockConfig {
 }
 
 pub(crate) struct PeerThreadMessage {
-    pub nonce: u32,
+    pub nonce: PeerId,
     pub message: PeerMessage,
 }
 

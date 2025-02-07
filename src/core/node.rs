@@ -38,7 +38,7 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
-    FilterSyncPolicy, LastBlockMonitor, PeerTimeoutConfig,
+    FilterSyncPolicy, LastBlockMonitor, PeerId, PeerTimeoutConfig,
 };
 
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
@@ -211,13 +211,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     };
                                     let response = self.handle_version(peer_thread.nonce, version, best).await?;
                                     self.send_message(peer_thread.nonce, response).await;
-                                    self.dialog.send_dialog(format!("[Peer {}]: version", peer_thread.nonce))
+                                    self.dialog.send_dialog(format!("[{}]: version", peer_thread.nonce))
                                         .await;
                                 }
                                 PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                                 PeerMessage::Headers(headers) => {
                                     last_block.reset();
-                                    self.dialog.send_dialog(format!("[Peer {}]: headers", peer_thread.nonce))
+                                    self.dialog.send_dialog(format!("[{}]: headers", peer_thread.nonce))
                                         .await;
                                     match self.handle_headers(peer_thread.nonce, headers).await {
                                         Some(response) => {
@@ -227,7 +227,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     }
                                 }
                                 PeerMessage::FilterHeaders(cf_headers) => {
-                                    self.dialog.send_dialog(format!("[Peer {}]: filter headers", peer_thread.nonce)).await;
+                                    self.dialog.send_dialog(format!("[{}]: filter headers", peer_thread.nonce)).await;
                                     match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
@@ -250,7 +250,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     None => continue,
                                 },
                                 PeerMessage::NewBlocks(blocks) => {
-                                    self.dialog.send_dialog(format!("[Peer {}]: inv", peer_thread.nonce))
+                                    self.dialog.send_dialog(format!("[{}]: inv", peer_thread.nonce))
                                         .await;
                                     match self.handle_inventory_blocks(peer_thread.nonce, blocks).await {
                                         Some(response) => {
@@ -340,7 +340,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Send a message to a specified peer
-    async fn send_message(&self, nonce: u32, message: MainThreadMessage) {
+    async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.send_message(nonce, message).await;
     }
@@ -524,7 +524,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // We accepted a handshake with a peer but we may disconnect if they do not support CBF
     async fn handle_version(
         &self,
-        nonce: u32,
+        nonce: PeerId,
         version_message: VersionMessage,
         best_height: u32,
     ) -> Result<MainThreadMessage, NodeError<H::Error, P::Error>> {
@@ -590,7 +590,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // We always send headers to our peers, so our next message depends on our state
     async fn handle_headers(
         &self,
-        peer_id: u32,
+        peer_id: PeerId,
         headers: Vec<Header>,
     ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
@@ -624,11 +624,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // Compact filter headers may result in a number of outcomes, including the need to audit filters.
     async fn handle_cf_headers(
         &self,
-        peer_id: u32,
+        peer_id: PeerId,
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        match chain.sync_cf_headers(peer_id, cf_headers).await {
+        match chain.sync_cf_headers(peer_id.0, cf_headers).await {
             Ok(potential_message) => match potential_message {
                 AppendAttempt::AddedToQueue => None,
                 AppendAttempt::Extended => self.next_stateful_message(chain.deref_mut()).await,
@@ -652,7 +652,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Handle a new compact block filter
-    async fn handle_filter(&self, peer_id: u32, filter: CFilter) -> Option<MainThreadMessage> {
+    async fn handle_filter(&self, peer_id: PeerId, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter).await {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
@@ -673,7 +673,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Scan a block for transactions.
-    async fn handle_block(&self, peer_id: u32, block: Block) -> Option<MainThreadMessage> {
+    async fn handle_block(&self, peer_id: PeerId, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.check_send_block(block).await {
             self.dialog.send_warning(Warning::UnexpectedSyncError {
@@ -713,7 +713,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // If new inventory came in, we need to download the headers and update the node state
     async fn handle_inventory_blocks(
         &self,
-        nonce: u32,
+        nonce: PeerId,
         blocks: Vec<BlockHash>,
     ) -> Option<MainThreadMessage> {
         let mut state = self.state.write().await;

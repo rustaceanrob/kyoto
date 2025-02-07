@@ -18,7 +18,7 @@ use crate::{
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,
-        PeerTimeoutConfig,
+        PeerId, PeerTimeoutConfig,
     },
     network::outbound_messages::V1OutboundMessage,
 };
@@ -42,7 +42,7 @@ const HANDSHAKE_TIMEOUT: u64 = 4;
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
 
 pub(crate) struct Peer {
-    nonce: u32,
+    nonce: PeerId,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
@@ -54,7 +54,7 @@ pub(crate) struct Peer {
 
 impl Peer {
     pub fn new(
-        nonce: u32,
+        nonce: PeerId,
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
