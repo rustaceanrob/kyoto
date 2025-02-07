@@ -25,6 +25,7 @@ use crate::{
     core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
+    network::dns::DnsResolver,
     ConnectionType, PeerStoreSizeConfig, RejectPayload, TrustedPeer, TxBroadcastPolicy,
 };
 
@@ -82,6 +83,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     pub(crate) fn new(
         network: Network,
         white_list: Whitelist,
+        dns_resolver: DnsResolver,
         scripts: HashSet<ScriptBuf>,
         header_checkpoint: Option<HeaderCheckpoint>,
         required_peers: PeerRequirement,
@@ -115,6 +117,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             target_peer_size,
             timeout_config,
             Arc::clone(&height_monitor),
+            dns_resolver,
         )));
         // Set up the transaction broadcaster
         let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
@@ -161,6 +164,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         Node::new(
             network,
             config.white_list,
+            config.dns_resolver,
             config.addresses,
             config.header_checkpoint,
             config.required_peers as PeerRequirement,

@@ -3,7 +3,8 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 use bitcoin::ScriptBuf;
 
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, ConnectionType, PeerStoreSizeConfig, TrustedPeer,
+    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType,
+    PeerStoreSizeConfig, TrustedPeer,
 };
 
 use super::FilterSyncPolicy;
@@ -16,6 +17,7 @@ const TWO_HOUR: u64 = 60 * 60 * 2;
 pub(crate) struct NodeConfig {
     pub required_peers: u8,
     pub white_list: Vec<TrustedPeer>,
+    pub dns_resolver: DnsResolver,
     pub addresses: HashSet<ScriptBuf>,
     pub data_path: Option<PathBuf>,
     pub header_checkpoint: Option<HeaderCheckpoint>,
@@ -31,6 +33,7 @@ impl Default for NodeConfig {
         Self {
             required_peers: REQUIRED_PEERS,
             white_list: Default::default(),
+            dns_resolver: DnsResolver::default(),
             addresses: Default::default(),
             data_path: Default::default(),
             header_checkpoint: Default::default(),

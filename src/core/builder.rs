@@ -1,3 +1,4 @@
+use std::net::{IpAddr, SocketAddr};
 use std::{path::PathBuf, time::Duration};
 
 use bitcoin::Network;
@@ -9,6 +10,7 @@ use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
 use crate::db::error::SqlInitializationError;
 #[cfg(feature = "database")]
 use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
+use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
@@ -173,6 +175,15 @@ impl NodeBuilder {
     /// If none is provided, a maximum connection time of two hours will be used.
     pub fn set_maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
         self.config.max_connection_time = max_connection_time;
+        self
+    }
+
+    /// Configure the DNS resolver to use when querying DNS seeds.
+    /// Default is `1.1.1.1:53`.
+    pub fn dns_resolver(mut self, resolver: impl Into<IpAddr>) -> Self {
+        let ip_addr = resolver.into();
+        let socket_addr = SocketAddr::new(ip_addr, DNS_RESOLVER_PORT);
+        self.config.dns_resolver = DnsResolver { socket_addr };
         self
     }
 
