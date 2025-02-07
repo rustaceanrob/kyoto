@@ -7,6 +7,7 @@
 //! To build a [`Node`](node::Node) and [`Client`](client::Client), please refer to the [`NodeBuilder`](builder::NodeBuilder), which allows for node
 //! configuration.
 
+use std::hash::Hash;
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -82,5 +83,26 @@ impl PeerTimeoutConfig {
             response_timeout,
             max_connection_time,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PeerId(u32);
+
+impl PeerId {
+    pub(crate) fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1)
+    }
+}
+
+impl From<u32> for PeerId {
+    fn from(value: u32) -> Self {
+        PeerId(value)
+    }
+}
+
+impl std::fmt::Display for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Peer {}", self.0)
     }
 }
