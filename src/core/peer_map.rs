@@ -35,7 +35,7 @@ use super::{
     dialog::Dialog,
     error::PeerManagerError,
     messages::Warning,
-    PeerTimeoutConfig,
+    PeerId, PeerTimeoutConfig,
 };
 
 const MAX_TRIES: usize = 50;
@@ -58,11 +58,11 @@ pub(crate) struct ManagedPeer {
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
 pub(crate) struct PeerMap<P: PeerStore> {
-    num_peers: u32,
-    heights: HashMap<u32, u32>,
+    current_id: PeerId,
+    heights: HashMap<PeerId, u32>,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
-    map: HashMap<u32, ManagedPeer>,
+    map: HashMap<PeerId, ManagedPeer>,
     db: Arc<Mutex<P>>,
     connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
     whitelist: Whitelist,
@@ -94,7 +94,7 @@ impl<P: PeerStore> PeerMap<P> {
             }
         };
         Self {
-            num_peers: 0,
+            current_id: PeerId(0),
             heights: HashMap::new(),
             network,
             mtx,
@@ -139,7 +139,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Set the time offset of a connected peer
-    pub fn set_offset(&mut self, peer: u32, time: i64) {
+    pub fn set_offset(&mut self, peer: PeerId, time: i64) {
         if let Some(peer) = self.map.get_mut(&peer) {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -162,10 +162,9 @@ impl<P: PeerStore> PeerMap<P> {
     // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: PersistedPeer) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
-        let peer_num = self.num_peers + 1;
-        self.num_peers = peer_num;
+        self.current_id.increment();
         let mut peer = Peer::new(
-            peer_num,
+            self.current_id,
             self.network,
             self.mtx.clone(),
             prx,
@@ -188,7 +187,7 @@ impl<P: PeerStore> PeerMap<P> {
             .await?;
         let handle = tokio::spawn(async move { peer.run(reader, writer).await });
         self.map.insert(
-            peer_num,
+            self.current_id,
             ManagedPeer {
                 service_flags: loaded_peer.services,
                 address: loaded_peer.addr,
@@ -203,26 +202,26 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Set the minimum fee rate this peer will accept
-    pub fn set_broadcast_min(&mut self, nonce: u32, fee_rate: FeeRate) {
+    pub fn set_broadcast_min(&mut self, nonce: PeerId, fee_rate: FeeRate) {
         if let Some(peer) = self.map.get_mut(&nonce) {
             peer.broadcast_min = fee_rate;
         }
     }
 
     // Set the services of a peer
-    pub fn set_services(&mut self, nonce: u32, flags: ServiceFlags) {
+    pub fn set_services(&mut self, nonce: PeerId, flags: ServiceFlags) {
         if let Some(peer) = self.map.get_mut(&nonce) {
             peer.service_flags = flags
         }
     }
 
     // Set the height of a peer upon receiving the version message
-    pub fn set_height(&mut self, nonce: u32, height: u32) {
+    pub fn set_height(&mut self, nonce: PeerId, height: u32) {
         self.heights.insert(nonce, height);
     }
 
     // Add one to the height of a peer when receiving inventory
-    pub fn add_one_height(&mut self, nonce: u32) {
+    pub fn add_one_height(&mut self, nonce: PeerId) {
         if let Some(height) = self.heights.get(&nonce) {
             self.heights.insert(nonce, height + 1);
         }
@@ -243,7 +242,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Send a message to the specified peer
-    pub async fn send_message(&mut self, nonce: u32, message: MainThreadMessage) {
+    pub async fn send_message(&mut self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
         }
@@ -344,7 +343,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // We tried this peer and successfully connected.
-    pub async fn tried(&mut self, nonce: u32) {
+    pub async fn tried(&mut self, nonce: PeerId) {
         if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
             if let Err(e) = db
@@ -367,7 +366,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // This peer misbehaved in some way.
-    pub async fn ban(&mut self, nonce: u32) {
+    pub async fn ban(&mut self, nonce: PeerId) {
         if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
             if let Err(e) = db
