@@ -18,6 +18,7 @@ use crate::core::PeerId;
 
 type Height = u32;
 
+#[derive(Debug)]
 pub(crate) struct HeightMonitor {
     map: HashMap<PeerId, Height>,
 }
@@ -30,7 +31,7 @@ impl HeightMonitor {
     }
 
     pub(crate) fn max(&self) -> Option<Height> {
-        self.map.iter().map(|(_, height)| *height).max()
+        self.map.values().copied().max()
     }
 
     pub(crate) fn retain(&mut self, peers: &[PeerId]) {

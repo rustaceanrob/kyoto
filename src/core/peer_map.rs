@@ -20,6 +20,7 @@ use tokio::{
 };
 
 use crate::{
+    chain::HeightMonitor,
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
     network::{
         error::PeerError,
@@ -59,7 +60,7 @@ pub(crate) struct ManagedPeer {
 #[derive(Debug)]
 pub(crate) struct PeerMap<P: PeerStore> {
     current_id: PeerId,
-    heights: HashMap<PeerId, u32>,
+    heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
@@ -84,6 +85,7 @@ impl<P: PeerStore> PeerMap<P> {
         connection_type: ConnectionType,
         target_db_size: PeerStoreSizeConfig,
         timeout_config: PeerTimeoutConfig,
+        height_monitor: Arc<Mutex<HeightMonitor>>,
     ) -> Self {
         let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
             ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
@@ -95,7 +97,7 @@ impl<P: PeerStore> PeerMap<P> {
         };
         Self {
             current_id: PeerId(0),
-            heights: HashMap::new(),
+            heights: height_monitor,
             network,
             mtx,
             map: HashMap::new(),
@@ -112,7 +114,9 @@ impl<P: PeerStore> PeerMap<P> {
     // Remove any finished connections
     pub async fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished());
-        self.heights.retain(|peer, _| self.map.contains_key(peer));
+        let active = self.map.keys().copied().collect::<Vec<PeerId>>();
+        let mut height_lock = self.heights.lock().await;
+        height_lock.retain(&active);
     }
 
     // The number of peers with live connections
@@ -216,20 +220,15 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Set the height of a peer upon receiving the version message
-    pub fn set_height(&mut self, nonce: PeerId, height: u32) {
-        self.heights.insert(nonce, height);
+    pub async fn set_height(&mut self, nonce: PeerId, height: u32) {
+        let mut height_lock = self.heights.lock().await;
+        height_lock.insert(nonce, height);
     }
 
     // Add one to the height of a peer when receiving inventory
-    pub fn add_one_height(&mut self, nonce: PeerId) {
-        if let Some(height) = self.heights.get(&nonce) {
-            self.heights.insert(nonce, height + 1);
-        }
-    }
-
-    // The best height of all known or connected peers
-    pub fn best_height(&self) -> Option<&u32> {
-        self.heights.values().max()
+    pub async fn increment_height(&mut self, nonce: PeerId) {
+        let mut height_lock = self.heights.lock().await;
+        height_lock.increment(nonce);
     }
 
     // The minimum fee rate to successfully broadcast a transaction to all peers
