@@ -17,6 +17,7 @@ use super::{
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, HeaderSyncError},
     header_chain::HeaderChain,
+    HeightMonitor,
 };
 #[cfg(feature = "filter-control")]
 use crate::core::error::FetchBlockError;
@@ -55,7 +56,7 @@ pub(crate) struct Chain<H: HeaderStore> {
     checkpoints: HeaderCheckpoints,
     network: Network,
     db: Arc<Mutex<H>>,
-    best_known_height: Option<u32>,
+    heights: Arc<Mutex<HeightMonitor>>,
     scripts: HashSet<ScriptBuf>,
     block_queue: BlockQueue,
     dialog: Dialog,
@@ -63,12 +64,14 @@ pub(crate) struct Chain<H: HeaderStore> {
 
 #[allow(dead_code)]
 impl<H: HeaderStore> Chain<H> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network: Network,
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
         checkpoints: HeaderCheckpoints,
         dialog: Dialog,
+        height_monitor: Arc<Mutex<HeightMonitor>>,
         db: H,
         quorum_required: usize,
     ) -> Self {
@@ -82,7 +85,7 @@ impl<H: HeaderStore> Chain<H> {
             db: Arc::new(Mutex::new(db)),
             cf_header_chain,
             filter_chain,
-            best_known_height: None,
+            heights: height_monitor,
             scripts,
             block_queue: BlockQueue::new(),
             dialog,
@@ -187,28 +190,14 @@ impl<H: HeaderStore> Chain<H> {
         self.header_chain.last_ten()
     }
 
-    // Set the best known height to our peer
-    pub(crate) async fn set_best_known_height(&mut self, height: u32) {
-        self.dialog
-            .send_dialog(format!("Best known peer height: {}", height))
-            .await;
-        self.best_known_height = Some(height);
-    }
-
     // Do we have best known height and is our height equal to it
     // If our height is greater, we received partial inventory, and
     // the header message contained the rest of the new blocks.
-    pub(crate) fn is_synced(&mut self) -> bool {
-        if let Some(best) = self.best_known_height {
-            let current = self.height();
-            if current > best {
-                self.best_known_height = Some(current);
-                true
-            } else {
-                current.eq(&best)
-            }
-        } else {
-            false
+    pub(crate) async fn is_synced(&self) -> bool {
+        let height_lock = self.heights.lock().await;
+        match height_lock.max() {
+            Some(peer_max) => self.height() >= peer_max,
+            None => false,
         }
     }
 
@@ -604,12 +593,13 @@ impl<H: HeaderStore> Chain<H> {
         cf_headers: CFHeaders,
     ) -> Result<AppendAttempt, CFHeaderSyncError> {
         let mut batch: CFHeaderBatch = cf_headers.into();
+        let peer_max = self.heights.lock().await.max();
         self.dialog
             .chain_update(
                 self.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                self.best_known_height.unwrap_or(self.height()),
+                peer_max.unwrap_or(self.height()),
             )
             .await;
         match batch.last_header() {
@@ -773,12 +763,13 @@ impl<H: HeaderStore> Chain<H> {
             .blockhash_at_height(stop_hash_index)
             .await
             .unwrap_or(self.tip());
+        let peer_max = self.heights.lock().await.max();
         self.dialog
             .chain_update(
                 self.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                self.best_known_height.unwrap_or(self.height()),
+                peer_max.unwrap_or(self.height()),
             )
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
@@ -897,6 +888,7 @@ impl<H: HeaderStore> Chain<H> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::{collections::HashSet, str::FromStr};
 
     use bitcoin::hashes::sha256d;
@@ -907,6 +899,7 @@ mod tests {
         p2p::message_filter::{CFHeaders, CFilter},
         BlockHash, FilterHash, FilterHeader,
     };
+    use tokio::sync::Mutex;
 
     use crate::{
         chain::{
@@ -920,9 +913,12 @@ mod tests {
         filters::cfheader_chain::AppendAttempt,
     };
 
-    use super::Chain;
+    use super::{Chain, HeightMonitor};
 
-    fn new_regtest(anchor: HeaderCheckpoint) -> Chain<()> {
+    fn new_regtest(
+        anchor: HeaderCheckpoint,
+        height_monitor: Arc<Mutex<HeightMonitor>>,
+    ) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -934,12 +930,16 @@ mod tests {
             anchor,
             checkpoints,
             Dialog::new(log_tx, warn_tx, event_tx),
+            height_monitor,
             (),
             1,
         )
     }
 
-    fn new_regtest_two_peers(anchor: HeaderCheckpoint) -> Chain<()> {
+    fn new_regtest_two_peers(
+        anchor: HeaderCheckpoint,
+        height_monitor: Arc<Mutex<HeightMonitor>>,
+    ) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -951,6 +951,7 @@ mod tests {
             anchor,
             checkpoints,
             Dialog::new(log_tx, warn_tx, event_tx),
+            height_monitor,
             (),
             2,
         )
@@ -963,7 +964,8 @@ mod tests {
             BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor);
         let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
         let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
         let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
@@ -1012,7 +1014,8 @@ mod tests {
             BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
@@ -1040,7 +1043,8 @@ mod tests {
             BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
         let batch_1 = vec![block_1, block_2];
@@ -1079,7 +1083,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1088,8 +1093,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1161,7 +1166,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1170,8 +1176,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1226,7 +1232,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1235,8 +1242,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1306,7 +1313,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1315,8 +1323,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1397,7 +1405,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1406,8 +1415,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1482,7 +1491,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1493,8 +1503,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1604,7 +1614,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1615,8 +1626,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1702,7 +1713,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1713,8 +1725,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1772,7 +1784,8 @@ mod tests {
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert!(chain.is_synced());
+        height_monitor.lock().await.increment(1.into());
+        assert!(chain.is_synced().await);
         // Request the headers again
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
@@ -1826,7 +1839,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1836,8 +1850,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -1857,7 +1871,7 @@ mod tests {
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2501);
-        assert!(chain.is_synced());
+        assert!(chain.is_synced().await);
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1917,7 +1931,8 @@ mod tests {
             BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
                 .unwrap(),
         );
-        let mut chain = new_regtest_two_peers(gen);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
+        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1927,8 +1942,8 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2500);
-        chain.set_best_known_height(2500).await;
-        assert!(chain.is_synced());
+        height_monitor.lock().await.insert(1.into(), 2500);
+        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();

@@ -20,6 +20,7 @@ use crate::{
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
+        HeightMonitor,
     },
     core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
@@ -103,6 +104,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
         let (mtx, mrx) = mpsc::channel::<PeerThreadMessage>(32);
+        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let peer_map = Arc::new(Mutex::new(PeerMap::new(
             mtx,
             network,
@@ -112,6 +114,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             connection_type,
             target_peer_size,
             timeout_config,
+            Arc::clone(&height_monitor),
         )));
         // Set up the transaction broadcaster
         let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
@@ -126,6 +129,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             checkpoint,
             checkpoints,
             dialog.clone(),
+            height_monitor,
             header_store,
             required_peers,
         );
@@ -202,14 +206,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         Ok(Some(peer_thread)) => {
                             match peer_thread.message {
                                 PeerMessage::Version(version) => {
-                                    let best = {
+                                    {
                                         let mut peer_map = self.peer_map.lock().await;
                                         peer_map.set_offset(peer_thread.nonce, version.timestamp);
                                         peer_map.set_services(peer_thread.nonce, version.services);
-                                        peer_map.set_height(peer_thread.nonce, version.start_height as u32);
-                                        *peer_map.best_height().unwrap_or(&0)
-                                    };
-                                    let response = self.handle_version(peer_thread.nonce, version, best).await?;
+                                        peer_map.set_height(peer_thread.nonce, version.start_height as u32).await;
+                                    }
+                                    let response = self.handle_version(peer_thread.nonce, version).await?;
                                     self.send_message(peer_thread.nonce, response).await;
                                     self.dialog.send_dialog(format!("[{}]: version", peer_thread.nonce))
                                         .await;
@@ -435,7 +438,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         match *state {
             NodeState::Behind => {
                 let mut header_chain = self.chain.lock().await;
-                if header_chain.is_synced() {
+                if header_chain.is_synced().await {
                     header_chain.flush_to_disk().await;
                     self.dialog
                         .send_info(Log::StateChange(NodeState::HeadersSynced))
@@ -500,7 +503,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // After we receiving some chain-syncing message, we decide what chain of data needs to be
     // requested next.
     async fn next_stateful_message(&self, chain: &mut Chain<H>) -> Option<MainThreadMessage> {
-        if !chain.is_synced() {
+        if !chain.is_synced().await {
             let headers = GetHeaderConfig {
                 locators: chain.locators().await,
                 stop_hash: None,
@@ -526,7 +529,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         &self,
         nonce: PeerId,
         version_message: VersionMessage,
-        best_height: u32,
     ) -> Result<MainThreadMessage, NodeError<H::Error, P::Error>> {
         let state = self.state.read().await;
         match *state {
@@ -542,10 +544,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         }
         let mut peer_map = self.peer_map.lock().await;
         peer_map.tried(nonce).await;
-        let mut chain = self.chain.lock().await;
-        if chain.height().le(&best_height) {
-            chain.set_best_known_height(best_height).await;
-        }
         let needs_peers = peer_map.need_peers().await?;
         // First we signal for ADDRV2 support
         if version_message.version.gt(&ADDR_V2_VERSION) && needs_peers {
@@ -568,6 +566,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             self.dialog.send_info(Log::ConnectionsMet).await
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
+        let mut chain = self.chain.lock().await;
         let next_headers = GetHeaderConfig {
             locators: chain.locators().await,
             stop_hash: None,
@@ -597,7 +596,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         if let Err(e) = chain.sync_chain(headers).await {
             match e {
                 HeaderSyncError::EmptyMessage => {
-                    if !chain.is_synced() {
+                    if !chain.is_synced().await {
                         return Some(MainThreadMessage::Disconnect);
                     }
                     return self.next_stateful_message(chain.deref_mut()).await;
@@ -720,16 +719,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut chain = self.chain.lock().await;
         let mut peer_map = self.peer_map.lock().await;
         for block in blocks.iter() {
-            peer_map.add_one_height(nonce);
+            peer_map.increment_height(nonce).await;
             if !chain.contains_hash(*block) {
                 self.dialog
                     .send_dialog(format!("New block: {}", block))
                     .await;
             }
-        }
-        let best_peer_height = *peer_map.best_height().unwrap_or(&0);
-        if chain.height() < best_peer_height {
-            chain.set_best_known_height(best_peer_height).await;
         }
         match *state {
             NodeState::Behind => None,
