@@ -994,7 +994,12 @@ mod tests {
         assert!(extend_sync.is_ok());
         assert_eq!(
             vec![block_8, block_9, new_block_10, block_11],
-            chain.header_chain.values()
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>()
         );
         assert_eq!(chain.fetch_header(10).await.unwrap().unwrap(), new_block_10);
         // A new peer sending us these headers should not do anything
@@ -1003,7 +1008,12 @@ mod tests {
         assert!(dup_sync.is_ok());
         assert_eq!(
             vec![block_8, block_9, new_block_10, block_11],
-            chain.header_chain.values()
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1026,12 +1036,25 @@ mod tests {
         let chain_sync = chain.sync_chain(batch_1).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 3);
-        assert_eq!(chain.header_chain.values(), vec![block_1, block_2, block_3]);
+        assert_eq!(
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![block_1, block_2, block_3]
+        );
         let chain_sync = chain.sync_chain(batch_2).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 4);
         assert_eq!(
-            chain.header_chain.values(),
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![block_1, block_2, new_block_3, block_4]
         );
     }
@@ -1057,7 +1080,15 @@ mod tests {
         let chain_sync = chain.sync_chain(batch_1).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.height(), 2);
-        assert_eq!(chain.header_chain.values(), vec![block_1, block_2]);
+        assert_eq!(
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![block_1, block_2]
+        );
         let chain_sync = chain.sync_chain(batch_2).await;
         assert!(chain_sync.is_err());
         assert_eq!(chain_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
@@ -1071,7 +1102,12 @@ mod tests {
         assert_eq!(chain.height(), 3);
         assert_eq!(chain.fetch_header(3).await.unwrap().unwrap(), block_3);
         assert_eq!(
-            chain.header_chain.values(),
+            chain
+                .header_chain
+                .headers()
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![new_block_1, new_block_2, block_3]
         );
     }
