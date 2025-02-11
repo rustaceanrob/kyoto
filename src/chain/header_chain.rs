@@ -11,7 +11,6 @@ pub(crate) type Headers = BTreeMap<Height, Header>;
 
 const LOCATOR_LOOKBACKS: &[usize] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const MAX_LOOKBACK: usize = 1025;
-const RESIZE: usize = 2001;
 
 #[derive(Debug)]
 pub(crate) struct HeaderChain {
@@ -162,14 +161,12 @@ impl HeaderChain {
     }
 
     // Remove old headers from the map to save memory, having saved them on disk
-    pub(crate) fn move_up(&mut self) {
-        let mut header_iter = self.headers.iter().rev().take(RESIZE).rev();
-        if let Some((height, header)) = header_iter.nth(0) {
+    pub(crate) fn take(&mut self) -> Headers {
+        let headers = core::mem::take(&mut self.headers);
+        if let Some((height, header)) = headers.last_key_value() {
             self.anchor_checkpoint = HeaderCheckpoint::new(*height, header.block_hash());
-            self.headers = header_iter
-                .map(|(height, header)| (*height, *header))
-                .collect();
         }
+        headers
     }
 
     // Extend the current chain, potentially rewriting history. Higher order functions should decide what we extend
