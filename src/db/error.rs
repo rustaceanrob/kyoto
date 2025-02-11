@@ -154,18 +154,3 @@ impl From<rusqlite::Error> for SqlHeaderStoreError {
         Self::SQL(value)
     }
 }
-
-/// Errors for the [`PeerStore`](crate) of unit type.
-#[derive(Debug)]
-pub enum UnitPeerStoreError {
-    /// There were no peers found.
-    NoPeers,
-}
-
-impl core::fmt::Display for UnitPeerStoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            UnitPeerStoreError::NoPeers => write!(f, "no peers in unit database."),
-        }
-    }
-}

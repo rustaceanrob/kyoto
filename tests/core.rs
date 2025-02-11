@@ -40,16 +40,6 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     Ok((bitcoind, socket_addr))
 }
 
-fn new_node(addrs: HashSet<ScriptBuf>, socket_addr: SocketAddrV4) -> (Node<(), ()>, Client) {
-    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
-    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
-    let (node, client) = builder
-        .add_peer(host)
-        .add_scripts(addrs)
-        .build_with_databases((), ());
-    (node, client)
-}
-
 fn new_node_sql(
     addrs: HashSet<ScriptBuf>,
     socket_addr: SocketAddrV4,
@@ -153,6 +143,7 @@ async fn live_reorg() {
     }
     let (bitcoind, socket_addr) = rpc_result.unwrap();
     let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -161,7 +152,7 @@ async fn live_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr);
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -207,6 +198,7 @@ async fn live_reorg_additional_sync() {
     }
     let (bitcoind, socket_addr) = rpc_result.unwrap();
     let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -215,7 +207,7 @@ async fn live_reorg_additional_sync() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr);
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -265,6 +257,7 @@ async fn various_client_methods() {
     }
     let (bitcoind, socket_addr) = rpc_result.unwrap();
     let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine a lot of blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 500, 15).await;
@@ -272,7 +265,7 @@ async fn various_client_methods() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node(scripts.clone(), socket_addr);
+    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -589,6 +582,7 @@ async fn halting_download_works() {
     }
     let (bitcoind, socket_addr) = rpc_result.unwrap();
     let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
 
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -602,8 +596,10 @@ async fn halting_download_works() {
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(scripts)
+        .add_data_dir(tempdir)
         .halt_filter_download()
-        .build_with_databases((), ());
+        .build_node()
+        .unwrap();
 
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -640,6 +636,7 @@ async fn halting_download_works() {
 
 #[tokio::test]
 async fn signet_syncs() {
+    let tempdir = tempfile::TempDir::new().unwrap().into_path();
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
         .require_network(bitcoin::Network::Signet)
@@ -652,7 +649,9 @@ async fn signet_syncs() {
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(set)
-        .build_with_databases((), ());
+        .add_data_dir(tempdir)
+        .build_node()
+        .unwrap();
     tokio::task::spawn(async move { node.run().await });
     async fn print_and_sync(mut client: Client) {
         loop {
