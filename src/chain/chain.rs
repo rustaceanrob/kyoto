@@ -918,6 +918,7 @@ mod tests {
     fn new_regtest(
         anchor: HeaderCheckpoint,
         height_monitor: Arc<Mutex<HeightMonitor>>,
+        peers: usize,
     ) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
@@ -932,28 +933,7 @@ mod tests {
             Dialog::new(log_tx, warn_tx, event_tx),
             height_monitor,
             (),
-            1,
-        )
-    }
-
-    fn new_regtest_two_peers(
-        anchor: HeaderCheckpoint,
-        height_monitor: Arc<Mutex<HeightMonitor>>,
-    ) -> Chain<()> {
-        let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
-        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
-        let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
-        let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
-        checkpoints.prune_up_to(anchor);
-        Chain::new(
-            bitcoin::Network::Regtest,
-            HashSet::new(),
-            anchor,
-            checkpoints,
-            Dialog::new(log_tx, warn_tx, event_tx),
-            height_monitor,
-            (),
-            2,
+            peers,
         )
     }
 
@@ -965,7 +945,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor);
+        let mut chain = new_regtest(gen, height_monitor, 1);
         let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
         let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
         let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
@@ -1025,7 +1005,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor);
+        let mut chain = new_regtest(gen, height_monitor, 1);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
@@ -1067,7 +1047,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor);
+        let mut chain = new_regtest(gen, height_monitor, 1);
         let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
         let batch_1 = vec![block_1, block_2];
@@ -1120,7 +1100,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1203,7 +1183,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1269,7 +1249,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1350,7 +1330,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1442,7 +1422,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1528,7 +1508,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1651,7 +1631,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1750,7 +1730,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1876,7 +1856,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -1968,7 +1948,7 @@ mod tests {
                 .unwrap(),
         );
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest_two_peers(gen, height_monitor.clone());
+        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
