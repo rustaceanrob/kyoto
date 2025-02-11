@@ -144,7 +144,7 @@ async fn print_logs(mut log_rx: Receiver<Log>, mut warn_rx: UnboundedReceiver<Wa
 }
 
 #[tokio::test]
-async fn test_reorg() {
+async fn live_reorg() {
     let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -198,7 +198,7 @@ async fn test_reorg() {
 }
 
 #[tokio::test]
-async fn test_mine_after_reorg() {
+async fn live_reorg_additional_sync() {
     let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -256,7 +256,7 @@ async fn test_mine_after_reorg() {
 }
 
 #[tokio::test]
-async fn test_various_client_methods() {
+async fn various_client_methods() {
     let rpc_result = start_bitcoind(false);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -294,7 +294,7 @@ async fn test_various_client_methods() {
 }
 
 #[tokio::test]
-async fn test_sql_reorg() {
+async fn stop_reorg_resync() {
     let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -378,7 +378,7 @@ async fn test_sql_reorg() {
 }
 
 #[tokio::test]
-async fn test_two_deep_reorg() {
+async fn stop_reorg_two_resync() {
     let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -462,7 +462,7 @@ async fn test_two_deep_reorg() {
 }
 
 #[tokio::test]
-async fn test_sql_stale_anchor() {
+async fn stop_reorg_start_on_orphan() {
     let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -580,7 +580,7 @@ async fn test_sql_stale_anchor() {
 
 #[tokio::test]
 #[allow(clippy::collapsible_match)]
-async fn test_halting_works() {
+async fn halting_download_works() {
     let rpc_result = start_bitcoind(true);
     // If we can't fetch the genesis block then bitcoind is not running. Just exit.
     if rpc_result.is_err() {
@@ -639,7 +639,7 @@ async fn test_halting_works() {
 }
 
 #[tokio::test]
-async fn test_signet_syncs() {
+async fn signet_syncs() {
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
         .require_network(bitcoin::Network::Signet)
