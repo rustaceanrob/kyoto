@@ -57,12 +57,6 @@ impl HeaderChain {
         &self.headers
     }
 
-    // All the headers of the chain
-    #[allow(dead_code)]
-    pub(crate) fn values(&self) -> Vec<Header> {
-        self.headers.values().copied().collect()
-    }
-
     // This header chain contains a block hash
     pub(crate) fn contains_hash(&self, blockhash: BlockHash) -> bool {
         self.headers
@@ -343,7 +337,7 @@ mod tests {
         assert_eq!(reorg.first().unwrap().header, block_10);
         assert_eq!(
             vec![block_8, block_9, new_block_10, block_11],
-            chain.values()
+            chain.headers().values().copied().collect::<Vec<_>>()
         );
         assert_eq!(chain.header_at_height(12), None);
         assert_eq!(chain.header_at_height(11), Some(&block_11));
@@ -372,7 +366,7 @@ mod tests {
         assert_eq!(reorged.len(), 2);
         assert_eq!(
             vec![block_1, block_2, new_block_3, new_block_4],
-            chain.values()
+            chain.headers().values().copied().collect::<Vec<_>>()
         );
         assert_eq!(chain.header_at_height(4), Some(&new_block_4));
         assert_eq!(chain.header_at_height(3), Some(&new_block_3));
@@ -403,12 +397,15 @@ mod tests {
             reorged.iter().map(|f| f.header).collect::<Vec<Header>>(),
             vec![block_1, block_2]
         );
-        assert_eq!(vec![new_block_1, new_block_2], chain.values());
+        assert_eq!(
+            vec![new_block_1, new_block_2],
+            chain.headers().values().copied().collect::<Vec<_>>()
+        );
         let no_org = chain.extend(&batch_2);
         assert_eq!(no_org.len(), 0);
         assert_eq!(
             vec![new_block_1, new_block_2, block_3, block_4],
-            chain.values()
+            chain.headers().values().copied().collect::<Vec<_>>()
         );
         assert_eq!(chain.header_at_height(3), Some(&block_3));
         let want = chain.height_of_hash(new_block_2.block_hash());
