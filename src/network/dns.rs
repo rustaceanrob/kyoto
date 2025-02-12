@@ -6,7 +6,7 @@ use bitcoin::{
 };
 use std::{
     io::Read,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 use tokio::net::UdpSocket;
 
@@ -35,7 +35,7 @@ const MAINNET_SEEDS: &[&str; 9] = &[
     "seed.bitcoin.wiz.biz",
 ];
 
-const RESOLVER: &str = "1.1.1.1:53";
+pub(crate) const DNS_RESOLVER_PORT: u16 = 53;
 const LOCAL_HOST: &str = "0.0.0.0:0";
 
 const HEADER_BYTES: usize = 12;
@@ -59,12 +59,31 @@ const A_RECORD: u16 = 0x01;
 const A_CLASS: u16 = 0x01;
 const EXPECTED_RDATA_LEN: u16 = 0x04;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DnsResolver {
+    pub(crate) socket_addr: SocketAddr,
+}
+
+impl Default for DnsResolver {
+    fn default() -> Self {
+        let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), DNS_RESOLVER_PORT);
+        Self { socket_addr }
+    }
+}
+
+impl From<DnsResolver> for SocketAddr {
+    fn from(value: DnsResolver) -> Self {
+        value.socket_addr
+    }
+}
+
 pub(crate) struct Dns<'a> {
     seeds: Vec<&'a str>,
+    dns_resolver: DnsResolver,
 }
 
 impl Dns<'_> {
-    pub fn new(network: Network) -> Self {
+    pub fn new(network: Network, dns_resolver: DnsResolver) -> Self {
         let seeds = match network {
             Network::Bitcoin => MAINNET_SEEDS.to_vec(),
             Network::Testnet => TESTNET_SEEDS.to_vec(),
@@ -73,14 +92,17 @@ impl Dns<'_> {
             Network::Testnet4 => Vec::with_capacity(0),
             _ => unreachable!(),
         };
-        Self { seeds }
+        Self {
+            seeds,
+            dns_resolver,
+        }
     }
 
     pub async fn bootstrap(&self) -> Result<Vec<IpAddr>, DnsBootstrapError> {
         let mut ip_addrs: Vec<IpAddr> = vec![];
 
         for host in &self.seeds {
-            match DNSQuery::new(host).lookup().await {
+            match DNSQuery::new(host).lookup(self.dns_resolver.into()).await {
                 Ok(addrs) => ip_addrs.extend(addrs),
                 Err(e) => eprintln!("{e}"),
             }
@@ -122,11 +144,11 @@ impl DNSQuery {
         }
     }
 
-    async fn lookup(&self) -> Result<Vec<IpAddr>, DNSQueryError> {
+    async fn lookup(&self, dns_resolver: SocketAddr) -> Result<Vec<IpAddr>, DNSQueryError> {
         let sock = UdpSocket::bind(LOCAL_HOST)
             .await
             .map_err(|_| DNSQueryError::ConnectionDenied)?;
-        sock.connect(RESOLVER)
+        sock.connect(dns_resolver)
             .await
             .map_err(|_| DNSQueryError::Udp)?;
         sock.send(&self.message)
@@ -229,15 +251,21 @@ impl DNSQuery {
 
 #[cfg(test)]
 mod test {
-    use super::Dns;
+    use std::net::SocketAddr;
+
+    use super::*;
 
     #[tokio::test]
     #[ignore = "dns works"]
     async fn dns_responds() {
-        let addrs = Dns::new(bitcoin::network::Network::Signet)
-            .bootstrap()
-            .await
-            .unwrap();
+        let socket_addr = "1.1.1.1:53".parse::<SocketAddr>().unwrap();
+        let addrs = Dns::new(
+            bitcoin::network::Network::Signet,
+            DnsResolver { socket_addr },
+        )
+        .bootstrap()
+        .await
+        .unwrap();
         assert!(addrs.len() > 1);
     }
 }

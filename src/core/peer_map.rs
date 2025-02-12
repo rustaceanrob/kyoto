@@ -23,6 +23,7 @@ use crate::{
     chain::HeightMonitor,
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
     network::{
+        dns::DnsResolver,
         error::PeerError,
         peer::Peer,
         traits::{ClearNetConnection, NetworkConnector},
@@ -71,6 +72,7 @@ pub(crate) struct PeerMap<P: PeerStore> {
     target_db_size: PeerStoreSizeConfig,
     net_groups: HashSet<String>,
     timeout_config: PeerTimeoutConfig,
+    dns_resolver: DnsResolver,
 }
 
 #[allow(dead_code)]
@@ -86,6 +88,7 @@ impl<P: PeerStore> PeerMap<P> {
         target_db_size: PeerStoreSizeConfig,
         timeout_config: PeerTimeoutConfig,
         height_monitor: Arc<Mutex<HeightMonitor>>,
+        dns_resolver: DnsResolver,
     ) -> Self {
         let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
             ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
@@ -108,6 +111,7 @@ impl<P: PeerStore> PeerMap<P> {
             target_db_size,
             net_groups: HashSet::new(),
             timeout_config,
+            dns_resolver,
         }
     }
 
@@ -392,7 +396,7 @@ impl<P: PeerStore> PeerMap<P> {
         use std::net::IpAddr;
         self.dialog.send_dialog("Bootstraping peers with DNS").await;
         let mut db_lock = self.db.lock().await;
-        let new_peers = Dns::new(self.network)
+        let new_peers = Dns::new(self.network, self.dns_resolver)
             .bootstrap()
             .await
             .map_err(|_| PeerManagerError::Dns)?
