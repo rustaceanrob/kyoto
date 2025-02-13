@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::DerefMut, sync::Arc, time::Duration};
+use std::{ops::DerefMut, sync::Arc, time::Duration};
 
 use bitcoin::{
     block::Header,
@@ -25,8 +25,7 @@ use crate::{
     core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    network::dns::DnsResolver,
-    ConnectionType, PeerStoreSizeConfig, RejectPayload, TrustedPeer, TxBroadcastPolicy,
+    RejectPayload, TxBroadcastPolicy,
 };
 
 use super::{
@@ -46,7 +45,6 @@ use super::{
 pub(crate) const ADDR_V2_VERSION: u32 = 70015;
 const LOOP_TIMEOUT: u64 = 1;
 
-type Whitelist = Vec<TrustedPeer>;
 type PeerRequirement = usize;
 
 /// The state of the node with respect to connected peers.
@@ -79,21 +77,26 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
 }
 
 impl<H: HeaderStore, P: PeerStore> Node<H, P> {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network: Network,
-        white_list: Whitelist,
-        dns_resolver: DnsResolver,
-        scripts: HashSet<ScriptBuf>,
-        header_checkpoint: Option<HeaderCheckpoint>,
-        required_peers: PeerRequirement,
-        target_peer_size: PeerStoreSizeConfig,
-        connection_type: ConnectionType,
-        timeout_config: PeerTimeoutConfig,
-        filter_sync_policy: FilterSyncPolicy,
+        config: NodeConfig,
         peer_store: P,
         header_store: H,
     ) -> (Self, Client) {
+        let NodeConfig {
+            required_peers,
+            white_list,
+            dns_resolver,
+            addresses,
+            data_path: _,
+            header_checkpoint,
+            connection_type,
+            target_peer_size,
+            response_timeout,
+            max_connection_time,
+            filter_sync_policy,
+        } = config;
+        let timeout_config = PeerTimeoutConfig::new(response_timeout, max_connection_time);
         // Set up a communication channel between the node and client
         let (log_tx, log_rx) = mpsc::channel::<Log>(32);
         let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
@@ -128,13 +131,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         // Build the chain
         let chain = Chain::new(
             network,
-            scripts,
+            addresses,
             checkpoint,
             checkpoints,
             dialog.clone(),
             height_monitor,
             header_store,
-            required_peers,
+            required_peers.into(),
         );
         let chain = Arc::new(Mutex::new(chain));
         (
@@ -143,37 +146,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 chain,
                 peer_map,
                 tx_broadcaster,
-                required_peers,
+                required_peers: required_peers.into(),
                 dialog,
                 client_recv: Arc::new(Mutex::new(crx)),
                 peer_recv: Arc::new(Mutex::new(mrx)),
                 filter_sync_policy: Arc::new(RwLock::new(filter_sync_policy)),
             },
             client,
-        )
-    }
-
-    pub(crate) fn new_from_config(
-        config: NodeConfig,
-        network: Network,
-        peer_store: P,
-        header_store: H,
-    ) -> (Self, Client) {
-        let timeout_config =
-            PeerTimeoutConfig::new(config.response_timeout, config.max_connection_time);
-        Node::new(
-            network,
-            config.white_list,
-            config.dns_resolver,
-            config.addresses,
-            config.header_checkpoint,
-            config.required_peers as PeerRequirement,
-            config.target_peer_size,
-            config.connection_type,
-            timeout_config,
-            config.filter_sync_policy,
-            peer_store,
-            header_store,
         )
     }
 

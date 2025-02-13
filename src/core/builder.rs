@@ -204,9 +204,9 @@ impl NodeBuilder {
     pub fn build_node(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
-        Ok(Node::new_from_config(
-            core::mem::take(&mut self.config),
+        Ok(Node::new(
             self.network,
+            core::mem::take(&mut self.config),
             peer_store,
             header_store,
         ))
@@ -218,9 +218,9 @@ impl NodeBuilder {
         peer_store: P,
         header_store: H,
     ) -> (Node<H, P>, Client) {
-        Node::new_from_config(
-            core::mem::take(&mut self.config),
+        Node::new(
             self.network,
+            core::mem::take(&mut self.config),
             peer_store,
             header_store,
         )
