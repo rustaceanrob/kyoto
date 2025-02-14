@@ -7,8 +7,6 @@ pub(crate) mod cfheader_chain;
 pub(crate) mod error;
 pub(crate) mod filter_chain;
 
-use std::collections::HashSet;
-
 use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::{bip158::BlockFilter, BlockHash, FilterHash, ScriptBuf};
 
@@ -42,12 +40,12 @@ impl Filter {
         &self.block_hash
     }
 
-    pub fn contains_any(&mut self, scripts: &HashSet<ScriptBuf>) -> Result<bool, FilterError> {
+    pub fn contains_any<'a>(
+        &'a mut self,
+        scripts: impl Iterator<Item = &'a ScriptBuf>,
+    ) -> Result<bool, FilterError> {
         self.block_filter
-            .match_any(
-                &self.block_hash,
-                &mut scripts.iter().map(|script| script.to_bytes()),
-            )
+            .match_any(&self.block_hash, scripts.map(|script| script.to_bytes()))
             .map_err(|_| FilterError::IORead)
     }
 }
