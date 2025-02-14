@@ -727,7 +727,7 @@ impl<H: HeaderStore> Chain<H> {
         #[cfg(not(feature = "filter-control"))]
         if !self.block_queue.contains(&filter_message.block_hash)
             && filter
-                .contains_any(&self.scripts)
+                .contains_any(self.scripts.iter())
                 .map_err(CFilterSyncError::Filter)?
         {
             // Add to the block queue

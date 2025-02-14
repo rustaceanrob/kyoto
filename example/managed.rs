@@ -74,7 +74,7 @@ async fn main() {
                         Event::IndexedFilter(mut filter) => {
                             let height = filter.height();
                             tracing::info!("Checking filter: {height}");
-                            if filter.contains_any(&addresses) {
+                            if filter.contains_any(addresses.iter()) {
                                 let hash = *filter.block_hash();
                                 tracing::info!("Found script at {}!", hash);
                                 let indexed_block = requester.get_block(hash).await.unwrap();
