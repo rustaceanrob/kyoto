@@ -2,7 +2,7 @@ extern crate tokio;
 use std::{ops::DerefMut, time::Duration};
 
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
-use bitcoin::{p2p::ServiceFlags, Network};
+use bitcoin::{p2p::ServiceFlags, Network, Transaction};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
@@ -15,7 +15,7 @@ use tokio::{
 
 use crate::{
     core::{
-        channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
+        channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, TxRequest},
         dialog::Dialog,
         messages::Warning,
         PeerId, PeerTimeoutConfig,
@@ -50,6 +50,7 @@ pub(crate) struct Peer {
     services: ServiceFlags,
     dialog: Dialog,
     timeout_config: PeerTimeoutConfig,
+    tx_queue: Vec<Transaction>,
 }
 
 impl Peer {
@@ -72,6 +73,7 @@ impl Peer {
             services,
             dialog,
             timeout_config,
+            tx_queue: Vec::new(),
         }
     }
 
@@ -285,6 +287,35 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
+            PeerMessage::TxRequests(requests) => {
+                for request in requests {
+                    match request {
+                        TxRequest::Legacy(txid) => {
+                            if let Some(index) = self
+                                .tx_queue
+                                .iter()
+                                .position(|t| t.compute_txid().eq(&txid))
+                            {
+                                let tx = self.tx_queue.swap_remove(index);
+                                let message = message_generator.broadcast_transaction(tx)?;
+                                self.write_bytes(writer, message).await?;
+                            }
+                        }
+                        TxRequest::Witness(wtxid) => {
+                            if let Some(index) = self
+                                .tx_queue
+                                .iter()
+                                .position(|t| t.compute_wtxid().eq(&wtxid))
+                            {
+                                let tx = self.tx_queue.swap_remove(index);
+                                let message = message_generator.broadcast_transaction(tx)?;
+                                self.write_bytes(writer, message).await?;
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
             PeerMessage::Verack => {
                 self.message_counter.got_verack();
                 Ok(())
@@ -348,6 +379,10 @@ impl Peer {
                 let message = message_generator.addrv2()?;
                 self.write_bytes(writer, message).await?;
             }
+            MainThreadMessage::WtxidRelay => {
+                let message = message_generator.wtxid_relay()?;
+                self.write_bytes(writer, message).await?;
+            }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
                 let message = message_generator.headers(config.locators, config.stop_hash)?;
@@ -370,7 +405,8 @@ impl Peer {
             }
             MainThreadMessage::BroadcastTx(transaction) => {
                 self.message_counter.sent_tx();
-                let message = message_generator.transaction(transaction)?;
+                let message = message_generator.announce_transaction(&transaction)?;
+                self.tx_queue.push(transaction);
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Verack => {

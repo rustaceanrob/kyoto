@@ -5,7 +5,7 @@ use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, Servic
 use bitcoin::{FeeRate, Txid};
 use tokio::sync::mpsc::Sender;
 
-use crate::core::channel_messages::{CombinedAddr, PeerMessage};
+use crate::core::channel_messages::{CombinedAddr, PeerMessage, TxRequest};
 use crate::core::messages::RejectPayload;
 
 use super::error::PeerReadError;
@@ -96,7 +96,20 @@ impl Reader {
                     None
                 }
             }
-            NetworkMessage::GetData(_) => None,
+            NetworkMessage::GetData(inventory) => {
+                let mut requests = Vec::new();
+                for inv in inventory {
+                    match inv {
+                        Inventory::WTx(wtxid) => requests.push(TxRequest::Witness(wtxid)),
+                        Inventory::WitnessTransaction(txid) => {
+                            requests.push(TxRequest::Legacy(txid))
+                        }
+                        Inventory::Transaction(txid) => requests.push(TxRequest::Legacy(txid)),
+                        _ => continue,
+                    }
+                }
+                Some(PeerMessage::TxRequests(requests))
+            }
             NetworkMessage::NotFound(_) => None,
             NetworkMessage::GetBlocks(_) => None,
             NetworkMessage::GetHeaders(_) => None,
@@ -126,10 +139,10 @@ impl Reader {
             NetworkMessage::GetCFCheckpt(_) => None,
             NetworkMessage::CFCheckpt(_) => None,
             // Compact Block Relay is enabled with 70014
-            NetworkMessage::SendCmpct(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::CmpctBlock(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::GetBlockTxn(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::BlockTxn(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::SendCmpct(_) => None,
+            NetworkMessage::CmpctBlock(_) => None,
+            NetworkMessage::GetBlockTxn(_) => None,
+            NetworkMessage::BlockTxn(_) => None,
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
                 let txid = Txid::from(rejection.hash);
@@ -149,7 +162,7 @@ impl Reader {
                 }
             }
             // 70016
-            NetworkMessage::WtxidRelay => Some(PeerMessage::Disconnect),
+            NetworkMessage::WtxidRelay => None,
             NetworkMessage::AddrV2(addresses) => {
                 if addresses.len() > MAX_ADDR {
                     return Some(PeerMessage::Disconnect);
