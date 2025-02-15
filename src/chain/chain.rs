@@ -45,7 +45,6 @@ use crate::{
 
 const MAX_REORG_DEPTH: u32 = 5_000;
 const REORG_LOOKBACK: u32 = 7;
-const MAX_HEADER_SIZE: usize = 20_000;
 const FILTER_BASIC: u8 = 0x00;
 
 #[derive(Debug)]
@@ -229,28 +228,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // Write the chain to disk
     pub(crate) async fn flush_to_disk(&mut self) {
-        if let Err(e) = self
-            .db
-            .lock()
-            .await
-            .write(self.header_chain.headers())
-            .await
-        {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: format!("Could not save headers to disk: {e}"),
-            });
-        }
-    }
-
-    // Write the chain to disk, overriding previous heights
-    pub(crate) async fn flush_over_height(&mut self, height: u32) {
-        if let Err(e) = self
-            .db
-            .lock()
-            .await
-            .write_over(self.header_chain.headers(), height)
-            .await
-        {
+        if let Err(e) = self.db.lock().await.write(self.header_chain.take()).await {
             self.dialog.send_warning(Warning::FailedPersistence {
                 warning: format!("Could not save headers to disk: {e}"),
             });
@@ -291,14 +269,6 @@ impl<H: HeaderStore> Chain<H> {
         Ok(())
     }
 
-    // If the number of headers in memory gets too large, move some of them to the disk
-    pub(crate) async fn manage_memory(&mut self) {
-        if self.header_chain.inner_len() > MAX_HEADER_SIZE {
-            self.flush_to_disk().await;
-            self.header_chain.move_up();
-        }
-    }
-
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
@@ -330,7 +300,6 @@ impl<H: HeaderStore> Chain<H> {
                 self.evaluate_fork(&header_batch).await?;
             }
         };
-        self.manage_memory().await;
         Ok(())
     }
 
@@ -436,7 +405,7 @@ impl<H: HeaderStore> Chain<H> {
                 self.filter_chain.remove(removed_hashes);
                 self.block_queue.remove(removed_hashes);
                 self.dialog.send_event(Event::BlocksDisconnected(reorged));
-                self.flush_over_height(stem).await;
+                self.flush_to_disk().await;
                 Ok(())
             } else {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
