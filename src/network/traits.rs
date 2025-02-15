@@ -48,7 +48,9 @@ pub(crate) trait MessageGenerator: Send + Sync {
 
     fn pong(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError>;
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError>;
+    fn announce_transaction(&mut self, transaction: &Transaction) -> Result<Vec<u8>, PeerError>;
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError>;
 }
 
 // Responsible for parsing plaintext or encrypted messages off of the  wire.

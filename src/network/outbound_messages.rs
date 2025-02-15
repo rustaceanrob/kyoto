@@ -125,7 +125,13 @@ impl MessageGenerator for V1OutboundMessage {
         Ok(serialize(&data))
     }
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
+    fn announce_transaction(&mut self, transaction: &Transaction) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Inv(vec![Inventory::WTx(transaction.compute_wtxid())]);
+        let data = RawNetworkMessage::new(self.network.magic(), msg);
+        Ok(serialize(&data))
+    }
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::Tx(transaction);
         let data = RawNetworkMessage::new(self.network.magic(), msg);
         Ok(serialize(&data))
@@ -207,7 +213,13 @@ impl MessageGenerator for V2OutboundMessage {
         self.encrypt_plaintext(plaintext)
     }
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
+    fn announce_transaction(&mut self, transaction: &Transaction) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Inv(vec![Inventory::WTx(transaction.compute_wtxid())]);
+        let plaintext = self.serialize_network_message(msg)?;
+        self.encrypt_plaintext(plaintext)
+    }
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::Tx(transaction))?;
         self.encrypt_plaintext(plaintext)
     }

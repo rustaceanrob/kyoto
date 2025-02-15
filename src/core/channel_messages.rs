@@ -6,7 +6,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, FeeRate, Transaction,
+    Block, BlockHash, FeeRate, Transaction, Txid, Wtxid,
 };
 
 use crate::core::messages::RejectPayload;
@@ -58,6 +58,13 @@ pub(crate) enum PeerMessage {
     #[allow(dead_code)]
     Pong(u64),
     FeeFilter(FeeRate),
+    TxRequests(Vec<TxRequest>),
+}
+
+#[derive(Debug)]
+pub(crate) enum TxRequest {
+    Legacy(Txid),
+    Witness(Wtxid),
 }
 
 #[derive(Debug, Clone)]
