@@ -1,8 +1,8 @@
 extern crate tokio;
-use std::{ops::DerefMut, sync::Arc, time::Duration};
+use std::{collections::HashMap, ops::DerefMut, sync::Arc, time::Duration};
 
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
-use bitcoin::{p2p::ServiceFlags, Network};
+use bitcoin::{p2p::ServiceFlags, Network, Transaction, Wtxid};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
@@ -50,6 +50,7 @@ pub(crate) struct Peer {
     services: ServiceFlags,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
+    tx_queue: HashMap<Wtxid, Transaction>,
 }
 
 impl Peer {
@@ -72,6 +73,7 @@ impl Peer {
             services,
             dialog,
             timeout_config,
+            tx_queue: HashMap::new(),
         }
     }
 
@@ -284,6 +286,15 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
+            PeerMessage::TxRequests(requests) => {
+                for wtxid in requests {
+                    if let Some(transaction) = self.tx_queue.remove(&wtxid) {
+                        let msg = message_generator.broadcast_transaction(transaction)?;
+                        self.write_bytes(writer, msg).await?;
+                    }
+                }
+                Ok(())
+            }
             PeerMessage::Verack => {
                 self.message_counter.got_verack();
                 Ok(())
@@ -347,6 +358,10 @@ impl Peer {
                 let message = message_generator.addrv2()?;
                 self.write_bytes(writer, message).await?;
             }
+            MainThreadMessage::WtxidRelay => {
+                let message = message_generator.wtxid_relay()?;
+                self.write_bytes(writer, message).await?;
+            }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
                 let message = message_generator.headers(config.locators, config.stop_hash)?;
@@ -369,7 +384,9 @@ impl Peer {
             }
             MainThreadMessage::BroadcastTx(transaction) => {
                 self.message_counter.sent_tx();
-                let message = message_generator.transaction(transaction)?;
+                let wtxid = transaction.compute_wtxid();
+                let message = message_generator.announce_transaction(wtxid)?;
+                self.tx_queue.insert(wtxid, transaction);
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Verack => {

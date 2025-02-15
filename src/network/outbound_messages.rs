@@ -14,7 +14,7 @@ use bitcoin::{
         message_network::VersionMessage,
         Address, ServiceFlags,
     },
-    BlockHash, Network, Transaction,
+    BlockHash, Network, Transaction, Wtxid,
 };
 
 use crate::{core::channel_messages::GetBlockConfig, prelude::default_port_from_network};
@@ -90,6 +90,11 @@ impl MessageGenerator for V1OutboundMessage {
         Ok(serialize(&data))
     }
 
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError> {
+        let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::WtxidRelay);
+        Ok(serialize(&data))
+    }
+
     fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
@@ -125,7 +130,13 @@ impl MessageGenerator for V1OutboundMessage {
         Ok(serialize(&data))
     }
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
+    fn announce_transaction(&mut self, wtxid: Wtxid) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Inv(vec![Inventory::WTx(wtxid)]);
+        let data = RawNetworkMessage::new(self.network.magic(), msg);
+        Ok(serialize(&data))
+    }
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::Tx(transaction);
         let data = RawNetworkMessage::new(self.network.magic(), msg);
         Ok(serialize(&data))
@@ -175,6 +186,11 @@ impl MessageGenerator for V2OutboundMessage {
         self.encrypt_plaintext(plaintext)
     }
 
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError> {
+        let plaintext = self.serialize_network_message(NetworkMessage::WtxidRelay)?;
+        self.encrypt_plaintext(plaintext)
+    }
+
     fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
@@ -207,7 +223,13 @@ impl MessageGenerator for V2OutboundMessage {
         self.encrypt_plaintext(plaintext)
     }
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
+    fn announce_transaction(&mut self, wtxid: Wtxid) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Inv(vec![Inventory::WTx(wtxid)]);
+        let plaintext = self.serialize_network_message(msg)?;
+        self.encrypt_plaintext(plaintext)
+    }
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::Tx(transaction))?;
         self.encrypt_plaintext(plaintext)
     }

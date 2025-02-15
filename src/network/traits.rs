@@ -7,7 +7,7 @@ use bitcoin::{
         message::NetworkMessage,
         message_filter::{GetCFHeaders, GetCFilters},
     },
-    BlockHash, Transaction,
+    BlockHash, Transaction, Wtxid,
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -34,6 +34,8 @@ pub(crate) trait MessageGenerator: Send + Sync {
 
     fn addrv2(&mut self) -> Result<Vec<u8>, PeerError>;
 
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError>;
+
     fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
@@ -48,7 +50,9 @@ pub(crate) trait MessageGenerator: Send + Sync {
 
     fn pong(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError>;
 
-    fn transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError>;
+    fn announce_transaction(&mut self, wtxid: Wtxid) -> Result<Vec<u8>, PeerError>;
+
+    fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError>;
 }
 
 // Responsible for parsing plaintext or encrypted messages off of the  wire.
