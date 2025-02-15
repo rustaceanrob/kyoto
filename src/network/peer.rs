@@ -379,6 +379,10 @@ impl Peer {
                 let message = message_generator.addrv2()?;
                 self.write_bytes(writer, message).await?;
             }
+            MainThreadMessage::WtxidRelay => {
+                let message = message_generator.wtxid_relay()?;
+                self.write_bytes(writer, message).await?;
+            }
             MainThreadMessage::GetHeaders(config) => {
                 self.message_counter.sent_header();
                 let message = message_generator.headers(config.locators, config.stop_hash)?;

@@ -90,6 +90,11 @@ impl MessageGenerator for V1OutboundMessage {
         Ok(serialize(&data))
     }
 
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError> {
+        let data = RawNetworkMessage::new(self.network.magic(), NetworkMessage::WtxidRelay);
+        Ok(serialize(&data))
+    }
+
     fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
@@ -178,6 +183,11 @@ impl MessageGenerator for V2OutboundMessage {
 
     fn addrv2(&mut self) -> Result<Vec<u8>, PeerError> {
         let plaintext = self.serialize_network_message(NetworkMessage::SendAddrV2)?;
+        self.encrypt_plaintext(plaintext)
+    }
+
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError> {
+        let plaintext = self.serialize_network_message(NetworkMessage::WtxidRelay)?;
         self.encrypt_plaintext(plaintext)
     }
 

@@ -17,6 +17,7 @@ use super::PeerId;
 pub(crate) enum MainThreadMessage {
     GetAddr,
     GetAddrV2,
+    WtxidRelay,
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),

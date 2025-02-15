@@ -139,10 +139,10 @@ impl Reader {
             NetworkMessage::GetCFCheckpt(_) => None,
             NetworkMessage::CFCheckpt(_) => None,
             // Compact Block Relay is enabled with 70014
-            NetworkMessage::SendCmpct(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::CmpctBlock(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::GetBlockTxn(_) => Some(PeerMessage::Disconnect),
-            NetworkMessage::BlockTxn(_) => Some(PeerMessage::Disconnect),
+            NetworkMessage::SendCmpct(_) => None,
+            NetworkMessage::CmpctBlock(_) => None,
+            NetworkMessage::GetBlockTxn(_) => None,
+            NetworkMessage::BlockTxn(_) => None,
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
                 let txid = Txid::from(rejection.hash);

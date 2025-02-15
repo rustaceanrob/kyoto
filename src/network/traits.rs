@@ -34,6 +34,8 @@ pub(crate) trait MessageGenerator: Send + Sync {
 
     fn addrv2(&mut self) -> Result<Vec<u8>, PeerError>;
 
+    fn wtxid_relay(&mut self) -> Result<Vec<u8>, PeerError>;
+
     fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
