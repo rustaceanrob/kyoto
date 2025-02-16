@@ -532,8 +532,7 @@ impl<H: HeaderStore> Chain<H> {
                 None => {
                     crate::log!(
                         self.dialog,
-                        "Unable to audit difficulty.
-                        /This is likely due to no history present in the header store"
+                        "Unable to audit difficulty. This is likely due to no history present in the header store"
                     );
                 }
             },

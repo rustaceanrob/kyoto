@@ -20,7 +20,6 @@ pub(crate) mod channel_messages;
 pub mod client;
 /// Node configuration options.
 pub(crate) mod config;
-#[macro_use]
 pub(crate) mod dialog;
 /// Errors associated with a node.
 pub mod error;
