@@ -95,6 +95,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             response_timeout,
             max_connection_time,
             filter_sync_policy,
+            log_level,
         } = config;
         let timeout_config = PeerTimeoutConfig::new(response_timeout, max_connection_time);
         // Set up a communication channel between the node and client
@@ -104,7 +105,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
         let client = Client::new(log_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Dialog::new(log_tx, warn_tx, event_tx);
+        let dialog = Dialog::new(log_level, log_tx, warn_tx, event_tx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager

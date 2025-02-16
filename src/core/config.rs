@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 use bitcoin::ScriptBuf;
 
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType,
+    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType, LogLevel,
     PeerStoreSizeConfig, TrustedPeer,
 };
 
@@ -26,6 +26,7 @@ pub(crate) struct NodeConfig {
     pub response_timeout: Duration,
     pub max_connection_time: Duration,
     pub filter_sync_policy: FilterSyncPolicy,
+    pub log_level: LogLevel,
 }
 
 impl Default for NodeConfig {
@@ -42,6 +43,7 @@ impl Default for NodeConfig {
             response_timeout: Duration::from_secs(TIMEOUT_SECS),
             max_connection_time: Duration::from_secs(TWO_HOUR),
             filter_sync_policy: Default::default(),
+            log_level: Default::default(),
         }
     }
 }

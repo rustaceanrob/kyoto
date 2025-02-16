@@ -426,3 +426,14 @@ pub enum PeerStoreSizeConfig {
     /// has at least this amount of peers.
     Limit(u32),
 }
+
+/// Select the category of messages for the node to emit.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    /// Send `Log::Dialog` messages.
+    #[default]
+    Debug,
+    /// Omit `Log::Dialog` messages, including their memory allocations. Ideal for a production
+    /// application that uses minimal logging.
+    Warning,
+}
