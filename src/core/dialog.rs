@@ -45,11 +45,13 @@ impl Dialog {
                 best_height,
             )))
             .await;
-        let message = format!(
-            "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
-            num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
-        );
-        let _ = self.log_tx.send(Log::Dialog(message)).await;
+        if matches!(self.log_level, LogLevel::Debug) {
+            let message = format!(
+                "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
+                num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
+            );
+            let _ = self.log_tx.send(Log::Dialog(message)).await;
+        }
     }
 
     pub(crate) fn send_warning(&self, warning: Warning) {

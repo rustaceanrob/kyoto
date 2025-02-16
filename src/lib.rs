@@ -437,3 +437,14 @@ pub enum LogLevel {
     /// application that uses minimal logging.
     Warning,
 }
+
+macro_rules! log {
+    ($dialog:expr, $expr:expr) => {
+        match $dialog.log_level {
+            crate::LogLevel::Debug => $dialog.send_dialog($expr).await,
+            crate::LogLevel::Warning => (),
+        }
+    };
+}
+
+pub(crate) use log;

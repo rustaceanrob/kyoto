@@ -378,10 +378,11 @@ impl<H: HeaderStore> Chain<H> {
                 .ok_or(HeaderSyncError::InvalidCheckpoint)?
                 .eq(&checkpoint.hash)
             {
-                self.dialog
-                    .send_dialog(format!("Found checkpoint, height: {}", checkpoint.height))
-                    .await;
-                self.dialog.send_dialog("Writing progress to disk...").await;
+                crate::log!(
+                    self.dialog,
+                    format!("Found checkpoint, height: {}", checkpoint.height)
+                );
+                crate::log!(self.dialog, "Writing progress to disk...");
                 self.checkpoints.advance();
                 self.flush_to_disk().await;
             } else {
@@ -425,7 +426,7 @@ impl<H: HeaderStore> Chain<H> {
         if let Some(stem) = stem_position {
             let current_chainwork = self.header_chain.chainwork_after_height(stem);
             if current_chainwork.lt(&challenge_chainwork) {
-                self.dialog.send_dialog("Valid reorganization found").await;
+                crate::log!(self.dialog, "Valid reorganization found");
                 let reorged = self.header_chain.extend(&uncommon);
                 let removed_hashes = &reorged
                     .iter()
@@ -529,14 +530,11 @@ impl<H: HeaderStore> Chain<H> {
                     return Ok(());
                 }
                 None => {
-                    self.dialog
-                        .send_dialog(
-                            "Unable to audit the difficulty adjustment due to a failed header fetch...",
-                        )
-                        .await;
-                    self.dialog
-                        .send_dialog("This is likely due to no history present in the header store")
-                        .await;
+                    crate::log!(
+                        self.dialog,
+                        "Unable to audit difficulty.
+                        /This is likely due to no history present in the header store"
+                    );
                 }
             },
             None => {
@@ -732,12 +730,10 @@ impl<H: HeaderStore> Chain<H> {
         {
             // Add to the block queue
             self.block_queue.add(filter_message.block_hash);
-            self.dialog
-                .send_dialog(format!(
-                    "Found script at block: {}",
-                    filter_message.block_hash
-                ))
-                .await;
+            crate::log!(
+                self.dialog,
+                format!("Found script at block: {}", filter_message.block_hash)
+            );
         }
 
         self.filter_chain.put_hash(filter_message.block_hash);
@@ -847,9 +843,10 @@ impl<H: HeaderStore> Chain<H> {
                 self.dialog.send_warning(Warning::ChannelDropped);
             }
         } else {
-            self.dialog
-                .send_dialog(format!("Adding block {} to queue", request.hash))
-                .await;
+            crate::log!(
+                self.dialog,
+                format!("Adding block {} to queue", request.hash)
+            );
             self.block_queue.add(request)
         }
     }
@@ -930,7 +927,7 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(log_tx, warn_tx, event_tx),
+            Dialog::new(crate::LogLevel::Debug, log_tx, warn_tx, event_tx),
             height_monitor,
             (),
             peers,
