@@ -20,7 +20,7 @@ use super::{
 #[derive(Debug, Clone)]
 pub enum Log {
     /// Human readable dialog of what the node is currently doing.
-    Dialog(String),
+    Debug(String),
     /// The current state of the node in the syncing process.
     StateChange(NodeState),
     /// The node is connected to all required peers.
@@ -36,7 +36,7 @@ pub enum Log {
 impl core::fmt::Display for Log {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Log::Dialog(d) => write!(f, "{}", d),
+            Log::Debug(d) => write!(f, "{}", d),
             Log::StateChange(s) => write!(f, "{}", s),
             Log::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
             Log::ConnectionsMet => write!(f, "Required connections met"),

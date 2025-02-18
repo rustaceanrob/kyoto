@@ -364,15 +364,13 @@ mod tests {
             warn_rx: _,
             event_rx: _,
         } = Client::new(log_rx, warn_rx, event_rx, ctx);
-        let send_res = log_tx
-            .send(Log::Dialog("An important message".into()))
-            .await;
+        let send_res = log_tx.send(Log::Debug("An important message".into())).await;
         assert!(send_res.is_ok());
         let message = log_rx.recv().await;
         assert!(message.is_some());
         tokio::task::spawn(async move {
             log_tx
-                .send(Log::Dialog("Another important message".into()))
+                .send(Log::Debug("Another important message".into()))
                 .await
         });
         assert!(send_res.is_ok());

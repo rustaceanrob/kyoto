@@ -27,7 +27,7 @@ impl Dialog {
     }
 
     pub(crate) async fn send_dialog(&self, dialog: impl Into<String>) {
-        let _ = self.log_tx.send(Log::Dialog(dialog.into())).await;
+        let _ = self.log_tx.send(Log::Debug(dialog.into())).await;
     }
 
     pub(crate) async fn chain_update(
@@ -50,7 +50,7 @@ impl Dialog {
                 "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
                 num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
             );
-            let _ = self.log_tx.send(Log::Dialog(message)).await;
+            let _ = self.log_tx.send(Log::Debug(message)).await;
         }
     }
 

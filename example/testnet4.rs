@@ -79,7 +79,7 @@ async fn main() {
             log = log_rx.recv() => {
                 if let Some(log) = log {
                     match log {
-                        Log::Dialog(d)=> tracing::info!("{d}"),
+                        Log::Debug(d)=> tracing::info!("{d}"),
                         Log::StateChange(node_state) => tracing::info!("{node_state}"),
                         Log::ConnectionsMet => tracing::info!("All required connections met"),
                         _ => (),
