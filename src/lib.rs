@@ -30,14 +30,14 @@
 //!     // Create a new node builder
 //!     let builder = NodeBuilder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
-//!     let (mut node, client) = builder
+//!     let (node, client) = builder
 //!         // The Bitcoin scripts to monitor
 //!         .add_scripts(addresses)
 //!         // Only scan blocks strictly after an anchor checkpoint
 //!         .anchor_checkpoint(checkpoint)
 //!         // The number of connections we would like to maintain
-//!         .num_required_peers(2)
-//!         .build_node()
+//!         .required_peers(2)
+//!         .build()
 //!         .unwrap();
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });

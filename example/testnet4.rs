@@ -38,9 +38,9 @@ async fn main() {
         // Store a limited number of peers
         .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // The number of connections we would like to maintain
-        .num_required_peers(1)
+        .required_peers(1)
         // Create the node and client
-        .build_node()
+        .build()
         .unwrap();
 
     // Run the node on a new task

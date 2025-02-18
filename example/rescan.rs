@@ -35,8 +35,8 @@ async fn main() {
             NETWORK,
         ))
         // The number of connections we would like to maintain
-        .num_required_peers(1)
-        .build_node()
+        .required_peers(1)
+        .build()
         .unwrap();
     // Run the node and wait for the sync message;
     tokio::task::spawn(async move { node.run().await });
