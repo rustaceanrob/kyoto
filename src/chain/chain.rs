@@ -59,7 +59,7 @@ pub(crate) struct Chain<H: HeaderStore> {
     heights: Arc<Mutex<HeightMonitor>>,
     scripts: HashSet<ScriptBuf>,
     block_queue: BlockQueue,
-    dialog: Dialog,
+    dialog: Arc<Dialog>,
 }
 
 #[allow(dead_code)]
@@ -70,7 +70,7 @@ impl<H: HeaderStore> Chain<H> {
         scripts: HashSet<ScriptBuf>,
         anchor: HeaderCheckpoint,
         checkpoints: HeaderCheckpoints,
-        dialog: Dialog,
+        dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         db: H,
         quorum_required: usize,
@@ -926,7 +926,12 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Dialog::new(crate::LogLevel::Debug, log_tx, warn_tx, event_tx),
+            Arc::new(Dialog::new(
+                crate::LogLevel::Debug,
+                log_tx,
+                warn_tx,
+                event_tx,
+            )),
             height_monitor,
             (),
             peers,

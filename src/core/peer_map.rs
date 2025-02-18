@@ -68,7 +68,7 @@ pub(crate) struct PeerMap<P: PeerStore> {
     db: Arc<Mutex<P>>,
     connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
     whitelist: Whitelist,
-    dialog: Dialog,
+    dialog: Arc<Dialog>,
     target_db_size: PeerStoreSizeConfig,
     net_groups: HashSet<String>,
     timeout_config: PeerTimeoutConfig,
@@ -83,7 +83,7 @@ impl<P: PeerStore> PeerMap<P> {
         network: Network,
         db: P,
         whitelist: Whitelist,
-        dialog: Dialog,
+        dialog: Arc<Dialog>,
         connection_type: ConnectionType,
         target_db_size: PeerStoreSizeConfig,
         timeout_config: PeerTimeoutConfig,
@@ -177,7 +177,7 @@ impl<P: PeerStore> PeerMap<P> {
             self.mtx.clone(),
             prx,
             loaded_peer.services,
-            self.dialog.clone(),
+            Arc::clone(&self.dialog),
             self.timeout_config,
         );
         let mut connector = self.connector.lock().await;

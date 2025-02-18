@@ -1,5 +1,5 @@
 extern crate tokio;
-use std::{ops::DerefMut, time::Duration};
+use std::{ops::DerefMut, sync::Arc, time::Duration};
 
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network};
@@ -48,7 +48,7 @@ pub(crate) struct Peer {
     network: Network,
     message_counter: MessageCounter,
     services: ServiceFlags,
-    dialog: Dialog,
+    dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
 }
 
@@ -59,7 +59,7 @@ impl Peer {
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
         services: ServiceFlags,
-        dialog: Dialog,
+        dialog: Arc<Dialog>,
         timeout_config: PeerTimeoutConfig,
     ) -> Self {
         let message_counter = MessageCounter::new(timeout_config.response_timeout);

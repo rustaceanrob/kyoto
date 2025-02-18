@@ -70,7 +70,7 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
     peer_map: Arc<Mutex<PeerMap<P>>>,
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: PeerRequirement,
-    dialog: Dialog,
+    dialog: Arc<Dialog>,
     client_recv: Arc<Mutex<Receiver<ClientMessage>>>,
     peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
@@ -105,7 +105,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
         let client = Client::new(log_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Dialog::new(log_level, log_tx, warn_tx, event_tx);
+        let dialog = Arc::new(Dialog::new(log_level, log_tx, warn_tx, event_tx));
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
@@ -116,7 +116,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             network,
             peer_store,
             white_list,
-            dialog.clone(),
+            Arc::clone(&dialog),
             connection_type,
             target_peer_size,
             timeout_config,
@@ -135,7 +135,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             addresses,
             checkpoint,
             checkpoints,
-            dialog.clone(),
+            Arc::clone(&dialog),
             height_monitor,
             header_store,
             required_peers.into(),
