@@ -2,9 +2,9 @@
 //! many possible scripts to check. Enable the `filter-control` feature to check filters
 //! manually in your program.
 
-use kyoto::core::messages::{Event, Log};
+use kyoto::core::messages::Event;
 use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder, Client};
-use kyoto::{AddrV2, Address, BlockHash, Network, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, BlockHash, LogLevel, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
@@ -45,6 +45,8 @@ async fn main() {
         .anchor_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .num_required_peers(1)
+        // Omit informational messages
+        .log_level(LogLevel::Warning)
         // Create the node and client
         .build_node()
         .unwrap();
@@ -63,9 +65,7 @@ async fn main() {
         tokio::select! {
             log = log_rx.recv() => {
                 if let Some(log) = log {
-                    if let Log::Dialog(log) = log {
-                        tracing::info!("{log}")
-                    }
+                    tracing::info!("{log}");
                 }
             }
             event = event_rx.recv() => {

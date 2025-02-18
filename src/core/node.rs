@@ -95,6 +95,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             response_timeout,
             max_connection_time,
             filter_sync_policy,
+            log_level,
         } = config;
         let timeout_config = PeerTimeoutConfig::new(response_timeout, max_connection_time);
         // Set up a communication channel between the node and client
@@ -104,7 +105,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
         let client = Client::new(log_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Dialog::new(log_tx, warn_tx, event_tx);
+        let dialog = Dialog::new(log_level, log_tx, warn_tx, event_tx);
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
@@ -162,13 +163,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
     pub async fn run(&self) -> Result<(), NodeError<H::Error, P::Error>> {
-        self.dialog.send_dialog("Starting node").await;
-        self.dialog
-            .send_dialog(format!(
+        crate::log!(self.dialog, "Starting node");
+        crate::log!(
+            self.dialog,
+            format!(
                 "Configured connection requirement: {} peers",
                 self.required_peers
-            ))
-            .await;
+            )
+        );
         self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut peer_recv = self.peer_recv.lock().await;
@@ -197,14 +199,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     }
                                     let response = self.handle_version(peer_thread.nonce, version).await?;
                                     self.send_message(peer_thread.nonce, response).await;
-                                    self.dialog.send_dialog(format!("[{}]: version", peer_thread.nonce))
-                                        .await;
+                                    crate::log!(self.dialog, format!("[{}]: version", peer_thread.nonce));
                                 }
                                 PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                                 PeerMessage::Headers(headers) => {
                                     last_block.reset();
-                                    self.dialog.send_dialog(format!("[{}]: headers", peer_thread.nonce))
-                                        .await;
+                                    crate::log!(self.dialog, format!("[{}]: headers", peer_thread.nonce));
                                     match self.handle_headers(peer_thread.nonce, headers).await {
                                         Some(response) => {
                                             self.send_message(peer_thread.nonce, response).await;
@@ -213,7 +213,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     }
                                 }
                                 PeerMessage::FilterHeaders(cf_headers) => {
-                                    self.dialog.send_dialog(format!("[{}]: filter headers", peer_thread.nonce)).await;
+                                    crate::log!(self.dialog, format!("[{}]: filter headers", peer_thread.nonce));
                                     match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
@@ -236,8 +236,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     None => continue,
                                 },
                                 PeerMessage::NewBlocks(blocks) => {
-                                    self.dialog.send_dialog(format!("[{}]: inv", peer_thread.nonce))
-                                        .await;
+                                    crate::log!(self.dialog, format!("[{}]: inv", peer_thread.nonce));
                                     match self.handle_inventory_blocks(peer_thread.nonce, blocks).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
@@ -366,9 +365,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // If there are blocks in the queue, we should request them of a random peer
     async fn get_blocks(&self) {
         if let Some(block_request) = self.pop_block_queue().await {
-            self.dialog
-                .send_dialog("Sending block request to a random peer")
-                .await;
+            crate::log!(self.dialog, "Sending block request to random peer");
             self.send_random(block_request).await;
         }
     }
@@ -385,20 +382,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 let txid = transaction.tx.compute_txid();
                 let did_broadcast = match transaction.broadcast_policy {
                     TxBroadcastPolicy::AllPeers => {
-                        self.dialog
-                            .send_dialog(format!(
-                                "Sending transaction to {} connected peers",
-                                peer_map.live()
-                            ))
-                            .await;
+                        crate::log!(
+                            self.dialog,
+                            format!("Sending transaction to {} connected peers", peer_map.live())
+                        );
                         peer_map
                             .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
                             .await
                     }
                     TxBroadcastPolicy::RandomPeer => {
-                        self.dialog
-                            .send_dialog("Sending transaction to a random peer")
-                            .await;
+                        crate::log!(self.dialog, "Sending transaction to a random peer");
                         peer_map
                             .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
                             .await
@@ -464,9 +457,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::TransactionsSynced => {
                 if last_block.stale() {
                     self.dialog.send_warning(Warning::PotentialStaleTip);
-                    self.dialog
-                        .send_dialog("Disconnecting from remote nodes to find new connections")
-                        .await;
+                    crate::log!(
+                        self.dialog,
+                        "Disconnecting from remote nodes to find new connections"
+                    );
                     self.broadcast(MainThreadMessage::Disconnect).await;
                     last_block.reset();
                 }
@@ -539,7 +533,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             .await;
         // Now we may request peers if required
         if needs_peers {
-            self.dialog.send_dialog("Requesting new addresses").await;
+            crate::log!(self.dialog, "Requesting new addresses");
             peer_map
                 .send_message(nonce, MainThreadMessage::GetAddr)
                 .await;
@@ -559,12 +553,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
 
     // Handle new addresses gossiped over the p2p network
     async fn handle_new_addrs(&self, new_peers: Vec<CombinedAddr>) {
-        self.dialog
-            .send_dialog(format!(
-                "Adding {} new peers to the peer database",
-                new_peers.len()
-            ))
-            .await;
+        crate::log!(
+            self.dialog,
+            format!("Adding {} new peers to the peer database", new_peers.len())
+        );
         let mut peer_map = self.peer_map.lock().await;
         peer_map.add_gossiped_peers(new_peers).await;
     }
@@ -679,9 +671,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             let next_block_hash = chain.next_block();
             return match next_block_hash {
                 Some(block_hash) => {
-                    self.dialog
-                        .send_dialog(format!("Next block in queue: {}", block_hash))
-                        .await;
+                    crate::log!(self.dialog, format!("Next block in queue: {}", block_hash));
                     Some(MainThreadMessage::GetBlock(GetBlockConfig {
                         locator: block_hash,
                     }))
@@ -704,9 +694,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         for block in blocks.iter() {
             peer_map.increment_height(nonce).await;
             if !chain.contains_hash(*block) {
-                self.dialog
-                    .send_dialog(format!("New block: {}", block))
-                    .await;
+                crate::log!(self.dialog, format!("New block: {}", block));
             }
         }
         match *state {
@@ -774,9 +762,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
 
     // When the application starts, fetch any headers we know about from the database.
     async fn fetch_headers(&self) -> Result<(), NodeError<H::Error, P::Error>> {
-        self.dialog
-            .send_dialog("Attempting to load headers from the database")
-            .await;
+        crate::log!(self.dialog, "Attempting to load headers from the database");
         let mut chain = self.chain.lock().await;
         chain
             .load_headers()

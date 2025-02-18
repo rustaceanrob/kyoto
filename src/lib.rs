@@ -49,7 +49,7 @@
 //!             log = log_rx.recv() => {
 //!                 if let Some(log) = log {
 //!                     match log {
-//!                         Log::Dialog(d) => tracing::info!("{d}"),
+//!                         Log::Debug(d) => tracing::info!("{d}"),
 //!                         _ => (),
 //!                     }
 //!                 }
@@ -426,3 +426,26 @@ pub enum PeerStoreSizeConfig {
     /// has at least this amount of peers.
     Limit(u32),
 }
+
+/// Select the category of messages for the node to emit.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    /// Send `Log::Debug` messages. These messages are intended for debugging or troubleshooting
+    /// node operation.
+    #[default]
+    Debug,
+    /// Omit `Log::Debug` messages, including their memory allocations. Ideal for a production
+    /// application that uses minimal logging.
+    Warning,
+}
+
+macro_rules! log {
+    ($dialog:expr, $expr:expr) => {
+        match $dialog.log_level {
+            crate::LogLevel::Debug => $dialog.send_dialog($expr).await,
+            crate::LogLevel::Warning => (),
+        }
+    };
+}
+
+pub(crate) use log;

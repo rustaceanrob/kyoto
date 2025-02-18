@@ -1,9 +1,11 @@
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 use super::messages::{Event, Log, Progress, Warning};
+use crate::LogLevel;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Dialog {
+    pub(crate) log_level: LogLevel,
     log_tx: Sender<Log>,
     warn_tx: UnboundedSender<Warning>,
     event_tx: UnboundedSender<Event>,
@@ -11,11 +13,13 @@ pub(crate) struct Dialog {
 
 impl Dialog {
     pub(crate) fn new(
+        log_level: LogLevel,
         log_tx: Sender<Log>,
         warn_tx: UnboundedSender<Warning>,
         event_tx: UnboundedSender<Event>,
     ) -> Self {
         Self {
+            log_level,
             log_tx,
             warn_tx,
             event_tx,
@@ -23,7 +27,7 @@ impl Dialog {
     }
 
     pub(crate) async fn send_dialog(&self, dialog: impl Into<String>) {
-        let _ = self.log_tx.send(Log::Dialog(dialog.into())).await;
+        let _ = self.log_tx.send(Log::Debug(dialog.into())).await;
     }
 
     pub(crate) async fn chain_update(
@@ -41,11 +45,13 @@ impl Dialog {
                 best_height,
             )))
             .await;
-        let message = format!(
-            "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
-            num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
-        );
-        let _ = self.log_tx.send(Log::Dialog(message)).await;
+        if matches!(self.log_level, LogLevel::Debug) {
+            let message = format!(
+                "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
+                num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
+            );
+            let _ = self.log_tx.send(Log::Debug(message)).await;
+        }
     }
 
     pub(crate) fn send_warning(&self, warning: Warning) {

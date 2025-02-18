@@ -184,12 +184,10 @@ impl<P: PeerStore> PeerMap<P> {
         if !connector.can_connect(&loaded_peer.addr) {
             return Err(PeerError::UnreachableSocketAddr);
         }
-        self.dialog
-            .send_dialog(format!(
-                "Connecting to {:?}:{}",
-                loaded_peer.addr, loaded_peer.port
-            ))
-            .await;
+        crate::log!(
+            self.dialog,
+            format!("Connecting to {:?}:{}", loaded_peer.addr, loaded_peer.port)
+        );
         let (reader, writer) = connector
             .connect(loaded_peer.addr.clone(), loaded_peer.port)
             .await?;
@@ -276,7 +274,7 @@ impl<P: PeerStore> PeerMap<P> {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
         if let Some(peer) = self.whitelist.pop() {
-            self.dialog.send_dialog("Using a configured peer").await;
+            crate::log!(self.dialog, "Using a configured peer");
             let port = peer
                 .port
                 .unwrap_or(default_port_from_network(&self.network));
@@ -394,7 +392,7 @@ impl<P: PeerStore> PeerMap<P> {
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
         use crate::network::dns::Dns;
         use std::net::IpAddr;
-        self.dialog.send_dialog("Bootstraping peers with DNS").await;
+        crate::log!(self.dialog, "Bootstraping peers with DNS");
         let mut db_lock = self.db.lock().await;
         let new_peers = Dns::new(self.network, self.dns_resolver)
             .bootstrap()
@@ -406,10 +404,10 @@ impl<P: PeerStore> PeerMap<P> {
                 IpAddr::V6(ip) => AddrV2::Ipv6(ip),
             })
             .collect::<Vec<AddrV2>>();
-        self.dialog
-            .send_dialog(format!("Adding {} sourced from DNS", new_peers.len()))
-            .await;
-
+        crate::log!(
+            self.dialog,
+            format!("Adding {} sourced from DNS", new_peers.len())
+        );
         // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock

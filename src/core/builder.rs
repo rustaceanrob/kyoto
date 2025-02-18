@@ -15,7 +15,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{ConnectionType, PeerStoreSizeConfig, TrustedPeer};
+use crate::{ConnectionType, LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "database")]
 /// The default node returned from the [`NodeBuilder`](crate::core).
@@ -140,6 +140,12 @@ impl NodeBuilder {
     /// If none is provided, the _most recent_ checkpoint will be used.
     pub fn anchor_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
         self.config.header_checkpoint = Some(checkpoint.into());
+        self
+    }
+
+    /// Set the [`LogLevel`](crate::LogLevel). Omitting log messages may improve performance.
+    pub fn log_level(mut self, log_level: LogLevel) -> Self {
+        self.config.log_level = log_level;
         self
     }
 

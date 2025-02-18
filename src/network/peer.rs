@@ -97,9 +97,10 @@ impl Peer {
             .await
             .map_err(|_| PeerError::HandshakeFailed)?;
             if let Err(ref e) = handshake_result {
-                self.dialog
-                    .send_dialog(format!("Failed to establish an encrypted connection: {e}"))
-                    .await;
+                crate::log!(
+                    self.dialog,
+                    format!("Failed to establish an encrypted connection: {e}")
+                );
                 self.dialog.send_warning(Warning::CouldNotConnect);
             }
             let (decryptor, encryptor) = handshake_result?;
@@ -148,12 +149,10 @@ impl Peer {
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
-                self.dialog
-                    .send_dialog(format!(
-                        "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
-                        self.nonce, self.timeout_config.max_connection_time.as_secs(),
-                    ))
-                    .await;
+                crate::log!(self.dialog, format!(
+                    "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
+                    self.nonce, self.timeout_config.max_connection_time.as_secs(),
+                ));
                 return Ok(());
             }
             select! {
@@ -403,23 +402,23 @@ impl Peer {
         W: AsyncWrite + Send + Unpin,
         R: AsyncRead + Send + Unpin,
     {
-        self.dialog
-            .send_dialog("Initiating a handshake for encrypted messaging")
-            .await;
+        crate::log!(
+            self.dialog,
+            "Initiating a handshake for encrypted messaging"
+        );
         let handshake =
             AsyncProtocol::new(self.network, Role::Initiator, None, None, reader, writer).await;
         match handshake {
             Ok(proto) => {
-                self.dialog
-                    .send_dialog("Established an encrypted connection")
-                    .await;
+                crate::log!(self.dialog, "Established an encrypted connection");
                 let (reader, writer) = proto.into_split();
                 Ok((reader.decoder(), writer.encoder()))
             }
             Err(e) => {
-                self.dialog
-                    .send_dialog(format!("V2 handshake failed with description {e}"))
-                    .await;
+                crate::log!(
+                    self.dialog,
+                    format!("V2 handshake failed with description {e}")
+                );
                 Err(PeerError::HandshakeFailed)
             }
         }

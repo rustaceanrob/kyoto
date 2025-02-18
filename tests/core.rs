@@ -611,7 +611,7 @@ async fn halting_download_works() {
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = log.recv().await {
         match message {
-            Log::Dialog(d) => println!("{d}"),
+            Log::Debug(d) => println!("{d}"),
             Log::StateChange(node_state) => {
                 if let NodeState::FilterHeadersSynced = node_state {
                     println!("Sleeping for one second...");
