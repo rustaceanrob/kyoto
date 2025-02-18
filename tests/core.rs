@@ -52,8 +52,8 @@ fn new_node_sql(
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(addrs)
-        .add_data_dir(tempdir_path)
-        .build_node()
+        .data_dir(tempdir_path)
+        .build()
         .unwrap();
     (node, client)
 }
@@ -71,9 +71,9 @@ fn new_node_anchor_sql(
     let (node, client) = builder
         .add_peer(trusted)
         .add_scripts(addrs)
-        .add_data_dir(tempdir_path)
+        .data_dir(tempdir_path)
         .anchor_checkpoint(checkpoint)
-        .build_node()
+        .build()
         .unwrap();
     (node, client)
 }
@@ -596,9 +596,9 @@ async fn halting_download_works() {
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(scripts)
-        .add_data_dir(tempdir)
+        .data_dir(tempdir)
         .halt_filter_download()
-        .build_node()
+        .build()
         .unwrap();
 
     tokio::task::spawn(async move { node.run().await });
@@ -649,8 +649,8 @@ async fn signet_syncs() {
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(set)
-        .add_data_dir(tempdir)
-        .build_node()
+        .data_dir(tempdir)
+        .build()
         .unwrap();
     tokio::task::spawn(async move { node.run().await });
     async fn print_and_sync(mut client: Client) {

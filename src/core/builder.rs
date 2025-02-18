@@ -39,7 +39,7 @@ const MAX_PEERS: u8 = 15;
 /// let builder = NodeBuilder::new(Network::Regtest);
 /// let (node, client) = builder
 ///     .add_peers(vec![host.into()])
-///     .build_node()
+///     .build()
 ///     .unwrap();
 /// ```
 ///
@@ -68,8 +68,8 @@ const MAX_PEERS: u8 = 15;
 ///     // Only scan blocks strictly after an anchor checkpoint
 ///     .anchor_checkpoint(checkpoint)
 ///     // The number of connections we would like to maintain
-///     .num_required_peers(2)
-///     .build_node()
+///     .required_peers(2)
+///     .build()
 ///     .unwrap();
 /// ```
 pub struct NodeBuilder {
@@ -110,7 +110,7 @@ impl NodeBuilder {
 
     /// Add a path to the directory where data should be stored. If none is provided, the current
     /// working directory will be used.
-    pub fn add_data_dir(mut self, path: impl Into<PathBuf>) -> Self {
+    pub fn data_dir(mut self, path: impl Into<PathBuf>) -> Self {
         self.config.data_path = Some(path.into());
         self
     }
@@ -119,7 +119,7 @@ impl NodeBuilder {
     /// Adding more connections increases the node's anonymity, but requires waiting for more responses,
     /// higher bandwidth, and higher memory requirements. If none is provided, a single connection will be maintained.
     /// The number of connections will be clamped to a range of 1 to 15.
-    pub fn num_required_peers(mut self, num_peers: u8) -> Self {
+    pub fn required_peers(mut self, num_peers: u8) -> Self {
         self.config.required_peers = num_peers.clamp(MIN_PEERS, MAX_PEERS);
         self
     }
@@ -150,7 +150,7 @@ impl NodeBuilder {
     }
 
     /// Set the desired communication channel. Either directly over TCP or over the Tor network.
-    pub fn set_connection_type(mut self, connection_type: ConnectionType) -> Self {
+    pub fn connection_type(mut self, connection_type: ConnectionType) -> Self {
         self.config.connection_type = connection_type;
         self
     }
@@ -164,7 +164,7 @@ impl NodeBuilder {
     /// nodes may be slower to respond while processing blocks and transactions.
     ///
     /// If none is provided, a timeout of 5 seconds will be used.
-    pub fn set_response_timeout(mut self, response_timeout: Duration) -> Self {
+    pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
         self.config.response_timeout = response_timeout;
         self
     }
@@ -176,10 +176,10 @@ impl NodeBuilder {
     ///
     /// This value is configurable as some developers may be satisfied with a peer
     /// as long as the peer responds promptly. Other implementations may value finding
-    /// new a reliable peers faster, so the maximum connection time may be shorter.
+    /// new and reliable peers faster, so the maximum connection time may be shorter.
     ///
     /// If none is provided, a maximum connection time of two hours will be used.
-    pub fn set_maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
+    pub fn maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
         self.config.max_connection_time = max_connection_time;
         self
     }
@@ -207,7 +207,7 @@ impl NodeBuilder {
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "database")]
-    pub fn build_node(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
+    pub fn build(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new(

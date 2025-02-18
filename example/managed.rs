@@ -44,11 +44,11 @@ async fn main() {
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(checkpoint)
         // The number of connections we would like to maintain
-        .num_required_peers(1)
+        .required_peers(1)
         // Omit informational messages
         .log_level(LogLevel::Warning)
         // Create the node and client
-        .build_node()
+        .build()
         .unwrap();
 
     tokio::task::spawn(async move { node.run().await });

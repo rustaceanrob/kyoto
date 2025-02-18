@@ -49,13 +49,13 @@ async fn main() {
         // Only scan blocks strictly after an anchor checkpoint
         .anchor_checkpoint(anchor)
         // The number of connections we would like to maintain
-        .num_required_peers(2)
+        .required_peers(2)
         // We only maintain a list of 256 peers in memory
         .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // Connect to peers over Tor
-        .set_connection_type(ConnectionType::Tor(tor))
+        .connection_type(ConnectionType::Tor(tor))
         // Build without the default databases
-        .build_node()
+        .build()
         .unwrap();
     // Run the node
     tokio::task::spawn(async move { node.run().await });
