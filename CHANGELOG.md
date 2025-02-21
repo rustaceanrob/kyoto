@@ -5,6 +5,27 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.9.0
+
+## Added
+
+- Introduce log level and optimize release builds to remove heap allocations for debug messages
+- Configure a custom DNS resolver
+
+## Changed
+
+- `Dialog` field renamed to `Debug`
+- `dns` feature is removed and DNS is used by default
+- Better naming on the fields of `Warning`
+- `NodeBuilder` uses declarative naming for methods
+
+## Fixes
+
+- Tor and Signet examples updated
+- Adding scripts or peers twice does not overwrite past changes in `NodeBuilder`
+- Remove invalid assessment of median time past in fork scenario
+- Use the proper `inv` -> `getdata` -> `tx` message exchange to broadcast transactions
+
 ## 0.8.0
 
 ## Added

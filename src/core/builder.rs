@@ -143,7 +143,7 @@ impl NodeBuilder {
         self
     }
 
-    /// Set the [`LogLevel`](crate::LogLevel). Omitting log messages may improve performance.
+    /// Set the [`LogLevel`]. Omitting log messages may improve performance.
     pub fn log_level(mut self, log_level: LogLevel) -> Self {
         self.config.log_level = log_level;
         self
