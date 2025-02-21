@@ -42,7 +42,7 @@ use super::{
     FilterSyncPolicy, LastBlockMonitor, PeerId, PeerTimeoutConfig,
 };
 
-pub(crate) const ADDR_V2_VERSION: u32 = 70015;
+pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: u64 = 1;
 
 type PeerRequirement = usize;
@@ -507,6 +507,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         nonce: PeerId,
         version_message: VersionMessage,
     ) -> Result<MainThreadMessage, NodeError<H::Error, P::Error>> {
+        if version_message.version < WTXID_VERSION {
+            return Ok(MainThreadMessage::Disconnect);
+        }
         let state = self.state.read().await;
         match *state {
             NodeState::Behind => (),
@@ -523,11 +526,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_map.tried(nonce).await;
         let needs_peers = peer_map.need_peers().await?;
         // First we signal for ADDRV2 support
-        if version_message.version.gt(&ADDR_V2_VERSION) && needs_peers {
-            peer_map
-                .send_message(nonce, MainThreadMessage::GetAddrV2)
-                .await;
-        }
+        peer_map
+            .send_message(nonce, MainThreadMessage::GetAddrV2)
+            .await;
+        // Then for BIP 339 witness transaction broadcast
+        peer_map
+            .send_message(nonce, MainThreadMessage::WtxidRelay)
+            .await;
         peer_map
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
