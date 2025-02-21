@@ -1,7 +1,7 @@
 //! Tools to build and run a compact block filters node.
 //!
 //! All logic for syncing with the Bitcoin network occurs within a [`Node`](node::Node). Nodes emit events of relevance
-//! by sending [`NodeMessage`](messages::NodeMessage), and these events may be consumed by a [`Client`](client::Client). A client may also send
+//! by sending logs, warnings and events. These may be consumed by a [`Client`](client::Client). A client may also send
 //! messages to a node to add more Bitcoin scripts, broadcast transactions, and more.
 //!
 //! To build a [`Node`](node::Node) and [`Client`](client::Client), please refer to the [`NodeBuilder`](builder::NodeBuilder), which allows for node
