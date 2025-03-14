@@ -3,11 +3,9 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 use bitcoin::ScriptBuf;
 
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType, LogLevel,
-    PeerStoreSizeConfig, TrustedPeer,
+    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType,
+    FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer,
 };
-
-use super::FilterSyncPolicy;
 
 const REQUIRED_PEERS: u8 = 1;
 const TIMEOUT_SECS: u64 = 5;

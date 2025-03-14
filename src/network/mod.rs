@@ -3,6 +3,7 @@ use bitcoin::{
     io::Read,
     p2p::{message::CommandString, Magic},
 };
+use std::time::Duration;
 
 pub(crate) mod counter;
 pub(crate) mod dns;
@@ -11,11 +12,52 @@ pub(crate) mod error;
 pub(crate) mod outbound_messages;
 pub(crate) mod parsers;
 pub(crate) mod peer;
+pub(crate) mod peer_map;
 #[allow(dead_code)]
 pub(crate) mod reader;
 #[cfg(feature = "tor")]
 pub(crate) mod tor;
 pub(crate) mod traits;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PeerId(pub(crate) u32);
+
+impl PeerId {
+    pub(crate) fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1)
+    }
+}
+
+impl From<u32> for PeerId {
+    fn from(value: u32) -> Self {
+        PeerId(value)
+    }
+}
+
+impl std::fmt::Display for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Peer {}", self.0)
+    }
+}
+
+/// Configuration for peer connection timeouts
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct PeerTimeoutConfig {
+    /// How long to wait for a peer to respond to a request
+    pub(crate) response_timeout: Duration,
+    /// Maximum time to maintain a connection with a peer
+    pub(crate) max_connection_time: Duration,
+}
+
+impl PeerTimeoutConfig {
+    /// Create a new peer timeout configuration
+    pub fn new(response_timeout: Duration, max_connection_time: Duration) -> Self {
+        Self {
+            response_timeout,
+            max_connection_time,
+        }
+    }
+}
 
 pub const PROTOCOL_VERSION: u32 = 70016;
 pub const KYOTO_VERSION: &str = "0.8.0";

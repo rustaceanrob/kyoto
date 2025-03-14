@@ -81,18 +81,23 @@ The wallet required 12 block downloads, and took 5 minutes.
 
 This section details what behavior to expect when using Kyoto, and why such decisions were made.
 
-### Peer Selection
+## Peer Selection
 
 Kyoto will first connect to all of the configured peers to maintain the connection requirement, and will use peers gleaned from the peer-to-peer gossip thereafter. If no peers are configured when building the node, and no peers are in the database, Kyoto will resort to DNS. Kyoto will not select a peer of the same netgroup (`/16`) as a previously connected peer. When selecting a new peer from the database, a random preference will be selected between a "new" peer and a peer that has been "tried." Rational is derived from [this research](https://www.ethanheilman.com/p/eclipse/index.html)
 
-### Block Headers and Storage
+## Block Headers and Storage
 
 Kyoto expects users to adopt some form of persistence between sessions when it comes to block header data. Reason being, Kyoto emits block headers that have been reorganized back to the client in such an event. To do so, in a rare but potential circumstance where the client has shut down on a stale tip, one that is reorganized in the future, Kyoto may use the header persistence to load the older chain into memory. Further, this allows the memory footprint of storing headers in a chain structure to remain small. Kyoto has a soft limit of 20,000 headers in memory at any given time, and if the chain representation exceeds that, Kyoto has a reliable backend to move the excess of block headers. To compensate for this, Kyoto only expects some generic datastore, and does not care about how persistence is implemented.
 
-### Filters
+## Filters
 
 Block filters for a full block may be 300-400 bytes, and may be needless overhead if scripts are revealed "into the future" for the underlying wallet. Full filters are checked for matches as they are downloaded, but are discarded thereafter. As a result, if the user adds scripts that are believe to be included in blocks _in the past_, Kyoto will have to redownload the filters. But if the wallet has up to date information, a revealing a new script is guaranteed to have not been used. This memory tradeoff was deemed worthwhile, as it is expected rescanning will only occur for recovery scenarios.
 
-### Structure
+## Structure
+
+* `chain`: Contains all logic for syncing block headers, filter headers, filters, parsing blocks. Also contains preset checkpoints for Signet, Regtest, and Bitcoin networks. Notable files: `chain.rs`
+* `db`: Defines how data must be persisted with `traits.rs`, and includes some opinionated defaults for database components.
+* `filters`: Additional structures for managing compact filter headers and filters, used by `chain.rs`
+* `network`: Opens and closes connections, handles encryption and decryption of messages, generates messages, parses messages, times message response times, performs DNS lookups. Notable files: `peer.rs`, `reader.rs`, `parsers.rs`, `outbound_messages.rs`
 
 ![Layout](https://github.com/user-attachments/assets/21280bb4-aa88-4e11-9223-aed35a885e99)

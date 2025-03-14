@@ -135,18 +135,6 @@ just integrate
 
 If you do not have `bitcoind` installed, you may simply run `just integrate` and it will be installed for you in the `build` folder.
 
-## Project Layout
-
-`chain`: Contains all logic for syncing block headers, filter headers, filters, parsing blocks. Also contains preset checkpoints for Signet, Regtest, and Bitcoin networks. Notable files: `chain.rs`
-
-`core`: Organizes the primary user-facing components of the API. This includes both the `Node` and the `Client` that all developers will interact with, as well as the `NodeBuilder`. Importantly includes `peer_map.rs`, which is the primary file that handles peer threads by sending messages, persisting new peers, banning peers, and managing peer task handles. `node.rs` is the main application loop, responsible for driving the node actions. Notable files: `node.rs`, `peer_map.rs`, `builder.rs`, `client.rs`
-
-`db`: Defines how data must be persisted with `traits.rs`, and includes some opinionated defaults for database components.
-
-`filters`: Additional structures for managing compact filter headers and filters, used by `chain.rs`
-
-`network`: Opens and closes connections, handles encryption and decryption of messages, generates messages, parses messages, times message response times, performs DNS lookups. Notable files: `peer.rs`, `reader.rs`, `parsers.rs`, `outbound_messages.rs`
-
 ## Contributing
 
 Please read [CONTRIBUTING.md](./CONTRIBUTING.md) to get started.

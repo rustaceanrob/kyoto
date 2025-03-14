@@ -5,8 +5,8 @@ use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, Servic
 use bitcoin::{FeeRate, Txid};
 use tokio::sync::mpsc::Sender;
 
-use crate::core::channel_messages::{CombinedAddr, PeerMessage};
-use crate::core::messages::RejectPayload;
+use crate::channel_messages::{CombinedAddr, PeerMessage};
+use crate::messages::RejectPayload;
 
 use super::error::PeerReadError;
 use super::traits::MessageParser;
