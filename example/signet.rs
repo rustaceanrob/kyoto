@@ -1,6 +1,6 @@
 //! Usual sync on Signet.
 
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
+use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
 use kyoto::{AddrV2, Address, Client, Event, Log, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{

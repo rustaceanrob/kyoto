@@ -2,7 +2,7 @@
 //! the filters for inclusions of these scripts and download the relevant
 //! blocks.
 
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
+use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
 use kyoto::{Address, Client, Event, Network};
 use std::collections::HashSet;
 use std::str::FromStr;

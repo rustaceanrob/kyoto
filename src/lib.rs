@@ -85,12 +85,32 @@
 
 #![warn(missing_docs)]
 pub mod chain;
-pub mod core;
 pub mod db;
 
 mod filters;
 mod network;
 mod prelude;
+
+mod broadcaster;
+/// Convenient way to build a compact filters node.
+pub mod builder;
+pub(crate) mod channel_messages;
+/// Structures to communicate with a node.
+pub mod client;
+/// Node configuration options.
+pub(crate) mod config;
+pub(crate) mod dialog;
+/// Errors associated with a node.
+pub mod error;
+/// Messages the node may send a client.
+pub mod messages;
+/// The structure that communicates with the Bitcoin P2P network and collects data.
+pub mod node;
+
+/// Receive an [`IndexedBlock`] from a request.
+#[cfg(feature = "filter-control")]
+pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>;
+
 #[cfg(feature = "filter-control")]
 use filters::Filter;
 #[cfg(feature = "filter-control")]
@@ -123,11 +143,11 @@ pub use tokio::sync::mpsc::UnboundedReceiver;
 
 #[doc(inline)]
 pub use {
-    crate::core::builder::NodeBuilder,
-    crate::core::client::{Client, Requester},
-    crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
-    crate::core::node::{Node, NodeState},
+    crate::builder::NodeBuilder,
+    crate::client::{Client, Requester},
+    crate::error::{ClientError, NodeError},
+    crate::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
+    crate::node::{Node, NodeState},
 };
 
 #[doc(inline)]
