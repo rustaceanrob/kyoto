@@ -9,10 +9,13 @@ use bitcoin::{
     },
     Block, BlockHash, Network, ScriptBuf,
 };
-use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
     sync::mpsc::{self},
+};
+use tokio::{
+    sync::{mpsc::Receiver, Mutex, RwLock},
+    time::Instant,
 };
 
 use crate::{
@@ -39,13 +42,46 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
-    FilterSyncPolicy, LastBlockMonitor, PeerId, PeerTimeoutConfig,
+    PeerId, PeerTimeoutConfig,
 };
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: u64 = 1;
+const THIRTY_MINS: u64 = 60 * 30;
 
 type PeerRequirement = usize;
+
+// This struct detects for stale tips and requests headers if no blocks were found after 30 minutes of wait time.
+pub(crate) struct LastBlockMonitor {
+    last_block: Option<Instant>,
+}
+
+impl LastBlockMonitor {
+    pub(crate) fn new() -> Self {
+        Self { last_block: None }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.last_block = Some(Instant::now())
+    }
+
+    pub(crate) fn stale(&self) -> bool {
+        if let Some(time) = self.last_block {
+            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
+        }
+        false
+    }
+}
+
+/// Should the node immediately download filters or wait for a command
+#[derive(Debug, Default)]
+pub enum FilterSyncPolicy {
+    /// The node will wait for an explicit command to start downloading and checking filters
+    Halt,
+    /// Filters are downloaded immediately after CBF headers are synced.
+    #[default]
+    Continue,
+}
 
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]

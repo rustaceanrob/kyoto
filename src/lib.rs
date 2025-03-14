@@ -162,42 +162,6 @@ pub extern crate tokio;
 use std::hash::Hash;
 use std::time::Duration;
 
-use tokio::time::Instant;
-
-const THIRTY_MINS: u64 = 60 * 30;
-
-// This struct detects for stale tips and requests headers if no blocks were found after 30 minutes of wait time.
-pub(crate) struct LastBlockMonitor {
-    last_block: Option<Instant>,
-}
-
-impl LastBlockMonitor {
-    pub(crate) fn new() -> Self {
-        Self { last_block: None }
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.last_block = Some(Instant::now())
-    }
-
-    pub(crate) fn stale(&self) -> bool {
-        if let Some(time) = self.last_block {
-            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
-        }
-        false
-    }
-}
-
-/// Should the node immediately download filters or wait for a command
-#[derive(Debug, Default)]
-pub enum FilterSyncPolicy {
-    /// The node will wait for an explicit command to start downloading and checking filters
-    Halt,
-    /// Filters are downloaded immediately after CBF headers are synced.
-    #[default]
-    Continue,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub(crate) struct PeerTimeoutConfig {
     pub(crate) response_timeout: Duration,

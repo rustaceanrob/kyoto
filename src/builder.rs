@@ -5,12 +5,13 @@ use bitcoin::Network;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 
-use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
+use super::{client::Client, config::NodeConfig, node::Node};
 #[cfg(feature = "database")]
 use crate::db::error::SqlInitializationError;
 #[cfg(feature = "database")]
 use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
+use crate::node::FilterSyncPolicy;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
