@@ -14,13 +14,13 @@ use tokio::{
 };
 
 use crate::{
-    core::{
+    network::outbound_messages::V1OutboundMessage,
+    {
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,
         PeerId, PeerTimeoutConfig,
     },
-    network::outbound_messages::V1OutboundMessage,
 };
 
 use super::{

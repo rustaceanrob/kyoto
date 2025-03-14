@@ -1,6 +1,6 @@
 //! Usual sync on Testnet.
 
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder};
+use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
 use kyoto::{Address, Client, Event, Log, Network, PeerStoreSizeConfig, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};

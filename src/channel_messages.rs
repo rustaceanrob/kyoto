@@ -9,7 +9,7 @@ use bitcoin::{
     Block, BlockHash, FeeRate, Transaction, Wtxid,
 };
 
-use crate::core::messages::RejectPayload;
+use crate::messages::RejectPayload;
 
 use super::PeerId;
 

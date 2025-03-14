@@ -11,9 +11,9 @@ use corepc_node::serde_json;
 use corepc_node::{anyhow, exe_path};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint,
-    core::{client::Client, node::Node},
     BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
     Warning,
+    {client::Client, node::Node},
 };
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -48,7 +48,7 @@ fn new_node_sql(
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(addrs)
@@ -67,7 +67,7 @@ fn new_node_anchor_sql(
     let addr = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = addr.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peer(trusted)
         .add_scripts(addrs)
@@ -171,12 +171,12 @@ async fn live_reorg() {
     // Make sure the reorg was caught
     while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
+            kyoto::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::Event::Synced(update) => {
+            kyoto::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 requester.shutdown().await.unwrap();
                 break;
@@ -228,12 +228,12 @@ async fn live_reorg_additional_sync() {
     // Make sure the reorg was caught
     while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
+            kyoto::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::Event::Synced(update) => {
+            kyoto::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
                 break;
             }
@@ -336,12 +336,12 @@ async fn stop_reorg_resync() {
     // Make sure the reorganization is caught after a cold start
     while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
+            kyoto::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::Event::Synced(update) => {
+            kyoto::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -420,12 +420,12 @@ async fn stop_reorg_two_resync() {
     let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
+            kyoto::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 2);
                 assert_eq!(blocks.last().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.last().unwrap().height);
             }
-            kyoto::core::messages::Event::Synced(update) => {
+            kyoto::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -507,12 +507,12 @@ async fn stop_reorg_start_on_orphan() {
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = channel.recv().await {
         match message {
-            kyoto::core::messages::Event::BlocksDisconnected(blocks) => {
+            kyoto::messages::Event::BlocksDisconnected(blocks) => {
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::core::messages::Event::Synced(update) => {
+            kyoto::messages::Event::Synced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -592,7 +592,7 @@ async fn halting_download_works() {
     scripts.insert(other.into());
 
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
-    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     let (node, client) = builder
         .add_peers(vec![host.into()])
         .add_scripts(scripts)
@@ -624,7 +624,7 @@ async fn halting_download_works() {
         }
     }
     while let Some(message) = channel.recv().await {
-        if let kyoto::core::messages::Event::Synced(update) = message {
+        if let kyoto::messages::Event::Synced(update) = message {
             println!("Done");
             assert_eq!(update.tip().hash, best);
             break;
@@ -645,7 +645,7 @@ async fn signet_syncs() {
     let mut set = HashSet::new();
     set.insert(address);
     let host = (IpAddr::from(Ipv4Addr::new(68, 47, 229, 218)), None);
-    let builder = kyoto::core::builder::NodeBuilder::new(bitcoin::Network::Signet);
+    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Signet);
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(set)

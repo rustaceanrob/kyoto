@@ -22,10 +22,10 @@ use crate::{
         error::HeaderSyncError,
         HeightMonitor,
     },
-    core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
     RejectPayload, TxBroadcastPolicy,
+    {error::FetchHeaderError, peer_map::PeerMap},
 };
 
 use super::{

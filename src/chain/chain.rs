@@ -20,18 +20,13 @@ use super::{
     HeightMonitor,
 };
 #[cfg(feature = "filter-control")]
-use crate::core::error::FetchBlockError;
+use crate::error::FetchBlockError;
 #[cfg(feature = "filter-control")]
-use crate::core::messages::BlockRequest;
+use crate::messages::BlockRequest;
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
-    core::{
-        dialog::Dialog,
-        error::HeaderPersistenceError,
-        messages::{Event, Warning},
-    },
     db::traits::HeaderStore,
     filters::{
         cfheader_batch::CFHeaderBatch,
@@ -41,6 +36,11 @@ use crate::{
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     IndexedBlock,
+    {
+        dialog::Dialog,
+        error::HeaderPersistenceError,
+        messages::{Event, Warning},
+    },
 };
 
 const MAX_REORG_DEPTH: u32 = 5_000;
@@ -902,11 +902,11 @@ mod tests {
             checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
             error::HeaderSyncError,
         },
-        core::{
+        filters::cfheader_chain::AppendAttempt,
+        {
             dialog::Dialog,
             messages::{Event, Log, Warning},
         },
-        filters::cfheader_chain::AppendAttempt,
     };
 
     use super::{Chain, HeightMonitor};
