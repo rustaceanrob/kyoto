@@ -26,9 +26,11 @@ use crate::{
         HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
+    error::FetchHeaderError,
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
+    network::peer::{PeerId, PeerTimeoutConfig},
+    peer_map::PeerMap,
     RejectPayload, TxBroadcastPolicy,
-    {error::FetchHeaderError, peer_map::PeerMap},
 };
 
 use super::{
@@ -42,7 +44,6 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
-    PeerId, PeerTimeoutConfig,
 };
 
 pub(crate) const WTXID_VERSION: u32 = 70016;

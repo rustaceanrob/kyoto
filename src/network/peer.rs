@@ -19,7 +19,6 @@ use crate::{
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,
-        PeerId, PeerTimeoutConfig,
     },
 };
 
@@ -40,6 +39,42 @@ const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 4;
 
 type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub(crate) struct PeerTimeoutConfig {
+    pub(crate) response_timeout: Duration,
+    pub(crate) max_connection_time: Duration,
+}
+
+impl PeerTimeoutConfig {
+    pub(crate) fn new(response_timeout: Duration, max_connection_time: Duration) -> Self {
+        Self {
+            response_timeout,
+            max_connection_time,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PeerId(pub(crate) u32);
+
+impl PeerId {
+    pub(crate) fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1)
+    }
+}
+
+impl From<u32> for PeerId {
+    fn from(value: u32) -> Self {
+        PeerId(value)
+    }
+}
+
+impl std::fmt::Display for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Peer {}", self.0)
+    }
+}
 
 pub(crate) struct Peer {
     nonce: PeerId,

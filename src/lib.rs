@@ -159,45 +159,6 @@ pub use bitcoin::{
 
 pub extern crate tokio;
 
-use std::hash::Hash;
-use std::time::Duration;
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub(crate) struct PeerTimeoutConfig {
-    pub(crate) response_timeout: Duration,
-    pub(crate) max_connection_time: Duration,
-}
-
-impl PeerTimeoutConfig {
-    fn new(response_timeout: Duration, max_connection_time: Duration) -> Self {
-        Self {
-            response_timeout,
-            max_connection_time,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct PeerId(u32);
-
-impl PeerId {
-    pub(crate) fn increment(&mut self) {
-        self.0 = self.0.wrapping_add(1)
-    }
-}
-
-impl From<u32> for PeerId {
-    fn from(value: u32) -> Self {
-        PeerId(value)
-    }
-}
-
-impl std::fmt::Display for PeerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Peer {}", self.0)
-    }
-}
-
 /// A Bitcoin [`Transaction`] with additional context.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

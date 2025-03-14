@@ -25,7 +25,7 @@ use crate::{
     network::{
         dns::DnsResolver,
         error::PeerError,
-        peer::Peer,
+        peer::{Peer, PeerId, PeerTimeoutConfig},
         traits::{ClearNetConnection, NetworkConnector},
     },
     prelude::{default_port_from_network, Median, Netgroup},
@@ -37,7 +37,6 @@ use super::{
     dialog::Dialog,
     error::PeerManagerError,
     messages::Warning,
-    PeerId, PeerTimeoutConfig,
 };
 
 const MAX_TRIES: usize = 50;

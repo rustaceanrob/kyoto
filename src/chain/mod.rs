@@ -14,7 +14,7 @@ pub(crate) mod header_chain;
 
 use std::collections::HashMap;
 
-use crate::PeerId;
+use crate::network::peer::PeerId;
 
 type Height = u32;
 
