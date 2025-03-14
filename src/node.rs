@@ -28,8 +28,10 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    network::peer::{PeerId, PeerTimeoutConfig},
-    peer_map::PeerMap,
+    network::{
+        peer::{PeerId, PeerTimeoutConfig},
+        peer_map::PeerMap,
+    },
     RejectPayload, TxBroadcastPolicy,
 };
 

@@ -21,7 +21,10 @@ use tokio::{
 
 use crate::{
     chain::HeightMonitor,
+    channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
+    dialog::Dialog,
+    error::PeerManagerError,
     network::{
         dns::DnsResolver,
         error::PeerError,
@@ -29,14 +32,7 @@ use crate::{
         traits::{ClearNetConnection, NetworkConnector},
     },
     prelude::{default_port_from_network, Median, Netgroup},
-    ConnectionType, PeerStoreSizeConfig, TrustedPeer,
-};
-
-use super::{
-    channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
-    dialog::Dialog,
-    error::PeerManagerError,
-    messages::Warning,
+    ConnectionType, PeerStoreSizeConfig, TrustedPeer, Warning,
 };
 
 const MAX_TRIES: usize = 50;

@@ -106,7 +106,6 @@ pub mod error;
 pub mod messages;
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
-mod peer_map;
 
 /// Receive an [`IndexedBlock`] from a request.
 #[cfg(feature = "filter-control")]
