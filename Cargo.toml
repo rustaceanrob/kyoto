@@ -20,7 +20,7 @@ bitcoin = { version = "0.32.5", default-features = false, features = [
 bip324 = { version = "0.7.0", default-features = false, features = [
     "tokio",
 ] }
-tokio = { version = "1.37", default-features = false, features = [
+tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
     "sync",
     "time",
