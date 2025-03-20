@@ -2,8 +2,8 @@
 //! many possible scripts to check. Enable the `filter-control` feature to check filters
 //! manually in your program.
 
-use kyoto::core::messages::Event;
-use kyoto::{chain::checkpoints::HeaderCheckpoint, core::builder::NodeBuilder, Client};
+use kyoto::messages::Event;
+use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint, Client};
 use kyoto::{AddrV2, Address, BlockHash, LogLevel, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};

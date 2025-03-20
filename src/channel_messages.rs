@@ -9,9 +9,7 @@ use bitcoin::{
     Block, BlockHash, FeeRate, Transaction, Wtxid,
 };
 
-use crate::core::messages::RejectPayload;
-
-use super::PeerId;
+use crate::{messages::RejectPayload, network::PeerId};
 
 #[derive(Debug, Clone)]
 pub(crate) enum MainThreadMessage {

@@ -5,7 +5,7 @@ use bitcoin::Network;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 
-use super::{client::Client, config::NodeConfig, node::Node, FilterSyncPolicy};
+use super::{client::Client, config::NodeConfig, node::Node};
 #[cfg(feature = "database")]
 use crate::db::error::SqlInitializationError;
 #[cfg(feature = "database")]
@@ -15,7 +15,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{ConnectionType, LogLevel, PeerStoreSizeConfig, TrustedPeer};
+use crate::{ConnectionType, FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "database")]
 /// The default node returned from the [`NodeBuilder`](crate::core).

@@ -71,10 +71,6 @@
 //! }
 //! ```
 //!
-//! # Getting started
-//!
-//! The [`core`] module documentation is likely the best place to start when developing an application with Kyoto.
-//!
 //! # Features
 //!
 //! `database`: use the default `rusqlite` database implementations. Default and recommend feature.
@@ -85,12 +81,34 @@
 
 #![warn(missing_docs)]
 pub mod chain;
-pub mod core;
 pub mod db;
 
 mod filters;
 mod network;
 mod prelude;
+
+mod broadcaster;
+/// Convenient way to build a compact filters node.
+pub mod builder;
+pub(crate) mod channel_messages;
+/// Structures to communicate with a node.
+pub mod client;
+/// Node configuration options.
+pub(crate) mod config;
+pub(crate) mod dialog;
+/// Errors associated with a node.
+pub mod error;
+/// Messages the node may send a client.
+pub mod messages;
+/// The structure that communicates with the Bitcoin P2P network and collects data.
+pub mod node;
+
+/// Receive an [`IndexedBlock`] from a request.
+#[cfg(feature = "filter-control")]
+pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>;
+
+#[cfg(feature = "filter-control")]
+use crate::error::FetchBlockError;
 #[cfg(feature = "filter-control")]
 use filters::Filter;
 #[cfg(feature = "filter-control")]
@@ -123,11 +141,12 @@ pub use tokio::sync::mpsc::UnboundedReceiver;
 
 #[doc(inline)]
 pub use {
-    crate::core::builder::NodeBuilder,
-    crate::core::client::{Client, Requester},
-    crate::core::error::{ClientError, NodeError},
-    crate::core::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
-    crate::core::node::{Node, NodeState},
+    crate::builder::NodeBuilder,
+    crate::client::{Client, Requester},
+    crate::error::{ClientError, NodeError},
+    crate::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
+    crate::network::PeerTimeoutConfig,
+    crate::node::{Node, NodeState},
 };
 
 #[doc(inline)]
@@ -437,6 +456,16 @@ pub enum LogLevel {
     /// Omit `Log::Debug` messages, including their memory allocations. Ideal for a production
     /// application that uses minimal logging.
     Warning,
+}
+
+/// Should the node immediately download filters or wait for a command
+#[derive(Debug, Default)]
+pub enum FilterSyncPolicy {
+    /// The node will wait for an explicit command to start downloading and checking filters
+    Halt,
+    /// Filters are downloaded immediately after CBF headers are synced.
+    #[default]
+    Continue,
 }
 
 macro_rules! log {

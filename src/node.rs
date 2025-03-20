@@ -9,10 +9,13 @@ use bitcoin::{
     },
     Block, BlockHash, Network, ScriptBuf,
 };
-use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
     sync::mpsc::{self},
+};
+use tokio::{
+    sync::{mpsc::Receiver, Mutex, RwLock},
+    time::Instant,
 };
 
 use crate::{
@@ -22,10 +25,11 @@ use crate::{
         error::HeaderSyncError,
         HeightMonitor,
     },
-    core::{error::FetchHeaderError, peer_map::PeerMap},
     db::traits::{HeaderStore, PeerStore},
+    error::FetchHeaderError,
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    RejectPayload, TxBroadcastPolicy,
+    network::{peer_map::PeerMap, PeerId, PeerTimeoutConfig},
+    FilterSyncPolicy, RejectPayload, TxBroadcastPolicy,
 };
 
 use super::{
@@ -39,13 +43,35 @@ use super::{
     dialog::Dialog,
     error::NodeError,
     messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
-    FilterSyncPolicy, LastBlockMonitor, PeerId, PeerTimeoutConfig,
 };
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: u64 = 1;
+const THIRTY_MINS: u64 = 60 * 30;
 
 type PeerRequirement = usize;
+
+// This struct detects for stale tips and requests headers if no blocks were found after 30 minutes of wait time.
+pub(crate) struct LastBlockMonitor {
+    last_block: Option<Instant>,
+}
+
+impl LastBlockMonitor {
+    pub(crate) fn new() -> Self {
+        Self { last_block: None }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.last_block = Some(Instant::now())
+    }
+
+    pub(crate) fn stale(&self) -> bool {
+        if let Some(time) = self.last_block {
+            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
+        }
+        false
+    }
+}
 
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]

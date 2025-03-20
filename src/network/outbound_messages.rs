@@ -17,7 +17,7 @@ use bitcoin::{
     BlockHash, Network, Transaction, Wtxid,
 };
 
-use crate::{core::channel_messages::GetBlockConfig, prelude::default_port_from_network};
+use crate::{channel_messages::GetBlockConfig, prelude::default_port_from_network};
 
 use super::{
     error::PeerError, traits::MessageGenerator, KYOTO_VERSION, PROTOCOL_VERSION,

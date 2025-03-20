@@ -4,8 +4,8 @@ use bitcoin::BlockHash;
 use tokio::time::Instant;
 
 #[cfg(feature = "filter-control")]
-use crate::core::messages::BlockRequest;
-use crate::core::messages::BlockSender;
+use crate::messages::BlockRequest;
+use crate::messages::BlockSender;
 
 const SPAM_LIMIT: u64 = 5;
 

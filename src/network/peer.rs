@@ -14,13 +14,12 @@ use tokio::{
 };
 
 use crate::{
-    core::{
+    network::outbound_messages::V1OutboundMessage,
+    {
         channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
         dialog::Dialog,
         messages::Warning,
-        PeerId, PeerTimeoutConfig,
     },
-    network::outbound_messages::V1OutboundMessage,
 };
 
 use super::{
@@ -29,6 +28,7 @@ use super::{
     parsers::V1MessageParser,
     reader::Reader,
     traits::{MessageGenerator, StreamReader, StreamWriter},
+    PeerId, PeerTimeoutConfig,
 };
 
 #[cfg(not(feature = "tor"))]
