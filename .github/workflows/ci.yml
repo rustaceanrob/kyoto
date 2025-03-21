@@ -31,6 +31,7 @@ jobs:
       - name: Build
         run: |
           cargo build --verbose
+          cargo build --verbose --all-features
           cargo build --verbose --no-default-features
           cargo build --verbose --no-default-features --features database,filter-control 
       - name: Unit test
