@@ -17,12 +17,10 @@ rust-version = "1.63.0"
 bitcoin = { version = "0.32.5", default-features = false, features = [
     "rand-std",
 ] }
-bip324 = { version = "0.6.0", default-features = false, features = [
-    "std",
-    "alloc",
+bip324 = { version = "0.7.0", default-features = false, features = [
     "tokio",
 ] }
-tokio = { version = "1.37", default-features = false, features = [
+tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
     "sync",
     "time",
@@ -31,24 +29,28 @@ tokio = { version = "1.37", default-features = false, features = [
     "macros",
 ] }
 
-# Optional dependencies
 rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
-arti-client = { version = "0.21.0", features = [
+# The rusqlite and arti-client features have a complicated dependency overlap,
+# issues arrise with `libsqlite3-sys` which handles linking to native libraries.
+# Only one version of the library should be specified, so rusqlite, arti-client,
+# and tor-rtcompat all need to be managed together.
+arti-client = { version = "0.22.0", features = [
     "rustls",
     "tokio",
     "onion-service-client",
     "experimental-api",
 ], default-features = false, optional = true }
-tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
+tor-rtcompat = { version = "0.22.0", features = ["tokio"], optional = true }
 
 [features]
 default = ["database"]
-database = ["rusqlite"]
-tor = ["arti-client", "tor-rtcompat"]
+database = ["dep:rusqlite"]
+# Raises the MSRV to 1.70.0 when enabled.
+tor = ["dep:arti-client", "dep:tor-rtcompat"]
 filter-control = []
 
 [dev-dependencies]
-corepc-node = { version = "0.5.0", default-features = false, features = [
+corepc-node = { version = "0.6.1", default-features = false, features = [
     "28_0",
 ] }
 hex = { version = "0.4.0" }
