@@ -32,17 +32,20 @@ tokio = { version = "1", default-features = false, features = [
 rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
 # The rusqlite and arti-client features have a complicated dependency overlap,
 # issues arrise with `libsqlite3-sys` which handles linking to native libraries.
-arti-client = { version = "0.21.0", features = [
+# Only one version of the library should be specified, so rusqlite, arti-client,
+# and tor-rtcompat all need to be managed together.
+arti-client = { version = "0.22.0", features = [
     "rustls",
     "tokio",
     "onion-service-client",
     "experimental-api",
 ], default-features = false, optional = true }
-tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
+tor-rtcompat = { version = "0.22.0", features = ["tokio"], optional = true }
 
 [features]
 default = ["database"]
 database = ["dep:rusqlite"]
+# Raises the MSRV to 1.70.0 when enabled.
 tor = ["dep:arti-client", "dep:tor-rtcompat"]
 filter-control = []
 
