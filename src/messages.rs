@@ -7,14 +7,11 @@ use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, Script
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, TrustedPeer,
+    chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, NodeState, TrustedPeer,
     TxBroadcast,
 };
 
-use super::{
-    error::{FetchBlockError, FetchHeaderError},
-    node::NodeState,
-};
+use super::error::{FetchBlockError, FetchHeaderError};
 
 /// Informational messages emitted by a node
 #[derive(Debug, Clone)]

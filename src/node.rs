@@ -9,13 +9,10 @@ use bitcoin::{
     },
     Block, BlockHash, Network, ScriptBuf,
 };
+use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
 use tokio::{
     select,
     sync::mpsc::{self},
-};
-use tokio::{
-    sync::{mpsc::Receiver, Mutex, RwLock},
-    time::Instant,
 };
 
 use crate::{
@@ -28,8 +25,8 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
     filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
-    network::{peer_map::PeerMap, PeerId, PeerTimeoutConfig},
-    FilterSyncPolicy, RejectPayload, TxBroadcastPolicy,
+    network::{peer_map::PeerMap, LastBlockMonitor, PeerId, PeerTimeoutConfig},
+    FilterSyncPolicy, NodeState, RejectPayload, TxBroadcastPolicy,
 };
 
 use super::{
@@ -47,46 +44,8 @@ use super::{
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: u64 = 1;
-const THIRTY_MINS: u64 = 60 * 30;
 
 type PeerRequirement = usize;
-
-// This struct detects for stale tips and requests headers if no blocks were found after 30 minutes of wait time.
-pub(crate) struct LastBlockMonitor {
-    last_block: Option<Instant>,
-}
-
-impl LastBlockMonitor {
-    pub(crate) fn new() -> Self {
-        Self { last_block: None }
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.last_block = Some(Instant::now())
-    }
-
-    pub(crate) fn stale(&self) -> bool {
-        if let Some(time) = self.last_block {
-            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
-        }
-        false
-    }
-}
-
-/// The state of the node with respect to connected peers.
-#[derive(Debug, Clone, Copy)]
-pub enum NodeState {
-    /// We are behind on block headers according to our peers.
-    Behind,
-    /// We may start downloading compact block filter headers.
-    HeadersSynced,
-    /// We may start scanning compact block filters.
-    FilterHeadersSynced,
-    /// We may start asking for blocks with matches.
-    FiltersSynced,
-    /// We found all known transactions to the wallet.
-    TransactionsSynced,
-}
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
@@ -799,23 +758,5 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             .load_headers()
             .await
             .map_err(NodeError::HeaderDatabase)
-    }
-}
-
-impl core::fmt::Display for NodeState {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            NodeState::Behind => {
-                write!(f, "Requesting block headers.")
-            }
-            NodeState::HeadersSynced => {
-                write!(f, "Requesting compact filter headers.")
-            }
-            NodeState::FilterHeadersSynced => {
-                write!(f, "Requesting compact block filters.")
-            }
-            NodeState::FiltersSynced => write!(f, "Downloading blocks with relevant transactions."),
-            NodeState::TransactionsSynced => write!(f, "Fully synced to the highest block."),
-        }
     }
 }

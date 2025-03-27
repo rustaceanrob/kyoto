@@ -4,6 +4,7 @@ use bitcoin::{
     p2p::{message::CommandString, Magic},
 };
 use std::time::Duration;
+use tokio::time::Instant;
 
 pub(crate) mod counter;
 pub(crate) mod dns;
@@ -18,6 +19,11 @@ pub(crate) mod reader;
 #[cfg(feature = "tor")]
 pub(crate) mod tor;
 pub(crate) mod traits;
+
+pub const PROTOCOL_VERSION: u32 = 70016;
+pub const KYOTO_VERSION: &str = "0.8.0";
+pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
+const THIRTY_MINS: u64 = 60 * 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -59,9 +65,26 @@ impl PeerTimeoutConfig {
     }
 }
 
-pub const PROTOCOL_VERSION: u32 = 70016;
-pub const KYOTO_VERSION: &str = "0.8.0";
-pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
+pub(crate) struct LastBlockMonitor {
+    last_block: Option<Instant>,
+}
+
+impl LastBlockMonitor {
+    pub(crate) fn new() -> Self {
+        Self { last_block: None }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.last_block = Some(Instant::now())
+    }
+
+    pub(crate) fn stale(&self) -> bool {
+        if let Some(time) = self.last_block {
+            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
+        }
+        false
+    }
+}
 
 pub(crate) struct V1Header {
     magic: Magic,
