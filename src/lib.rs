@@ -146,7 +146,7 @@ pub use {
     crate::error::{ClientError, NodeError},
     crate::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
     crate::network::PeerTimeoutConfig,
-    crate::node::{Node, NodeState},
+    crate::node::Node,
 };
 
 #[doc(inline)]
@@ -466,6 +466,39 @@ pub enum FilterSyncPolicy {
     /// Filters are downloaded immediately after CBF headers are synced.
     #[default]
     Continue,
+}
+
+/// The state of the node with respect to connected peers.
+#[derive(Debug, Clone, Copy)]
+pub enum NodeState {
+    /// We are behind on block headers according to our peers.
+    Behind,
+    /// We may start downloading compact block filter headers.
+    HeadersSynced,
+    /// We may start scanning compact block filters.
+    FilterHeadersSynced,
+    /// We may start asking for blocks with matches.
+    FiltersSynced,
+    /// We found all known transactions to the wallet.
+    TransactionsSynced,
+}
+
+impl core::fmt::Display for NodeState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            NodeState::Behind => {
+                write!(f, "Requesting block headers.")
+            }
+            NodeState::HeadersSynced => {
+                write!(f, "Requesting compact filter headers.")
+            }
+            NodeState::FilterHeadersSynced => {
+                write!(f, "Requesting compact block filters.")
+            }
+            NodeState::FiltersSynced => write!(f, "Downloading blocks with relevant transactions."),
+            NodeState::TransactionsSynced => write!(f, "Fully synced to the highest block."),
+        }
+    }
 }
 
 macro_rules! log {
