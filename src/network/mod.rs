@@ -8,6 +8,7 @@ use bitcoin::{
     io::Read,
     p2p::{address::AddrV2, message::CommandString, Magic},
 };
+use socks::create_socks5;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -32,6 +33,7 @@ pub(crate) mod traits;
 pub const PROTOCOL_VERSION: u32 = 70016;
 pub const KYOTO_VERSION: &str = "0.8.0";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
+
 const THIRTY_MINS: u64 = 60 * 30;
 const CONNECTION_TIMEOUT: u64 = 2;
 
@@ -124,18 +126,28 @@ impl ConnectionType {
             AddrV2::Ipv6(ip) => IpAddr::V6(ip),
             _ => return Err(PeerError::UnreachableSocketAddr),
         };
-        let timeout = tokio::time::timeout(
-            Duration::from_secs(CONNECTION_TIMEOUT),
-            TcpStream::connect((socket_addr, port)),
-        )
-        .await
-        .map_err(|_| PeerError::ConnectionFailed)?;
-        match timeout {
-            Ok(stream) => {
-                let (reader, writer) = stream.into_split();
+        match &self {
+            Self::ClearNet => {
+                let timeout = tokio::time::timeout(
+                    Duration::from_secs(CONNECTION_TIMEOUT),
+                    TcpStream::connect((socket_addr, port)),
+                )
+                .await
+                .map_err(|_| PeerError::ConnectionFailed)?;
+                let tcp_stream = timeout.map_err(|_| PeerError::ConnectionFailed)?;
+                let (reader, writer) = tcp_stream.into_split();
                 Ok((Box::new(reader), Box::new(writer)))
             }
-            Err(_) => Err(PeerError::ConnectionFailed),
+            Self::Socks5Proxy(proxy) => {
+                let socks5_timeout = tokio::time::timeout(
+                    Duration::from_secs(CONNECTION_TIMEOUT),
+                    create_socks5(*proxy, socket_addr, port),
+                )
+                .await
+                .map_err(|_| PeerError::ConnectionFailed)?;
+                let (reader, writer) = socks5_timeout.map_err(PeerError::Socks5)?;
+                Ok((reader, writer))
+            }
         }
     }
 }
