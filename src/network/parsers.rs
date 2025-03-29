@@ -8,8 +8,8 @@ use tokio::io::AsyncReadExt;
 use crate::prelude::FutureResult;
 
 use super::error::PeerReadError;
-use super::traits::{MessageParser, StreamReader};
 use super::V1Header;
+use super::{traits::MessageParser, StreamReader};
 
 const MAX_MESSAGE_BYTES: u32 = 1024 * 1024 * 32;
 

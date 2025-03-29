@@ -3,7 +3,8 @@ use std::{collections::HashSet, path::PathBuf, time::Duration};
 use bitcoin::ScriptBuf;
 
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, network::dns::DnsResolver, ConnectionType,
+    chain::checkpoints::HeaderCheckpoint,
+    network::{dns::DnsResolver, ConnectionType},
     FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer,
 };
 

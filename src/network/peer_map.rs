@@ -25,16 +25,12 @@ use crate::{
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
     dialog::Dialog,
     error::PeerManagerError,
-    network::{
-        dns::DnsResolver,
-        error::PeerError,
-        peer::Peer,
-        traits::{ClearNetConnection, NetworkConnector},
-        PeerId, PeerTimeoutConfig,
-    },
+    network::{dns::DnsResolver, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
     prelude::{default_port_from_network, Median, Netgroup},
-    ConnectionType, PeerStoreSizeConfig, TrustedPeer, Warning,
+    PeerStoreSizeConfig, TrustedPeer, Warning,
 };
+
+use super::ConnectionType;
 
 const MAX_TRIES: usize = 50;
 
@@ -62,7 +58,7 @@ pub(crate) struct PeerMap<P: PeerStore> {
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
     db: Arc<Mutex<P>>,
-    connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>>,
+    connector: ConnectionType,
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
     target_db_size: PeerStoreSizeConfig,
@@ -86,14 +82,6 @@ impl<P: PeerStore> PeerMap<P> {
         height_monitor: Arc<Mutex<HeightMonitor>>,
         dns_resolver: DnsResolver,
     ) -> Self {
-        let connector: Arc<Mutex<dyn NetworkConnector + Send + Sync>> = match connection_type {
-            ConnectionType::ClearNet => Arc::new(Mutex::new(ClearNetConnection::new())),
-            #[cfg(feature = "tor")]
-            ConnectionType::Tor(client) => {
-                use crate::network::tor::TorConnection;
-                Arc::new(Mutex::new(TorConnection::new(client)))
-            }
-        };
         Self {
             current_id: PeerId(0),
             heights: height_monitor,
@@ -101,7 +89,7 @@ impl<P: PeerStore> PeerMap<P> {
             mtx,
             map: HashMap::new(),
             db: Arc::new(Mutex::new(db)),
-            connector,
+            connector: connection_type,
             whitelist,
             dialog,
             target_db_size,
@@ -176,15 +164,15 @@ impl<P: PeerStore> PeerMap<P> {
             Arc::clone(&self.dialog),
             self.timeout_config,
         );
-        let mut connector = self.connector.lock().await;
-        if !connector.can_connect(&loaded_peer.addr) {
+        if !self.connector.can_connect(&loaded_peer.addr) {
             return Err(PeerError::UnreachableSocketAddr);
         }
         crate::log!(
             self.dialog,
             format!("Connecting to {:?}:{}", loaded_peer.addr, loaded_peer.port)
         );
-        let (reader, writer) = connector
+        let (reader, writer) = self
+            .connector
             .connect(loaded_peer.addr.clone(), loaded_peer.port)
             .await?;
         let handle = tokio::spawn(async move { peer.run(reader, writer).await });

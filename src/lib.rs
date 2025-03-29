@@ -116,11 +116,6 @@ use std::collections::HashSet;
 
 use std::net::{IpAddr, SocketAddr};
 
-#[cfg(feature = "tor")]
-pub use arti_client::{TorClient, TorClientConfig};
-#[cfg(feature = "tor")]
-use tor_rtcompat::PreferredRuntime;
-
 // Re-exports
 #[doc(inline)]
 pub use chain::checkpoints::{
@@ -320,21 +315,6 @@ impl TrustedPeer {
         }
     }
 
-    /// Create a new peer from a TorV3 service and port.
-    #[cfg(feature = "tor")]
-    pub fn new_from_tor_v3(
-        public_key: [u8; 32],
-        port: Option<u16>,
-        services: ServiceFlags,
-    ) -> Self {
-        let address = AddrV2::TorV3(public_key);
-        Self {
-            address,
-            port,
-            known_services: services,
-        }
-    }
-
     /// Create a new trusted peer using the default port for the network.
     pub fn from_ip(ip_addr: impl Into<IpAddr>) -> Self {
         let address = match ip_addr.into() {
@@ -358,17 +338,6 @@ impl TrustedPeer {
         Self {
             address,
             port: Some(socket_addr.port()),
-            known_services: ServiceFlags::NONE,
-        }
-    }
-
-    /// Create a new peer from a TorV3 service.
-    #[cfg(feature = "tor")]
-    pub fn from_tor_v3(public_key: [u8; 32]) -> Self {
-        let address = AddrV2::TorV3(public_key);
-        Self {
-            address,
-            port: None,
             known_services: ServiceFlags::NONE,
         }
     }
@@ -420,18 +389,6 @@ impl From<SocketAddr> for TrustedPeer {
     fn from(value: SocketAddr) -> Self {
         TrustedPeer::from_socket_addr(value)
     }
-}
-
-/// How to connect to peers on the peer-to-peer network
-#[derive(Default, Clone)]
-#[non_exhaustive]
-pub enum ConnectionType {
-    /// Version one peer-to-peer connections
-    #[default]
-    ClearNet,
-    /// Connect to peers over Tor
-    #[cfg(feature = "tor")]
-    Tor(TorClient<PreferredRuntime>),
 }
 
 /// Configure how many peers will be stored.

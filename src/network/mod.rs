@@ -1,10 +1,21 @@
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
+
 use bitcoin::{
     consensus::Decodable,
     io::Read,
-    p2p::{message::CommandString, Magic},
+    p2p::{address::AddrV2, message::CommandString, Magic},
 };
-use std::time::Duration;
-use tokio::time::Instant;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+    sync::Mutex,
+    time::Instant,
+};
+
+use error::PeerError;
 
 pub(crate) mod counter;
 pub(crate) mod dns;
@@ -16,14 +27,17 @@ pub(crate) mod peer;
 pub(crate) mod peer_map;
 #[allow(dead_code)]
 pub(crate) mod reader;
-#[cfg(feature = "tor")]
-pub(crate) mod tor;
+pub(crate) mod socks;
 pub(crate) mod traits;
 
 pub const PROTOCOL_VERSION: u32 = 70016;
 pub const KYOTO_VERSION: &str = "0.8.0";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 const THIRTY_MINS: u64 = 60 * 30;
+const CONNECTION_TIMEOUT: u64 = 2;
+
+pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
+pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -83,6 +97,47 @@ impl LastBlockMonitor {
             return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
         }
         false
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) enum ConnectionType {
+    #[default]
+    ClearNet,
+    Socks5Proxy(SocketAddr),
+}
+
+impl ConnectionType {
+    pub(crate) fn can_connect(&self, addr: &AddrV2) -> bool {
+        match &self {
+            Self::ClearNet => matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_)),
+            Self::Socks5Proxy(_) => matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_)),
+        }
+    }
+
+    pub(crate) async fn connect(
+        &self,
+        addr: AddrV2,
+        port: u16,
+    ) -> Result<(StreamReader, StreamWriter), PeerError> {
+        let socket_addr = match addr {
+            AddrV2::Ipv4(ip) => IpAddr::V4(ip),
+            AddrV2::Ipv6(ip) => IpAddr::V6(ip),
+            _ => return Err(PeerError::UnreachableSocketAddr),
+        };
+        let timeout = tokio::time::timeout(
+            Duration::from_secs(CONNECTION_TIMEOUT),
+            TcpStream::connect((socket_addr, port)),
+        )
+        .await
+        .map_err(|_| PeerError::ConnectionFailed)?;
+        match timeout {
+            Ok(stream) => {
+                let (reader, writer) = stream.into_split();
+                Ok((Mutex::new(Box::new(reader)), Mutex::new(Box::new(writer))))
+            }
+            Err(_) => Err(PeerError::ConnectionFailed),
+        }
     }
 }
 

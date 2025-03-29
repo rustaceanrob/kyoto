@@ -23,17 +23,11 @@ use crate::{
 };
 
 use super::{
-    counter::MessageCounter,
-    error::PeerError,
-    parsers::V1MessageParser,
-    reader::Reader,
-    traits::{MessageGenerator, StreamReader, StreamWriter},
-    PeerId, PeerTimeoutConfig,
+    counter::MessageCounter, error::PeerError, parsers::V1MessageParser, reader::Reader,
+    traits::MessageGenerator, PeerId, PeerTimeoutConfig, StreamReader, StreamWriter,
 };
 
-#[cfg(not(feature = "tor"))]
 use super::outbound_messages::V2OutboundMessage;
-#[cfg(not(feature = "tor"))]
 use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
@@ -88,7 +82,6 @@ impl Peer {
         let writer = lock.deref_mut();
 
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
-        #[cfg(not(feature = "tor"))]
         let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
             let mut lock = reader.lock().await;
             let read_lock = lock.deref_mut();
@@ -112,15 +105,6 @@ impl Peer {
             let reader = Reader::new(V2MessageParser::new(reader, decryptor), tx);
             (message_mutex, reader)
         } else {
-            let outbound_messages = V1OutboundMessage::new(self.network);
-            let message_mutex: MutexMessageGenerator = Mutex::new(Box::new(outbound_messages));
-            let reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
-            (message_mutex, reader)
-        };
-
-        // V2 handshakes fail frequently over Tor and messages are encrypted over relays anyway.
-        #[cfg(feature = "tor")]
-        let (message_mutex, mut peer_reader) = {
             let outbound_messages = V1OutboundMessage::new(self.network);
             let message_mutex: MutexMessageGenerator = Mutex::new(Box::new(outbound_messages));
             let reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
