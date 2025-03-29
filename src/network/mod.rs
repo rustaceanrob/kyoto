@@ -11,7 +11,6 @@ use bitcoin::{
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
-    sync::Mutex,
     time::Instant,
 };
 
@@ -36,8 +35,8 @@ pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 const THIRTY_MINS: u64 = 60 * 30;
 const CONNECTION_TIMEOUT: u64 = 2;
 
-pub(crate) type StreamReader = Mutex<Box<dyn AsyncRead + Send + Unpin>>;
-pub(crate) type StreamWriter = Mutex<Box<dyn AsyncWrite + Send + Unpin>>;
+pub(crate) type StreamReader = Box<dyn AsyncRead + Send + Sync + Unpin>;
+pub(crate) type StreamWriter = Box<dyn AsyncWrite + Send + Sync + Unpin>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -134,7 +133,7 @@ impl ConnectionType {
         match timeout {
             Ok(stream) => {
                 let (reader, writer) = stream.into_split();
-                Ok((Mutex::new(Box::new(reader)), Mutex::new(Box::new(writer))))
+                Ok((Box::new(reader), Box::new(writer)))
             }
             Err(_) => Err(PeerError::ConnectionFailed),
         }

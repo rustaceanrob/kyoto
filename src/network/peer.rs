@@ -73,21 +73,16 @@ impl Peer {
 
     pub async fn run(
         &mut self,
-        reader: StreamReader,
-        writer: StreamWriter,
+        mut reader: StreamReader,
+        mut writer: StreamWriter,
     ) -> Result<(), PeerError> {
         let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
-        let mut lock = writer.lock().await;
-        let writer = lock.deref_mut();
-
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
         let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
-            let mut lock = reader.lock().await;
-            let read_lock = lock.deref_mut();
             let handshake_result = tokio::time::timeout(
                 Duration::from_secs(HANDSHAKE_TIMEOUT),
-                self.try_handshake(writer, read_lock),
+                self.try_handshake(&mut writer, &mut reader),
             )
             .await
             .map_err(|_| PeerError::HandshakeFailed)?;
@@ -101,7 +96,6 @@ impl Peer {
             let (decryptor, encryptor) = handshake_result?;
             let message_mutex: MutexMessageGenerator =
                 Mutex::new(Box::new(V2OutboundMessage::new(self.network, encryptor)));
-            drop(lock);
             let reader = Reader::new(V2MessageParser::new(reader, decryptor), tx);
             (message_mutex, reader)
         } else {
@@ -114,7 +108,7 @@ impl Peer {
         let mut message_lock = message_mutex.lock().await;
         let outbound_messages = message_lock.deref_mut();
         let message = outbound_messages.version_message(None)?;
-        self.write_bytes(writer, message).await?;
+        self.write_bytes(&mut writer, message).await?;
         self.message_counter.sent_version();
         let read_handle = tokio::spawn(async move {
             peer_reader
@@ -147,7 +141,7 @@ impl Peer {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
-                                match self.handle_peer_message(message, writer, outbound_messages).await {
+                                match self.handle_peer_message(message, &mut writer, outbound_messages).await {
                                     Ok(()) => continue,
                                     Err(e) => {
                                         match e {
@@ -166,7 +160,7 @@ impl Peer {
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
-                            match self.main_thread_request(message, writer, outbound_messages).await {
+                            match self.main_thread_request(message, &mut writer, outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {

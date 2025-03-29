@@ -24,9 +24,9 @@ impl V1MessageParser {
     }
 
     async fn do_read_message(&mut self) -> Result<Option<NetworkMessage>, PeerReadError> {
-        let mut stream = self.stream.lock().await;
         let mut message_buf = vec![0_u8; 24];
-        let _ = stream
+        let _ = self
+            .stream
             .read_exact(&mut message_buf)
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
@@ -42,7 +42,8 @@ impl V1MessageParser {
             return Err(PeerReadError::Deserialization);
         }
         let mut contents_buf = vec![0_u8; header.length as usize];
-        let _ = stream
+        let _ = self
+            .stream
             .read_exact(&mut contents_buf)
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
@@ -70,9 +71,9 @@ impl V2MessageParser {
     }
 
     async fn do_read_message(&mut self) -> Result<Option<NetworkMessage>, PeerReadError> {
-        let mut stream = self.stream.lock().await;
         let mut len_buf = [0; 3];
-        let _ = stream
+        let _ = self
+            .stream
             .read_exact(&mut len_buf)
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
@@ -81,7 +82,8 @@ impl V2MessageParser {
             return Err(PeerReadError::TooManyMessages);
         }
         let mut response_message = vec![0; message_len];
-        let _ = stream
+        let _ = self
+            .stream
             .read_exact(&mut response_message)
             .await
             .map_err(|_| PeerReadError::ReadBuffer)?;
