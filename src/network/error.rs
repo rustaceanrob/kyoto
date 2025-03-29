@@ -29,7 +29,7 @@ impl_sourceless_error!(PeerReadError);
 
 // TODO: (@leonardo) Should the error variants wrap inner errors for richer information ?
 #[derive(Debug)]
-pub enum PeerError {
+pub(crate) enum PeerError {
     ConnectionFailed,
     MessageEncryption,
     MessageSerialization,
@@ -39,6 +39,7 @@ pub enum PeerError {
     DisconnectCommand,
     Reader,
     UnreachableSocketAddr,
+    Socks5(Socks5Error),
 }
 
 impl core::fmt::Display for PeerError {
@@ -68,11 +69,49 @@ impl core::fmt::Display for PeerError {
             PeerError::MessageEncryption => {
                 write!(f, "encrypting a serialized message failed.")
             }
+            PeerError::Socks5(err) => {
+                write!(f, "could not connect via Socks5 proxy: {err}")
+            }
         }
     }
 }
 
 impl_sourceless_error!(PeerError);
+
+#[derive(Debug, Clone)]
+pub(crate) enum Socks5Error {
+    WrongVersion,
+    AuthRequired,
+    ConnectionTimeout,
+    ConnectionFailed,
+    IO,
+}
+
+impl core::fmt::Display for Socks5Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Socks5Error::WrongVersion => write!(f, "server responded with an unsupported version."),
+            Socks5Error::AuthRequired => write!(f, "server requires authentication."),
+            Socks5Error::ConnectionTimeout => write!(f, "connection to server timed out."),
+            Socks5Error::ConnectionFailed => write!(
+                f,
+                "the server could not connect to the requested destination."
+            ),
+            Socks5Error::IO => write!(
+                f,
+                "reading or writing to the TCP stream failed unexpectedly."
+            ),
+        }
+    }
+}
+
+impl_sourceless_error!(Socks5Error);
+
+impl From<std::io::Error> for Socks5Error {
+    fn from(_value: std::io::Error) -> Self {
+        Socks5Error::IO
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum DnsBootstrapError {
