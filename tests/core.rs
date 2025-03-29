@@ -644,7 +644,7 @@ async fn signet_syncs() {
         .into();
     let mut set = HashSet::new();
     set.insert(address);
-    let host = (IpAddr::from(Ipv4Addr::new(68, 47, 229, 218)), None);
+    let host = (IpAddr::from(Ipv4Addr::new(174, 50, 212, 60)), None);
     let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Signet);
     let (node, client) = builder
         .add_peer(host)
