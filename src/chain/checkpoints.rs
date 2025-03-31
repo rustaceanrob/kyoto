@@ -103,6 +103,14 @@ pub const SIGNET_HEADER_CP: &[(Height, &str)] = &[
         220000,
         "000000680963d5a7ed89654890b48030378b5df0a2155b7ef704ffe8a9dd2b61",
     ),
+    (
+        230000,
+        "000001017b2b9739c3eec58043fa917e5f2fe8dcbb2d9eb90b6c5dcb7d408456",
+    ),
+    (
+        240000,
+        "0000008103f982b7125a841eddc06102c288c318203f0146c1f48f4c5fa63cdd",
+    ),
 ];
 
 /// Known block hashes for Testnet4.
@@ -130,6 +138,14 @@ pub const TESTNET4_HEADER_CP: &[(Height, &str)] = &[
     (
         50_000,
         "00000000e2c8c94ba126169a88997233f07a9769e2b009fb10cad0e893eff2cb",
+    ),
+    (
+        60_000,
+        "000000009fa917488fa662d012d41dc6a1d3221244cc37ac78d83935d03009a3",
+    ),
+    (
+        70_000,
+        "00000000f35119c48a72d7ce8cdc0e26cfda43be3c2619d953d3a7ac30ce36f0",
     ),
 ];
 
@@ -486,6 +502,14 @@ pub const MAINNET_HEADER_CP: &[(Height, &str)] = &[
     (
         870000,
         "0000000000000000000152dd9d6059126e4e4dbc2732246bef2b8496ef1d971d",
+    ),
+    (
+        880000,
+        "000000000000000000010b17283c3c400507969a9c2afd1dcf2082ec5cca2880",
+    ),
+    (
+        890000,
+        "00000000000000000001f49fb5fb37753c06d78f1a811d707aebf6194bb147e5",
     ),
 ];
 
