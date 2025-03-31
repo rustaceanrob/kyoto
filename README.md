@@ -101,8 +101,6 @@ async fn main() {
 
 The `kyoto` core library with default features supports an MSRV of Rust 1.63.
 
-While connections over the Tor protocol are supported by the feature `tor`, the dependencies required cannot support the MSRV. As such, no MSRV guarantees will be made when using Tor, and the feature should be considered experimental.
-
 ## Integration Testing
 
 The preferred workflow is by using `just`. If you do not have `just` installed, check out the [installation page](https://just.systems/man/en/chapter_4.html).

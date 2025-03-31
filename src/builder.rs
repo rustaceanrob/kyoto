@@ -11,11 +11,12 @@ use crate::db::error::SqlInitializationError;
 #[cfg(feature = "database")]
 use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
+use crate::network::ConnectionType;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{ConnectionType, FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
+use crate::{FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "database")]
 /// The default node returned from the [`NodeBuilder`](crate::core).
@@ -149,12 +150,6 @@ impl NodeBuilder {
         self
     }
 
-    /// Set the desired communication channel. Either directly over TCP or over the Tor network.
-    pub fn connection_type(mut self, connection_type: ConnectionType) -> Self {
-        self.config.connection_type = connection_type;
-        self
-    }
-
     /// Set the time duration a peer has to respond to a message from the local node.
     ///
     /// ## Note
@@ -190,6 +185,15 @@ impl NodeBuilder {
         let ip_addr = resolver.into();
         let socket_addr = SocketAddr::new(ip_addr, DNS_RESOLVER_PORT);
         self.config.dns_resolver = DnsResolver { socket_addr };
+        self
+    }
+
+    /// Route network traffic through a Tor daemon using a Socks5 proxy. Currently, proxies
+    /// must be reachable by IP address.
+    pub fn socks5_proxy(mut self, proxy: impl Into<SocketAddr>) -> Self {
+        let ip_addr = proxy.into();
+        let connection = ConnectionType::Socks5Proxy(ip_addr);
+        self.config.connection_type = connection;
         self
     }
 

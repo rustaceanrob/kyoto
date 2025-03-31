@@ -31,18 +31,10 @@ tokio = { version = "1", default-features = false, features = [
 
 # Optional dependencies
 rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
-arti-client = { version = "0.21.0", features = [
-    "rustls",
-    "tokio",
-    "onion-service-client",
-    "experimental-api",
-], default-features = false, optional = true }
-tor-rtcompat = { version = "0.21.0", features = ["tokio"], optional = true }
 
 [features]
 default = ["database"]
 database = ["rusqlite"]
-tor = ["arti-client", "tor-rtcompat"]
 filter-control = []
 
 [dev-dependencies]
@@ -72,11 +64,6 @@ path = "example/testnet4.rs"
 [[example]]
 name = "rescan"
 path = "example/rescan.rs"
-
-[[example]]
-name = "tor"
-path = "example/tor.rs"
-required-features = ["tor"]
 
 [[example]]
 name = "managed"
