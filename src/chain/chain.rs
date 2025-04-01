@@ -697,6 +697,7 @@ impl<H: HeaderStore> Chain<H> {
         if self.is_filters_synced() {
             return Ok(None);
         }
+        #[allow(unused_mut)] // Some trickiness with the filter-control feature
         let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self.cf_header_chain.hash_at(&filter_message.block_hash);
         // Disallow any filter that we do not have a block hash for

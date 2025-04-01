@@ -109,8 +109,6 @@ pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, Fet
 use crate::error::FetchBlockError;
 #[cfg(feature = "filter-control")]
 use filters::Filter;
-#[cfg(feature = "filter-control")]
-use std::collections::HashSet;
 
 use std::net::{IpAddr, SocketAddr};
 
