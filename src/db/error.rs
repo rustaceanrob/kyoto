@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 /// Errors when initializing a SQL-based backend.
 #[cfg(feature = "rusqlite")]
 #[derive(Debug)]
