@@ -8,7 +8,7 @@ use std::{
 use bitcoin::{
     block::Header,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    Block, BlockHash, CompactTarget, Network, ScriptBuf, TxOut, Work,
+    Block, BlockHash, CompactTarget, Network, ScriptBuf, TxOut,
 };
 use tokio::sync::Mutex;
 
@@ -62,7 +62,6 @@ pub(crate) struct Chain<H: HeaderStore> {
     dialog: Arc<Dialog>,
 }
 
-#[allow(dead_code)]
 impl<H: HeaderStore> Chain<H> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -163,21 +162,6 @@ impl<H: HeaderStore> Chain<H> {
     // This header chain contains a block hash
     pub(crate) fn contains_header(&self, header: &Header) -> bool {
         self.header_chain.contains_header(header)
-    }
-
-    // Canoncial chainwork
-    pub(crate) fn chainwork(&self) -> Work {
-        self.header_chain.chainwork()
-    }
-
-    // Calculate the chainwork after a fork height to evalutate the fork
-    pub(crate) fn chainwork_after_height(&self, height: u32) -> Work {
-        self.header_chain.chainwork_after_height(height)
-    }
-
-    // Human readable chainwork
-    pub(crate) fn log2_work(&self) -> f64 {
-        self.header_chain.log2_work()
     }
 
     // Have we hit the known checkpoints
@@ -868,12 +852,6 @@ impl<H: HeaderStore> Chain<H> {
     // Reset the compact filter queue because we received a new block
     pub(crate) fn clear_compact_filter_queue(&mut self) {
         self.cf_header_chain.clear_queue();
-    }
-
-    // We found a reorg and some filters are no longer valid.
-    async fn clear_filter_headers(&mut self) {
-        self.cf_header_chain.clear_queue();
-        self.cf_header_chain.clear_headers();
     }
 
     // Clear the filter header cache to rescan the filters for new scripts.

@@ -120,16 +120,6 @@ impl HeaderChain {
         }
     }
 
-    // Human readable chainwork
-    pub(crate) fn log2_work(&self) -> f64 {
-        let work = self
-            .headers
-            .values()
-            .map(|header| header.work().log2())
-            .reduce(|acc, next| acc + next);
-        work.unwrap_or(0.0)
-    }
-
     // The block locators are a way to inform our peer of blocks we know about
     pub(crate) fn locators(&mut self) -> Vec<BlockHash> {
         let mut locators = Vec::new();
