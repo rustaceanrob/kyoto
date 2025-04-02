@@ -9,14 +9,29 @@ pub mod checkpoints;
 /// Errors associated with the blockchain representation.
 #[allow(dead_code)]
 pub(crate) mod error;
+pub(crate) mod graph;
 pub(crate) mod header_batch;
 pub(crate) mod header_chain;
 
 use std::collections::HashMap;
 
+use bitcoin::block::Header;
+
 use crate::network::PeerId;
 
 type Height = u32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IndexedHeader {
+    pub height: u32,
+    pub header: Header,
+}
+
+impl IndexedHeader {
+    pub(crate) fn new(height: u32, header: Header) -> Self {
+        Self { height, header }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct HeightMonitor {
