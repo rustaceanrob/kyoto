@@ -8,7 +8,7 @@ use std::{
 use bitcoin::{
     block::Header,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    Block, BlockHash, CompactTarget, Network, ScriptBuf, TxOut,
+    Block, BlockHash, Network, ScriptBuf, TxOut,
 };
 use tokio::sync::Mutex;
 
@@ -16,7 +16,7 @@ use super::{
     block_queue::BlockQueue,
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, HeaderSyncError},
-    header_chain::HeaderChain,
+    graph::{AcceptHeaderChanges, BlockTree, HeaderRejection, Tip},
     HeightMonitor,
 };
 #[cfg(feature = "filter-control")]
@@ -27,7 +27,9 @@ use crate::messages::BlockRequest;
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
-    db::traits::HeaderStore,
+    db::{traits::HeaderStore, BlockHeaderChanges},
+    dialog::Dialog,
+    error::HeaderPersistenceError,
     filters::{
         cfheader_batch::CFHeaderBatch,
         cfheader_chain::{AppendAttempt, CFHeaderChain, QueuedCFHeader},
@@ -35,22 +37,16 @@ use crate::{
         filter_chain::FilterChain,
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
+    messages::{Event, Warning},
     IndexedBlock,
-    {
-        dialog::Dialog,
-        error::HeaderPersistenceError,
-        messages::{Event, Warning},
-    },
 };
 
-const MAX_REORG_DEPTH: u32 = 5_000;
 const REORG_LOOKBACK: u32 = 7;
-const MAX_HEADER_SIZE: usize = 20_000;
 const FILTER_BASIC: u8 = 0x00;
 
 #[derive(Debug)]
 pub(crate) struct Chain<H: HeaderStore> {
-    header_chain: HeaderChain,
+    pub(crate) header_chain: BlockTree,
     cf_header_chain: CFHeaderChain,
     filter_chain: FilterChain,
     checkpoints: HeaderCheckpoints,
@@ -74,7 +70,7 @@ impl<H: HeaderStore> Chain<H> {
         db: H,
         quorum_required: usize,
     ) -> Self {
-        let header_chain = HeaderChain::new(anchor);
+        let header_chain = BlockTree::new(anchor, network);
         let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
         let filter_chain = FilterChain::new(anchor);
         Chain {
@@ -91,21 +87,6 @@ impl<H: HeaderStore> Chain<H> {
         }
     }
 
-    // Top of the chain
-    pub(crate) fn tip(&self) -> BlockHash {
-        self.header_chain.tip()
-    }
-
-    // The canoncial height of the chain, one less than the length
-    pub(crate) fn height(&self) -> u32 {
-        self.header_chain.height()
-    }
-
-    // This header chain contains a block hash in memory
-    pub(crate) fn contains_hash(&self, blockhash: BlockHash) -> bool {
-        self.header_chain.contains_hash(blockhash)
-    }
-
     // This header chain contains a block hash, potentially checking the disk
     pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
         match self.header_chain.height_of_hash(blockhash) {
@@ -118,7 +99,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // This header chain contains a block hash in memory
-    pub(crate) fn cached_header_at_height(&self, height: u32) -> Option<&Header> {
+    pub(crate) fn cached_header_at_height(&self, height: u32) -> Option<Header> {
         self.header_chain.header_at_height(height)
     }
 
@@ -128,7 +109,7 @@ impl<H: HeaderStore> Chain<H> {
         height: u32,
     ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
         match self.header_chain.header_at_height(height) {
-            Some(header) => Ok(Some(*header)),
+            Some(header) => Ok(Some(header)),
             None => {
                 let mut db = self.db.lock().await;
                 let header_opt = db.header_at(height).await;
@@ -159,11 +140,6 @@ impl<H: HeaderStore> Chain<H> {
         }
     }
 
-    // This header chain contains a block hash
-    pub(crate) fn contains_header(&self, header: &Header) -> bool {
-        self.header_chain.contains_header(header)
-    }
-
     // Have we hit the known checkpoints
     pub(crate) fn checkpoints_complete(&self) -> bool {
         self.checkpoints.is_exhausted()
@@ -171,7 +147,11 @@ impl<H: HeaderStore> Chain<H> {
 
     // The last ten heights and headers in the chain
     pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
-        self.header_chain.last_ten()
+        self.header_chain
+            .iter()
+            .take(10)
+            .map(|index| (index.height, index.header))
+            .collect()
     }
 
     // Do we have best known height and is our height equal to it
@@ -180,7 +160,7 @@ impl<H: HeaderStore> Chain<H> {
     pub(crate) async fn is_synced(&self) -> bool {
         let height_lock = self.heights.lock().await;
         match height_lock.max() {
-            Some(peer_max) => self.height() >= peer_max,
+            Some(peer_max) => self.header_chain.height() >= peer_max,
             None => false,
         }
     }
@@ -189,17 +169,17 @@ impl<H: HeaderStore> Chain<H> {
     pub(crate) async fn locators(&mut self) -> Vec<BlockHash> {
         // If a peer is sending us a fork at this point they are faulty.
         if !self.checkpoints_complete() {
-            vec![self.tip()]
+            vec![self.header_chain.tip_hash()]
         } else {
             // We should try to catch any reorgs if we are on a fresh start.
             // The database may have a header that is useful to the remote node
             // that is not currently in memory.
-            if self.header_chain.inner_len() < REORG_LOOKBACK as usize {
-                let older_locator = self.height().saturating_sub(REORG_LOOKBACK);
+            if self.header_chain.internally_cached_headers() < REORG_LOOKBACK as usize {
+                let older_locator = self.header_chain.height().saturating_sub(REORG_LOOKBACK);
                 let mut db_lock = self.db.lock().await;
                 let hash = db_lock.hash_at(older_locator).await;
                 if let Ok(Some(locator)) = hash {
-                    vec![self.tip(), locator]
+                    vec![self.header_chain.tip_hash(), locator]
                 } else {
                     // We couldn't find a header deep enough to send over. Just proceed as usual
                     self.header_chain.locators()
@@ -212,29 +192,8 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Write the chain to disk
-    pub(crate) async fn flush_to_disk(&mut self) {
-        if let Err(e) = self
-            .db
-            .lock()
-            .await
-            .write(self.header_chain.headers())
-            .await
-        {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: format!("Could not save headers to disk: {e}"),
-            });
-        }
-    }
-
-    // Write the chain to disk, overriding previous heights
-    pub(crate) async fn flush_over_height(&mut self, height: u32) {
-        if let Err(e) = self
-            .db
-            .lock()
-            .await
-            .write_over(self.header_chain.headers(), height)
-            .await
-        {
+    pub(crate) async fn write_changes(&mut self, changes: BlockHeaderChanges) {
+        if let Err(e) = self.db.lock().await.write(changes).await {
             self.dialog.send_warning(Warning::FailedPersistence {
                 warning: format!("Could not save headers to disk: {e}"),
             });
@@ -247,87 +206,156 @@ impl<H: HeaderStore> Chain<H> {
             .db
             .lock()
             .await
-            .load(self.height() + 1..)
+            .load(self.header_chain.height() + 1..)
             .await
             .map_err(HeaderPersistenceError::Database)?;
-        if let Some(first) = loaded_headers.values().next() {
-            if first.prev_blockhash.ne(&self.tip()) {
-                self.dialog.send_warning(Warning::InvalidStartHeight);
-                // The header chain did not align, so just start from the anchor
-                return Err(HeaderPersistenceError::CannotLocateHistory);
-            } else if loaded_headers
-                .iter()
-                .zip(loaded_headers.iter().skip(1))
-                .any(|(first, second)| first.1.block_hash().ne(&second.1.prev_blockhash))
-            {
-                self.dialog.send_warning(Warning::CorruptedHeaders);
-                return Err(HeaderPersistenceError::HeadersDoNotLink);
-            }
-            loaded_headers.iter().for_each(|header| {
-                if let Some(checkpoint) = self.checkpoints.next() {
-                    if header.1.block_hash().eq(&checkpoint.hash) {
-                        self.checkpoints.advance()
+        for (height, header) in loaded_headers {
+            let apply_header_changes = self.header_chain.accept_header(header);
+            match apply_header_changes {
+                AcceptHeaderChanges::Accepted { connected_at } => {
+                    if height.ne(&connected_at.height) {
+                        self.dialog.send_warning(Warning::CorruptedHeaders);
+                        return Err(HeaderPersistenceError::HeadersDoNotLink);
+                    }
+                    if let Some(checkpoint) = self.checkpoints.next() {
+                        if connected_at.header.block_hash().eq(&checkpoint.hash) {
+                            self.checkpoints.advance()
+                        }
                     }
                 }
-            })
+                AcceptHeaderChanges::Rejected(reject_reason) => match reject_reason {
+                    HeaderRejection::UnknownPrevHash(_) => {
+                        return Err(HeaderPersistenceError::CannotLocateHistory);
+                    }
+                    HeaderRejection::InvalidPow { expected, got } => {
+                        crate::log!(
+                            self.dialog,
+                            format!(
+                                "Unexpected invalid proof of work when importing a block header. expected {}, got: {}",
+                                expected.to_consensus(),
+                                got.to_consensus()
+                            )
+                        );
+                    }
+                },
+                _ => (),
+            }
         }
-        self.header_chain.set_headers(loaded_headers);
         Ok(())
-    }
-
-    // If the number of headers in memory gets too large, move some of them to the disk
-    pub(crate) async fn manage_memory(&mut self) {
-        if self.header_chain.inner_len() > MAX_HEADER_SIZE {
-            self.flush_to_disk().await;
-            self.header_chain.move_up();
-        }
     }
 
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(&mut self, message: Vec<Header>) -> Result<(), HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // If our chain already has the last header in the message there is no new information
-        if self.contains_hash(header_batch.last().block_hash()) {
+        if self.header_chain.contains(header_batch.last().block_hash()) {
             return Ok(());
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
-        // How we handle forks depends on if we are caught up through all checkpoints or not
-        match self.checkpoints.next().cloned() {
-            Some(checkpoint) => {
-                self.catch_up_sync(header_batch, checkpoint).await?;
-            }
-            None => {
-                // Nothing left to do but add the headers to the chain
-                if self.tip().eq(&header_batch.first().prev_blockhash) {
-                    self.audit_difficulty(self.height(), &header_batch).await?;
-                    self.header_chain.extend(header_batch.inner());
-                    return Ok(());
+        let next_checkpoint = self.checkpoints.next().copied();
+        for header in header_batch.into_iter() {
+            let changes = self.header_chain.accept_header(header);
+            match changes {
+                AcceptHeaderChanges::Accepted { connected_at } => {
+                    crate::log!(
+                        self.dialog,
+                        format!(
+                            "Chain updated {} -> {}",
+                            connected_at.height,
+                            connected_at.header.block_hash()
+                        )
+                    );
+                    self.write_changes(BlockHeaderChanges::Connected(connected_at))
+                        .await;
+                    if let Some(checkpoint) = next_checkpoint {
+                        if connected_at.height.eq(&checkpoint.height) {
+                            if connected_at.header.block_hash().eq(&checkpoint.hash) {
+                                crate::log!(
+                                    self.dialog,
+                                    format!("Found checkpoint, height: {}", checkpoint.height)
+                                );
+                                self.checkpoints.advance();
+                            } else {
+                                self.dialog
+                    .send_warning(
+                        Warning::UnexpectedSyncError { warning: "Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into() }
+                    );
+                                return Err(HeaderSyncError::InvalidCheckpoint);
+                            }
+                        }
+                    }
                 }
-                // We see if we have this previous hash in the database, and reload our
-                // chain from that hash if so.
-                let fork_start_hash = header_batch.first().prev_blockhash;
-                if !self.contains_hash(fork_start_hash) {
-                    self.load_fork(&header_batch).await?;
+                AcceptHeaderChanges::Duplicate => (),
+                AcceptHeaderChanges::ExtendedFork { connected_at } => match next_checkpoint {
+                    Some(_checkpoint_expected) => {
+                        crate::log!(self.dialog, "Detected fork before known checkpoint");
+                        self.dialog.send_warning(Warning::UnexpectedSyncError {
+                            warning: "Pre-checkpoint fork".into(),
+                        });
+                    }
+                    None => {
+                        crate::log!(
+                            self.dialog,
+                            format!("Fork created or extended {}", connected_at.height)
+                        )
+                    }
+                },
+                AcceptHeaderChanges::Reorganization {
+                    accepted,
+                    disconnected,
+                } => {
+                    crate::log!(self.dialog, "Valid reorganization found");
+                    self.clear_compact_filter_queue();
+                    let removed_hashes: Vec<BlockHash> = disconnected
+                        .iter()
+                        .map(|index| index.header.block_hash())
+                        .collect();
+                    self.cf_header_chain.remove(&removed_hashes);
+                    self.filter_chain.remove(&removed_hashes);
+                    self.block_queue.remove(&removed_hashes);
+                    self.write_changes(BlockHeaderChanges::Reorganized {
+                        accepted,
+                        reorganized: disconnected.clone(),
+                    })
+                    .await;
+                    let disconnected_event =
+                        Event::BlocksDisconnected(disconnected.into_iter().rev().collect());
+                    self.dialog.send_event(disconnected_event);
                 }
-                // Check if the fork has more work.
-                self.evaluate_fork(&header_batch).await?;
+                AcceptHeaderChanges::Rejected(rejected_header) => match rejected_header {
+                    HeaderRejection::InvalidPow {
+                        expected: _,
+                        got: _,
+                    } => return Err(HeaderSyncError::InvalidBits),
+                    HeaderRejection::UnknownPrevHash(hash) => {
+                        let mut db = self.db.lock().await;
+                        let header_res = db.height_of(&hash).await.ok().flatten();
+                        match header_res {
+                            Some(height) => {
+                                let tip = Tip::from_checkpoint(height, hash);
+                                self.header_chain = BlockTree::new(tip, self.network);
+                                drop(db);
+                                if let Err(e) = self.load_headers().await {
+                                    crate::log!(self.dialog,
+                                        "Failure when attempting to fetch previous headers while syncing"
+                                    );
+                                    self.dialog.send_warning(Warning::FailedPersistence {
+                                        warning: format!("Persistence failure: {e}"),
+                                    });
+                                }
+                            }
+                            None => return Err(HeaderSyncError::FloatingHeaders),
+                        }
+                    }
+                },
             }
-        };
-        self.manage_memory().await;
+        }
         Ok(())
     }
 
     // These are invariants in all batches of headers we receive
     fn sanity_check(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        let initially_syncing = !self.checkpoints.is_exhausted();
-        // Some basic sanity checks that should result in peer bans on errors
-
-        // If we aren't synced up to the checkpoints we don't accept any forks
-        if initially_syncing && self.tip().ne(&header_batch.first().prev_blockhash) {
-            return Err(HeaderSyncError::PreCheckpointFork);
-        }
-
         // All the headers connect with each other and is the difficulty adjustment not absurd
         if !header_batch.connected() {
             return Err(HeaderSyncError::HeadersNotConnected);
@@ -345,228 +373,6 @@ impl<H: HeaderStore> Chain<H> {
         Ok(())
     }
 
-    /// Sync with extra requirements on checkpoints and forks
-    async fn catch_up_sync(
-        &mut self,
-        header_batch: HeadersBatch,
-        checkpoint: HeaderCheckpoint,
-    ) -> Result<(), HeaderSyncError> {
-        self.audit_difficulty(self.height(), &header_batch).await?;
-        // Eagerly append the batch to the chain
-        self.header_chain.extend(header_batch.inner());
-        // We need to check a hard-coded checkpoint
-        if self.height().ge(&checkpoint.height) {
-            if self
-                .blockhash_at_height(checkpoint.height)
-                .await
-                .ok_or(HeaderSyncError::InvalidCheckpoint)?
-                .eq(&checkpoint.hash)
-            {
-                crate::log!(
-                    self.dialog,
-                    format!("Found checkpoint, height: {}", checkpoint.height)
-                );
-                crate::log!(self.dialog, "Writing progress to disk...");
-                self.checkpoints.advance();
-                self.flush_to_disk().await;
-            } else {
-                self.dialog
-                    .send_warning(
-                        Warning::UnexpectedSyncError { warning: "Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into() }
-                    );
-                return Err(HeaderSyncError::InvalidCheckpoint);
-            }
-        }
-        Ok(())
-    }
-
-    // Audit the difficulty adjustment of the blocks we received
-
-    // This function draws from the neutrino implemention, where even if a fork is valid
-    // we only accept it if there is more work provided. otherwise, we disconnect the peer sending
-    // us this fork
-    async fn evaluate_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        self.dialog.send_warning(Warning::EvaluatingFork);
-        // We only care about the headers these two chains do not have in common
-        let uncommon: Vec<Header> = header_batch
-            .inner()
-            .iter()
-            .filter(|header| !self.contains_header(header))
-            .copied()
-            .collect();
-        let challenge_chainwork = uncommon
-            .iter()
-            .map(|header| header.work())
-            .reduce(|acc, next| acc + next)
-            .ok_or(HeaderSyncError::FloatingHeaders)?;
-        let stem_position = self
-            .height_of_hash(
-                uncommon
-                    .first()
-                    .ok_or(HeaderSyncError::FloatingHeaders)?
-                    .prev_blockhash,
-            )
-            .await;
-        if let Some(stem) = stem_position {
-            let current_chainwork = self.header_chain.chainwork_after_height(stem);
-            if current_chainwork.lt(&challenge_chainwork) {
-                crate::log!(self.dialog, "Valid reorganization found");
-                let reorged = self.header_chain.extend(&uncommon);
-                let removed_hashes = &reorged
-                    .iter()
-                    .map(|disconnect| disconnect.header.block_hash())
-                    .collect::<Vec<BlockHash>>();
-                self.clear_compact_filter_queue();
-                self.cf_header_chain.remove(removed_hashes);
-                self.filter_chain.remove(removed_hashes);
-                self.block_queue.remove(removed_hashes);
-                self.dialog.send_event(Event::BlocksDisconnected(reorged));
-                self.flush_over_height(stem).await;
-                Ok(())
-            } else {
-                self.dialog.send_warning(Warning::UnexpectedSyncError {
-                    warning: "Peer sent us a fork with less work than the current chain".into(),
-                });
-                Err(HeaderSyncError::LessWorkFork)
-            }
-        } else {
-            Err(HeaderSyncError::FloatingHeaders)
-        }
-    }
-
-    async fn audit_difficulty(
-        &mut self,
-        height_start: u32,
-        batch: &HeadersBatch,
-    ) -> Result<(), HeaderSyncError> {
-        let params = self.network.params();
-        if params.no_pow_retargeting {
-            return Ok(());
-        }
-        if params.allow_min_difficulty_blocks {
-            return Ok(());
-        }
-        // Next adjustment height = (floor(current height / interval) + 1) * interval
-        let adjustment_interval = params.difficulty_adjustment_interval() as u32;
-        let next_multiple = (height_start / adjustment_interval) + 1;
-        let next_adjustment_height = next_multiple * adjustment_interval;
-        // The height in the batch where the next adjustment is contained
-        let offset = next_adjustment_height - height_start;
-        // We already audited the difficulty last batch
-        if offset == 0 {
-            return Ok(());
-        }
-        // We cannot audit the difficulty yet, as the next adjustment will be contained in the next batch
-        if offset > batch.len() as u32 {
-            if let Some(tip) = self.cached_header_at_height(height_start) {
-                if batch.inner().iter().any(|header| header.bits.ne(&tip.bits)) {
-                    self.dialog
-                    .send_warning(Warning::UnexpectedSyncError {
-                        warning:
-                            "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
-                                .into(),
-                    });
-                    return Err(HeaderSyncError::MiscalculatedDifficulty);
-                }
-            }
-            return Ok(());
-        }
-        // The difficulty should be adjusted at this height
-        let audit_index = (offset - 1) as usize;
-        // This is the timestamp used to start the boundary
-        let last_epoch_start_index = next_adjustment_height - adjustment_interval;
-        // This is the timestamp used to end the boundary
-        let last_epoch_boundary = if offset == 1 {
-            // This is the case where the last epoch ends on the tip of our chain
-            self.fetch_header(height_start).await.ok().flatten()
-        } else {
-            // Otherwise we can simply index into the batch and find the header at the boundary'
-            let last_epoch_boundary_index = (offset - 2) as usize;
-            batch.get(last_epoch_boundary_index).copied()
-        };
-        // The start of the epoch will always be a member of our chain because the batch size
-        // is less than the adjustment interval
-        let last_epoch_start = self
-            .fetch_header(last_epoch_start_index)
-            .await
-            .ok()
-            .flatten();
-
-        let audit = batch.get_slice(audit_index..);
-
-        match audit {
-            Some(headers) => match last_epoch_start.zip(last_epoch_boundary) {
-                Some((first, second)) => {
-                    let target =
-                        CompactTarget::from_header_difficulty_adjustment(first, second, params);
-                    for header in headers {
-                        let retarget_bits = header.bits;
-                        if retarget_bits.ne(&target) {
-                            self.dialog
-                                .send_warning(Warning::UnexpectedSyncError {
-                                    warning:
-                                        "The remote peer miscalculated the difficulty adjustment when syncing a batch of headers"
-                                            .into(),
-                                });
-                            return Err(HeaderSyncError::MiscalculatedDifficulty);
-                        }
-                    }
-                    return Ok(());
-                }
-                None => {
-                    crate::log!(
-                        self.dialog,
-                        "Unable to audit difficulty. This is likely due to no history present in the header store"
-                    );
-                }
-            },
-            None => {
-                self.dialog.send_warning(Warning::UnexpectedSyncError {
-                    warning: "Unable to audit the difficulty adjustment due to an index overflow"
-                        .into(),
-                });
-            }
-        }
-        Ok(())
-    }
-
-    // We don't have a header in memory that we need to evaluate a fork.
-    // We check if we have it on disk, and load some more headers into memory.
-    // This call occurs if we sync to a block that is later reorganized out of the chain,
-    // but we have restarted our node in between these events.
-    async fn load_fork(&mut self, header_batch: &HeadersBatch) -> Result<(), HeaderSyncError> {
-        let prev_hash = header_batch.first().prev_blockhash;
-        let maybe_height = {
-            let mut db_lock = self.db.lock().await;
-            db_lock
-                .height_of(&prev_hash)
-                .await
-                .map_err(|_| HeaderSyncError::DbError)?
-        };
-        match maybe_height {
-            Some(height) => {
-                // This is a very generous check to ensure a peer cannot get us to load an
-                // absurd amount of headers into RAM. Because headers come in batches of 2,000,
-                // we wouldn't accept a fork of a depth more than around 2,000 anyway.
-                // The only reorgs that have ever been recorded are of depth 1.
-                if self.height() - height > MAX_REORG_DEPTH {
-                    return Err(HeaderSyncError::FloatingHeaders);
-                } else {
-                    let older_anchor = HeaderCheckpoint::new(height, prev_hash);
-                    self.header_chain = HeaderChain::new(older_anchor);
-                    self.cf_header_chain =
-                        CFHeaderChain::new(older_anchor, self.cf_header_chain.quorum_required());
-                    self.filter_chain = FilterChain::new(older_anchor);
-                }
-            }
-            None => return Err(HeaderSyncError::FloatingHeaders),
-        }
-        self.load_headers()
-            .await
-            .map_err(|_| HeaderSyncError::DbError)?;
-        Ok(())
-    }
-
     // Sync the compact filter headers, possibly encountering conflicts
     pub(crate) async fn sync_cf_headers(
         &mut self,
@@ -577,10 +383,10 @@ impl<H: HeaderStore> Chain<H> {
         let peer_max = self.heights.lock().await.max();
         self.dialog
             .chain_update(
-                self.height(),
+                self.header_chain.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                peer_max.unwrap_or(self.height()),
+                peer_max.unwrap_or(self.header_chain.height()),
             )
             .await;
         match batch.last_header() {
@@ -659,7 +465,7 @@ impl<H: HeaderStore> Chain<H> {
         let stop_hash = self
             .blockhash_at_height(stop_hash_index)
             .await
-            .unwrap_or(self.tip());
+            .unwrap_or(self.header_chain.tip_hash());
         self.cf_header_chain.set_last_stop_hash(stop_hash);
         GetCFHeaders {
             filter_type: FILTER_BASIC,
@@ -670,7 +476,9 @@ impl<H: HeaderStore> Chain<H> {
 
     // Are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
-        self.height().le(&self.cf_header_chain.height())
+        self.header_chain
+            .height()
+            .le(&self.cf_header_chain.height())
     }
 
     // Handle a new filter
@@ -741,14 +549,14 @@ impl<H: HeaderStore> Chain<H> {
         let stop_hash = self
             .blockhash_at_height(stop_hash_index)
             .await
-            .unwrap_or(self.tip());
+            .unwrap_or(self.header_chain.tip_hash());
         let peer_max = self.heights.lock().await.max();
         self.dialog
             .chain_update(
-                self.height(),
+                self.header_chain.height(),
                 self.cf_header_chain.height(),
                 self.filter_chain.height(),
-                peer_max.unwrap_or(self.height()),
+                peer_max.unwrap_or(self.header_chain.height()),
             )
             .await;
         self.filter_chain.set_last_stop_hash(stop_hash);
@@ -761,7 +569,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
-        self.height().le(&self.filter_chain.height())
+        self.header_chain.height().le(&self.filter_chain.height())
     }
 
     // Pop a block from the queue of interesting blocks
@@ -876,10 +684,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::{
-        chain::{
-            checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
-            error::HeaderSyncError,
-        },
+        chain::checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         filters::cfheader_chain::AppendAttempt,
         {
             dialog::Dialog,
@@ -917,66 +722,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_depth_one_fork() {
-        let gen = HeaderCheckpoint::new(
-            7,
-            BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
-                .unwrap(),
-        );
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor, 1);
-        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
-        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
-        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
-        let batch_1 = vec![block_8, block_9, block_10];
-        let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
-        let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
-        let batch_2 = vec![new_block_10];
-        let batch_3 = vec![block_11];
-        let batch_4 = vec![block_9, new_block_10, block_11];
-        let chain_sync = chain.sync_chain(batch_1).await;
-        assert!(chain_sync.is_ok());
-        // Forks of equal height to the chain should just get rejected
-        let fork_sync = chain.sync_chain(batch_2).await;
-        assert!(fork_sync.is_err());
-        assert_eq!(fork_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
-        assert_eq!(10, chain.height());
-        // A peer sent us a block we don't know about yet, but is in the best chain
-        // Best we can do is wait to get the fork from another peer
-        let float_sync = chain.sync_chain(batch_3).await;
-        assert!(float_sync.is_err());
-        assert_eq!(float_sync.err().unwrap(), HeaderSyncError::FloatingHeaders);
-        assert_eq!(10, chain.height());
-        // Now we can accept the fork because it has more work
-        let extend_sync = chain.sync_chain(batch_4.clone()).await;
-        assert_eq!(11, chain.height());
-        assert!(extend_sync.is_ok());
-        assert_eq!(
-            vec![block_8, block_9, new_block_10, block_11],
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(chain.fetch_header(10).await.unwrap().unwrap(), new_block_10);
-        // A new peer sending us these headers should not do anything
-        let dup_sync = chain.sync_chain(batch_4).await;
-        assert_eq!(11, chain.height());
-        assert!(dup_sync.is_ok());
-        assert_eq!(
-            vec![block_8, block_9, new_block_10, block_11],
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[tokio::test]
     async fn test_fork_includes_old_vals() {
         let gen = HeaderCheckpoint::new(
             0,
@@ -994,81 +739,26 @@ mod tests {
         let batch_2 = vec![block_1, block_2, new_block_3, block_4];
         let chain_sync = chain.sync_chain(batch_1).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 3);
-        assert_eq!(
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>(),
-            vec![block_1, block_2, block_3]
-        );
+        assert_eq!(chain.header_chain.height(), 3);
+        let mut index = 1;
+        for block in vec![block_1, block_2, block_3] {
+            assert_eq!(
+                chain.header_chain.block_hash_at_height(index).unwrap(),
+                block.into()
+            );
+            index += 1;
+        }
         let chain_sync = chain.sync_chain(batch_2).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 4);
-        assert_eq!(
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>(),
-            vec![block_1, block_2, new_block_3, block_4]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_depth_two_fork() {
-        let gen = HeaderCheckpoint::new(
-            0,
-            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
-                .unwrap(),
-        );
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor, 1);
-        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
-        let batch_1 = vec![block_1, block_2];
-        let new_block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb5724d5855e66ffff7f2004000000").unwrap()).unwrap();
-        let new_block_2: Header = deserialize(&hex::decode("00000020d1d80f53343a084bd0da6d6ab846f9fe4a133de051ea00e7cae16ed19f601065798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c4d6855e66ffff7f2000000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
-        let batch_2 = vec![new_block_1];
-        let batch_3 = vec![new_block_1, new_block_2];
-        let batch_4 = vec![new_block_1, new_block_2, block_3];
-        let chain_sync = chain.sync_chain(batch_1).await;
-        assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2);
-        assert_eq!(
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>(),
-            vec![block_1, block_2]
-        );
-        let chain_sync = chain.sync_chain(batch_2).await;
-        assert!(chain_sync.is_err());
-        assert_eq!(chain_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
-        assert_eq!(chain.height(), 2);
-        let chain_sync = chain.sync_chain(batch_3).await;
-        assert!(chain_sync.is_err());
-        assert_eq!(chain_sync.err().unwrap(), HeaderSyncError::LessWorkFork);
-        assert_eq!(chain.height(), 2);
-        let chain_sync = chain.sync_chain(batch_4).await;
-        assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 3);
-        assert_eq!(chain.fetch_header(3).await.unwrap().unwrap(), block_3);
-        assert_eq!(
-            chain
-                .header_chain
-                .headers()
-                .values()
-                .copied()
-                .collect::<Vec<_>>(),
-            vec![new_block_1, new_block_2, block_3]
-        );
+        assert_eq!(chain.header_chain.height(), 4);
+        let mut index = 1;
+        for block in vec![block_1, block_2, new_block_3, block_4] {
+            assert_eq!(
+                chain.header_chain.block_hash_at_height(index).unwrap(),
+                block.into()
+            );
+            index += 1;
+        }
     }
 
     #[tokio::test]
@@ -1087,7 +777,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1170,7 +860,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1236,7 +926,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1317,7 +1007,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1409,7 +1099,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1497,7 +1187,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1523,7 +1213,7 @@ mod tests {
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2501);
+        assert_eq!(chain.header_chain.height(), 2501);
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1620,7 +1310,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1658,7 +1348,7 @@ mod tests {
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2501);
+        assert_eq!(chain.header_chain.height(), 2501);
         // Request the CF headers again
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
@@ -1719,7 +1409,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1844,7 +1534,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1865,7 +1555,7 @@ mod tests {
         chain.next_cf_header_message().await;
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2501);
+        assert_eq!(chain.header_chain.height(), 2501);
         assert!(chain.is_synced().await);
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
@@ -1936,7 +1626,7 @@ mod tests {
         let header_batch = vec![block_1, block_2, block_3, block_4];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2500);
+        assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
@@ -1969,7 +1659,7 @@ mod tests {
         assert!(cf_header_sync_res.is_ok());
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.height(), 2501);
+        assert_eq!(chain.header_chain.height(), 2501);
         chain.next_cf_header_message().await;
         let cf_headers = CFHeaders {
             filter_type: 0x00,

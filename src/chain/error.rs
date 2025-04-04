@@ -8,12 +8,10 @@ pub(crate) enum HeaderSyncError {
     HeadersNotConnected,
     InvalidHeaderWork,
     InvalidHeaderTimes,
-    PreCheckpointFork,
     InvalidCheckpoint,
     MiscalculatedDifficulty,
     InvalidBits,
     FloatingHeaders,
-    LessWorkFork,
     DbError,
 }
 
@@ -30,9 +28,6 @@ impl Display for HeaderSyncError {
             HeaderSyncError::InvalidHeaderTimes => {
                 write!(f, "one or more headers does not have a valid block time.")
             }
-            HeaderSyncError::PreCheckpointFork => {
-                write!(f, "the sync peer sent us a discontinuous chain.")
-            }
             HeaderSyncError::InvalidCheckpoint => {
                 write!(f, "a checkpoint in the chain did not match.")
             }
@@ -43,9 +38,6 @@ impl Display for HeaderSyncError {
                 f,
                 "the peer sent us a chain that does not connect to any header of ours."
             ),
-            HeaderSyncError::LessWorkFork => {
-                write!(f, "a peer sent us a fork with less work than our chain.")
-            }
             HeaderSyncError::DbError => write!(f, "the database could not load a fork."),
             HeaderSyncError::InvalidBits => write!(
                 f,

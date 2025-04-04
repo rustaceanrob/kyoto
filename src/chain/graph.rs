@@ -9,6 +9,8 @@ use bitcoin::{
 
 use super::IndexedHeader;
 
+const LOCATOR_INDEX: &[u32] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Height(u32);
 
@@ -28,7 +30,8 @@ impl Height {
         Self(self.0 + 1)
     }
 
-    fn checked_sub(&self, other: Height) -> Option<Self> {
+    fn checked_sub(&self, other: impl Into<Height>) -> Option<Self> {
+        let other = other.into();
         let height_sub_checked = self.0.checked_sub(other.0);
         height_sub_checked.map(Self)
     }
@@ -132,7 +135,7 @@ pub struct BlockTree {
 
 #[allow(unused)]
 impl BlockTree {
-    pub fn new(tip: impl Into<Tip>, network: Network) -> Self {
+    pub(crate) fn new(tip: impl Into<Tip>, network: Network) -> Self {
         let tip = tip.into();
         Self {
             canonical_hashes: BTreeMap::new(),
@@ -143,7 +146,7 @@ impl BlockTree {
         }
     }
 
-    pub fn from_genesis(network: Network) -> Self {
+    pub(crate) fn from_genesis(network: Network) -> Self {
         let genesis = genesis_block(network);
         let height = Height::new(0);
         let hash = genesis.block_hash();
@@ -166,7 +169,7 @@ impl BlockTree {
         }
     }
 
-    pub fn from_header(height: impl Into<Height>, header: Header, network: Network) -> Self {
+    pub(crate) fn from_header(height: impl Into<Height>, header: Header, network: Network) -> Self {
         let height = height.into();
         let hash = header.block_hash();
         let tip = Tip {
@@ -186,7 +189,7 @@ impl BlockTree {
         }
     }
 
-    fn accept_header(&mut self, new_header: Header) -> AcceptHeaderChanges {
+    pub(crate) fn accept_header(&mut self, new_header: Header) -> AcceptHeaderChanges {
         let new_hash = new_header.block_hash();
         let prev_hash = new_header.prev_blockhash;
 
@@ -385,6 +388,9 @@ impl BlockTree {
 
     pub(crate) fn block_hash_at_height(&self, height: impl Into<Height>) -> Option<BlockHash> {
         let height = height.into();
+        if self.active_tip.height.eq(&height) {
+            return Some(self.active_tip.hash);
+        }
         self.canonical_hashes.get(&height).copied()
     }
 
@@ -402,6 +408,14 @@ impl BlockTree {
         self.active_tip.height.to_u32()
     }
 
+    pub(crate) fn contains(&self, hash: BlockHash) -> bool {
+        self.headers.contains_key(&hash) || self.active_tip.hash.eq(&hash)
+    }
+
+    pub(crate) fn tip_hash(&self) -> BlockHash {
+        self.active_tip.hash
+    }
+
     pub(crate) fn filter_hash(&self, block_hash: BlockHash) -> Option<FilterHash> {
         self.headers.get(&block_hash)?.filter_hash
     }
@@ -410,6 +424,26 @@ impl BlockTree {
         let height = height.into();
         let hash = self.canonical_hashes.get(&height)?;
         self.headers.get(hash)?.filter_hash
+    }
+
+    pub(crate) fn locators(&self) -> Vec<BlockHash> {
+        let mut locators = Vec::new();
+        locators.push(self.active_tip.hash);
+        for locator in LOCATOR_INDEX {
+            let height = self.active_tip.height.checked_sub(*locator);
+            match height {
+                Some(height) => match self.block_hash_at_height(height) {
+                    Some(hash) => locators.push(hash),
+                    None => return locators.into_iter().rev().collect(),
+                },
+                None => return locators.into_iter().rev().collect(),
+            }
+        }
+        locators.into_iter().rev().collect()
+    }
+
+    pub(crate) fn internally_cached_headers(&self) -> usize {
+        self.headers.len()
     }
 
     pub(crate) fn iter(&self) -> BlockTreeIterator {

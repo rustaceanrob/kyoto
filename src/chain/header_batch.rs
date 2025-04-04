@@ -1,5 +1,3 @@
-use std::ops::RangeFrom;
-
 use bitcoin::{block::Header, params::Params, Target};
 
 use crate::impl_sourceless_error;
@@ -57,27 +55,8 @@ impl HeadersBatch {
             .expect("headers have at least one element by construction")
     }
 
-    // This should connect to the last header we have
-    pub(crate) fn first(&self) -> &Header {
-        self.batch
-            .first()
-            .expect("headers have at least one element by construction")
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.batch.len()
-    }
-
-    pub(crate) fn get(&self, index: usize) -> Option<&Header> {
-        self.batch.get(index)
-    }
-
-    pub(crate) fn get_slice(&self, index: RangeFrom<usize>) -> Option<&[Header]> {
-        self.batch.get(index)
-    }
-
-    pub(crate) fn inner(&self) -> &[Header] {
-        &self.batch
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = Header> {
+        self.batch.into_iter()
     }
 }
 

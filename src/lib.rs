@@ -173,21 +173,6 @@ impl IndexedTransaction {
     }
 }
 
-/// A block [`Header`] that was disconnected from the chain of most work along with its previous height.
-#[derive(Debug, Clone, Copy)]
-pub struct DisconnectedHeader {
-    /// The height where this header used to be in the chain.
-    pub height: u32,
-    /// The reorganized header.
-    pub header: Header,
-}
-
-impl DisconnectedHeader {
-    pub(crate) fn new(height: u32, header: Header) -> Self {
-        Self { height, header }
-    }
-}
-
 /// A Bitcoin [`Block`] with associated height.
 #[derive(Debug, Clone)]
 pub struct IndexedBlock {

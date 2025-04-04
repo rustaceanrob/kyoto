@@ -11,7 +11,6 @@ pub mod checkpoints;
 pub(crate) mod error;
 pub(crate) mod graph;
 pub(crate) mod header_batch;
-pub(crate) mod header_chain;
 
 use std::collections::HashMap;
 
@@ -21,9 +20,12 @@ use crate::network::PeerId;
 
 type Height = u32;
 
+/// A block header with associated height.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IndexedHeader {
+    /// The height in the blockchain for this header.
     pub height: u32,
+    /// The block header.
     pub header: Header,
 }
 
