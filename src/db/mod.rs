@@ -10,6 +10,8 @@ use bitcoin::key::rand::{thread_rng, Rng};
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
 
+use crate::chain::IndexedHeader;
+
 /// Errors a database backend may produce.
 pub mod error;
 /// Persistence traits defined with SQL Lite to store data between sessions.
@@ -74,4 +76,18 @@ impl PeerStatus {
         let mut rng = thread_rng();
         rng.gen()
     }
+}
+
+/// Changes applied to the chain of block headers.
+#[derive(Debug, Clone)]
+pub enum BlockHeaderChanges {
+    /// A block was connected to the tip of the chain.
+    Connected(IndexedHeader),
+    /// Blocks were reorganized and a new chain of most work was selected.
+    Reorganized {
+        /// Newly accepted blocks from the chain of most work.
+        accepted: Vec<IndexedHeader>,
+        /// Blocks that were removed from the chain.
+        reorganized: Vec<IndexedHeader>,
+    },
 }

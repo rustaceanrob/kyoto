@@ -398,9 +398,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut state = self.state.write().await;
         match *state {
             NodeState::Behind => {
-                let mut header_chain = self.chain.lock().await;
+                let header_chain = self.chain.lock().await;
                 if header_chain.is_synced().await {
-                    header_chain.flush_to_disk().await;
                     self.dialog
                         .send_info(Log::StateChange(NodeState::HeadersSynced))
                         .await;
@@ -426,12 +425,15 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 }
             }
             NodeState::FiltersSynced => {
-                let header_chain = self.chain.lock().await;
-                if header_chain.block_queue_empty() {
+                let chain = self.chain.lock().await;
+                if chain.block_queue_empty() {
                     *state = NodeState::TransactionsSynced;
                     let update = SyncUpdate::new(
-                        HeaderCheckpoint::new(header_chain.height(), header_chain.tip()),
-                        header_chain.last_ten(),
+                        HeaderCheckpoint::new(
+                            chain.header_chain.height(),
+                            chain.header_chain.tip_hash(),
+                        ),
+                        chain.last_ten(),
                     );
                     self.dialog
                         .send_info(Log::StateChange(NodeState::TransactionsSynced))
@@ -683,14 +685,17 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut peer_map = self.peer_map.lock().await;
         for block in blocks.iter() {
             peer_map.increment_height(nonce).await;
-            if !chain.contains_hash(*block) {
+            if !chain.header_chain.contains(*block) {
                 crate::log!(self.dialog, format!("New block: {}", block));
             }
         }
         match *state {
             NodeState::Behind => None,
             _ => {
-                if blocks.into_iter().any(|block| !chain.contains_hash(block)) {
+                if blocks
+                    .into_iter()
+                    .any(|block| !chain.header_chain.contains(block))
+                {
                     self.dialog
                         .send_info(Log::StateChange(NodeState::Behind))
                         .await;
