@@ -1,3 +1,4 @@
+#[allow(unused_imports)] // Required for some features.
 use std::fmt::Debug;
 
 /// Errors when initializing a SQL-based backend.

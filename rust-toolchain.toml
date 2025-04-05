@@ -1,0 +1,4 @@
+[toolchain]
+# >1.84 for stabalized MSRV resolving.
+channel = "1.85.0"
+profile = "default"
