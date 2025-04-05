@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::db::error::{SqlHeaderStoreError, SqlInitializationError};
 use crate::db::traits::HeaderStore;
+use crate::db::BlockHeaderChanges;
 use crate::prelude::FutureResult;
 
 use super::{DATA_DIR, DEFAULT_CWD};
@@ -160,16 +161,12 @@ impl SqliteHeaderDb {
         Ok(headers)
     }
 
-    async fn write(
-        &mut self,
-        header_chain: &BTreeMap<u32, Header>,
-    ) -> Result<(), SqlHeaderStoreError> {
+    async fn write(&mut self, changes: BlockHeaderChanges) -> Result<(), SqlHeaderStoreError> {
         let mut write_lock = self.conn.lock().await;
         let tx = write_lock.transaction()?;
-        let best_height: Option<u32> =
-            tx.query_row("SELECT MAX(height) FROM headers", [], |row| row.get(0))?;
-        for (height, header) in header_chain {
-            if height.ge(&(best_height.unwrap_or(0))) {
+        match changes {
+            BlockHeaderChanges::Connected(indexed_header) => {
+                let header = indexed_header.header;
                 let hash: String = header.block_hash().to_string();
                 let version: i32 = header.version.to_consensus();
                 let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
@@ -181,7 +178,7 @@ impl SqliteHeaderDb {
                 tx.execute(
                     stmt,
                     params![
-                        height,
+                        indexed_header.height,
                         hash,
                         version,
                         prev_hash,
@@ -192,43 +189,37 @@ impl SqliteHeaderDb {
                     ],
                 )?;
             }
+            BlockHeaderChanges::Reorganized {
+                accepted,
+                reorganized: _,
+            } => {
+                for indexed_header in accepted {
+                    let header = indexed_header.header;
+                    let hash: String = header.block_hash().to_string();
+                    let version: i32 = header.version.to_consensus();
+                    let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
+                    let merkle_root: String = header.merkle_root.to_string();
+                    let time: u32 = header.time;
+                    let bits: u32 = header.bits.to_consensus();
+                    let nonce: u32 = header.nonce;
+                    let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+                    tx.execute(
+                        stmt,
+                        params![
+                            indexed_header.height,
+                            hash,
+                            version,
+                            prev_hash,
+                            merkle_root,
+                            time,
+                            bits,
+                            nonce
+                        ],
+                    )?;
+                }
+            }
         }
-        tx.commit()?;
-        Ok(())
-    }
 
-    async fn write_over(
-        &mut self,
-        header_chain: &BTreeMap<u32, Header>,
-        height: u32,
-    ) -> Result<(), SqlHeaderStoreError> {
-        let mut write_lock = self.conn.lock().await;
-        let tx = write_lock.transaction()?;
-        for (new_height, header) in header_chain {
-            if new_height.ge(&height) {
-                let hash: String = header.block_hash().to_string();
-                let version: i32 = header.version.to_consensus();
-                let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
-                let merkle_root: String = header.merkle_root.to_string();
-                let time: u32 = header.time;
-                let bits: u32 = header.bits.to_consensus();
-                let nonce: u32 = header.nonce;
-                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
-                tx.execute(
-                    stmt,
-                    params![
-                        new_height,
-                        hash,
-                        version,
-                        prev_hash,
-                        merkle_root,
-                        time,
-                        bits,
-                        nonce
-                    ],
-                )?;
-            }
-        }
         tx.commit()?;
         Ok(())
     }
@@ -325,19 +316,8 @@ impl HeaderStore for SqliteHeaderDb {
         Box::pin(self.load(range))
     }
 
-    fn write<'a>(
-        &'a mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
-    ) -> FutureResult<'a, (), Self::Error> {
-        Box::pin(self.write(header_chain))
-    }
-
-    fn write_over<'a>(
-        &'a mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
-        height: u32,
-    ) -> FutureResult<'a, (), Self::Error> {
-        Box::pin(self.write_over(header_chain, height))
+    fn write(&mut self, changes: BlockHeaderChanges) -> FutureResult<(), Self::Error> {
+        Box::pin(self.write(changes))
     }
 
     fn height_of<'a>(
@@ -358,6 +338,8 @@ impl HeaderStore for SqliteHeaderDb {
 
 #[cfg(test)]
 mod tests {
+    use crate::chain::IndexedHeader;
+
     use super::*;
     use bitcoin::consensus::deserialize;
 
@@ -369,19 +351,27 @@ mod tests {
         let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
         let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
         let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
+        let changes_8 = IndexedHeader::new(8, block_8);
+        let changes_9 = IndexedHeader::new(9, block_9);
+        let changes_10 = IndexedHeader::new(10, block_10);
         let mut map = BTreeMap::new();
         map.insert(8, block_8);
         map.insert(9, block_9);
         map.insert(10, block_10);
         let block_hash_8 = block_8.block_hash();
         let block_hash_9 = block_9.block_hash();
-        let w = db.write(&map).await;
+        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
         assert!(w.is_ok());
         let get_hash_9 = db.hash_at(9).await.unwrap().unwrap();
         assert_eq!(get_hash_9, block_hash_9);
         let get_height_8 = db.height_of(&block_hash_8).await.unwrap().unwrap();
         assert_eq!(get_height_8, 8);
         let load = db.load(7..).await.unwrap();
+
         assert_eq!(map, load);
         let get_header_9 = db.header_at(9).await.unwrap().unwrap();
         assert_eq!(get_header_9, block_9);
@@ -405,7 +395,14 @@ mod tests {
         map.insert(8, block_8);
         map.insert(9, block_9);
         map.insert(10, block_10);
-        let w = db.write(&map).await;
+        let changes_8 = IndexedHeader::new(8, block_8);
+        let changes_9 = IndexedHeader::new(9, block_9);
+        let changes_10 = IndexedHeader::new(10, block_10);
+        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
         assert!(w.is_ok());
         let get_height_10 = db.header_at(10).await.unwrap().unwrap();
         assert_eq!(block_10, get_height_10);
@@ -414,12 +411,20 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert(10, new_block_10);
         map.insert(11, block_11);
-        let w = db.write_over(&map, 10).await;
+        let accepted = vec![
+            IndexedHeader::new(10, new_block_10),
+            IndexedHeader::new(11, block_11),
+        ];
+        let reorganized = vec![IndexedHeader::new(10, block_10)];
+        let w = db
+            .write(BlockHeaderChanges::Reorganized {
+                accepted,
+                reorganized,
+            })
+            .await;
         assert!(w.is_ok());
         let block_hash_11 = block_11.block_hash();
         let block_hash_10 = new_block_10.block_hash();
-        let w = db.write(&map).await;
-        assert!(w.is_ok());
         let get_height_10 = db.header_at(10).await.unwrap().unwrap();
         assert_eq!(new_block_10, get_height_10);
         let get_height_12 = db.header_at(12).await.unwrap();
@@ -451,7 +456,15 @@ mod tests {
         map.insert(8, block_8);
         map.insert(9, block_9);
         map.insert(10, block_10);
-        let w = db.write(&map).await;
+        let changes_8 = IndexedHeader::new(8, block_8);
+        let changes_9 = IndexedHeader::new(9, block_9);
+        let changes_10 = IndexedHeader::new(10, block_10);
+        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
+        assert!(w.is_ok());
+        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
+        assert!(w.is_ok());
         assert!(w.is_ok());
         let load = db.load(7..).await.unwrap();
         assert_eq!(map, load);
