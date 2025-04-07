@@ -18,7 +18,8 @@ pub trait HeaderStore: Debug + Send + Sync {
         range: impl RangeBounds<u32> + Send + Sync + 'a,
     ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error>;
 
-    /// Write an changes to the backend as new headers are found.
+    /// Write any changes to the backend as new headers are found, potentially caching before
+    /// writing to disk.
     fn write(&mut self, changes: BlockHeaderChanges) -> FutureResult<(), Self::Error>;
 
     /// Return the height of a block hash in the database, if it exists.

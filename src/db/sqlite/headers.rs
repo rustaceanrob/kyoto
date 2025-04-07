@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use bitcoin::block::{Header, Version};
-use bitcoin::{BlockHash, CompactTarget, Network, TxMerkleNode};
+use bitcoin::block::Header;
+use bitcoin::{consensus, BlockHash, Network};
 use rusqlite::{params, params_from_iter, Connection, Result};
 use tokio::sync::Mutex;
 
@@ -28,13 +27,8 @@ const SCHEMA_VERSION: u8 = 0;
 // Always execute this query and adjust the schema with migrations
 const INITIAL_HEADER_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS headers (
     height INTEGER PRIMARY KEY,
-    block_hash TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    prev_hash TEXT NOT NULL,
-    merkle_root TEXT NOT NULL,
-    time INTEGER NOT NULL,
-    bits INTEGER NOT NULL,
-    nonce INTEGER NOT NULL
+    block_hash BLOB NOT NULL,
+    header BLOB NOT NULL
 ) STRICT";
 
 const LOAD_QUERY_SELECT_PREFIX: &str = "SELECT * FROM headers ";
@@ -127,30 +121,8 @@ impl SqliteHeaderDb {
         let mut rows = query.query(params_from_iter(param_list.iter()))?;
         while let Some(row) = rows.next()? {
             let height: u32 = row.get(0)?;
-            let hash: String = row.get(1)?;
-            let version: i32 = row.get(2)?;
-            let prev_hash: String = row.get(3)?;
-            let merkle_root: String = row.get(4)?;
-            let time: u32 = row.get(5)?;
-            let bits: u32 = row.get(6)?;
-            let nonce: u32 = row.get(7)?;
-
-            let next_header = Header {
-                version: Version::from_consensus(version),
-                prev_blockhash: BlockHash::from_str(&prev_hash)
-                    .map_err(|_| SqlHeaderStoreError::StringConversion)?,
-                merkle_root: TxMerkleNode::from_str(&merkle_root)
-                    .map_err(|_| SqlHeaderStoreError::StringConversion)?,
-                time,
-                bits: CompactTarget::from_consensus(bits),
-                nonce,
-            };
-            if BlockHash::from_str(&hash)
-                .map_err(|_| SqlHeaderStoreError::StringConversion)?
-                .ne(&next_header.block_hash())
-            {
-                return Err(SqlHeaderStoreError::Corruption);
-            }
+            let header: [u8; 80] = row.get(2)?;
+            let next_header: Header = consensus::deserialize(&header)?;
             if let Some(header) = headers.values().last() {
                 if header.block_hash().ne(&next_header.prev_blockhash) {
                     return Err(SqlHeaderStoreError::Corruption);
@@ -167,27 +139,10 @@ impl SqliteHeaderDb {
         match changes {
             BlockHeaderChanges::Connected(indexed_header) => {
                 let header = indexed_header.header;
-                let hash: String = header.block_hash().to_string();
-                let version: i32 = header.version.to_consensus();
-                let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
-                let merkle_root: String = header.merkle_root.to_string();
-                let time: u32 = header.time;
-                let bits: u32 = header.bits.to_consensus();
-                let nonce: u32 = header.nonce;
-                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
-                tx.execute(
-                    stmt,
-                    params![
-                        indexed_header.height,
-                        hash,
-                        version,
-                        prev_hash,
-                        merkle_root,
-                        time,
-                        bits,
-                        nonce
-                    ],
-                )?;
+                let hash: Vec<u8> = consensus::serialize(&header.block_hash());
+                let header: Vec<u8> = consensus::serialize(&indexed_header.header);
+                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, header) VALUES (?1, ?2, ?3)";
+                tx.execute(stmt, params![indexed_header.height, hash, header])?;
             }
             BlockHeaderChanges::Reorganized {
                 accepted,
@@ -195,27 +150,10 @@ impl SqliteHeaderDb {
             } => {
                 for indexed_header in accepted {
                     let header = indexed_header.header;
-                    let hash: String = header.block_hash().to_string();
-                    let version: i32 = header.version.to_consensus();
-                    let prev_hash: String = header.prev_blockhash.as_raw_hash().to_string();
-                    let merkle_root: String = header.merkle_root.to_string();
-                    let time: u32 = header.time;
-                    let bits: u32 = header.bits.to_consensus();
-                    let nonce: u32 = header.nonce;
-                    let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, version, prev_hash, merkle_root, time, bits, nonce) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
-                    tx.execute(
-                        stmt,
-                        params![
-                            indexed_header.height,
-                            hash,
-                            version,
-                            prev_hash,
-                            merkle_root,
-                            time,
-                            bits,
-                            nonce
-                        ],
-                    )?;
+                    let hash: Vec<u8> = consensus::serialize(&header.block_hash());
+                    let header: Vec<u8> = consensus::serialize(&indexed_header.header);
+                    let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, header) VALUES (?1, ?2, ?3)";
+                    tx.execute(stmt, params![indexed_header.height, hash, header])?;
                 }
             }
         }
@@ -230,20 +168,18 @@ impl SqliteHeaderDb {
     ) -> Result<Option<u32>, SqlHeaderStoreError> {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT height FROM headers WHERE block_hash = ?1";
-        let row: Option<u32> =
-            write_lock.query_row(stmt, params![block_hash.to_string()], |row| row.get(0))?;
+        let hash: Vec<u8> = consensus::serialize(&block_hash);
+        let row: Option<u32> = write_lock.query_row(stmt, params![hash], |row| row.get(0))?;
         Ok(row)
     }
 
     async fn hash_at(&mut self, height: u32) -> Result<Option<BlockHash>, SqlHeaderStoreError> {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT block_hash FROM headers WHERE height = ?1";
-        let row: Option<String> = write_lock.query_row(stmt, params![height], |row| row.get(0))?;
+        let row: Option<[u8; 32]> =
+            write_lock.query_row(stmt, params![height], |row| row.get(0))?;
         match row {
-            Some(row) => match BlockHash::from_str(&row) {
-                Ok(hash) => Ok(Some(hash)),
-                Err(_) => Err(SqlHeaderStoreError::StringConversion),
-            },
+            Some(hash) => Ok(Some(consensus::deserialize(&hash)?)),
             None => Ok(None),
         }
     }
@@ -252,49 +188,9 @@ impl SqliteHeaderDb {
         let write_lock = self.conn.lock().await;
         let stmt = "SELECT * FROM headers WHERE height = ?1";
         let query = write_lock.query_row(stmt, params![height], |row| {
-            let hash: String = row.get(1)?;
-            let version: i32 = row.get(2)?;
-            let prev_hash: String = row.get(3)?;
-            let merkle_root: String = row.get(4)?;
-            let time: u32 = row.get(5)?;
-            let bits: u32 = row.get(6)?;
-            let nonce: u32 = row.get(7)?;
-
-            let header = Header {
-                version: Version::from_consensus(version),
-                prev_blockhash: BlockHash::from_str(&prev_hash).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Blob,
-                        Box::new(e),
-                    )
-                })?,
-                merkle_root: TxMerkleNode::from_str(&merkle_root).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Blob,
-                        Box::new(e),
-                    )
-                })?,
-                time,
-                bits: CompactTarget::from_consensus(bits),
-                nonce,
-            };
-
-            if BlockHash::from_str(&hash)
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Blob,
-                        Box::new(e),
-                    )
-                })?
-                .ne(&header.block_hash())
-            {
-                return Err(rusqlite::Error::InvalidQuery);
-            }
-
-            Ok(header)
+            let header_slice: [u8; 80] = row.get(2)?;
+            consensus::deserialize(&header_slice)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
         });
         match query {
             Ok(header) => Ok(Some(header)),
