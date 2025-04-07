@@ -109,10 +109,10 @@ impl From<bitcoin::consensus::encode::Error> for SqlPeerStoreError {
 #[cfg(feature = "database")]
 #[derive(Debug)]
 pub enum SqlHeaderStoreError {
-    /// A consensus critical data structure is malformed.
+    /// The headers do not link together.
     Corruption,
-    /// A string could not be deserialized into a known datatype.
-    StringConversion,
+    /// Consensus deserialization failed.
+    Deserialize(bitcoin::consensus::encode::Error),
     /// An error occured performing a SQL operation.
     SQL(rusqlite::Error),
 }
@@ -121,14 +121,11 @@ pub enum SqlHeaderStoreError {
 impl core::fmt::Display for SqlHeaderStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SqlHeaderStoreError::StringConversion => {
-                write!(
-                    f,
-                    "a string could not be deserialized into a known datatype."
-                )
-            }
             SqlHeaderStoreError::SQL(e) => {
                 write!(f, "reading or writing from the database failed: {e}")
+            }
+            SqlHeaderStoreError::Deserialize(e) => {
+                write!(f, "consensus decoding failed {e}")
             }
             SqlHeaderStoreError::Corruption => {
                 write!(f, "a consensus critical data structure is malformed.")
@@ -142,8 +139,8 @@ impl std::error::Error for SqlHeaderStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             SqlHeaderStoreError::Corruption => None,
-            SqlHeaderStoreError::StringConversion => None,
             SqlHeaderStoreError::SQL(error) => Some(error),
+            SqlHeaderStoreError::Deserialize(error) => Some(error),
         }
     }
 }
@@ -152,5 +149,12 @@ impl std::error::Error for SqlHeaderStoreError {
 impl From<rusqlite::Error> for SqlHeaderStoreError {
     fn from(value: rusqlite::Error) -> Self {
         Self::SQL(value)
+    }
+}
+
+#[cfg(feature = "database")]
+impl From<bitcoin::consensus::encode::Error> for SqlHeaderStoreError {
+    fn from(value: bitcoin::consensus::encode::Error) -> Self {
+        Self::Deserialize(value)
     }
 }
