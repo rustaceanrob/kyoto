@@ -15,7 +15,7 @@ use crate::chain::IndexedHeader;
 /// Errors a database backend may produce.
 pub mod error;
 /// Persistence traits defined with SQL Lite to store data between sessions.
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 pub mod sqlite;
 /// Traits that define the header and peer databases.
 pub mod traits;
