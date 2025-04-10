@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 /// Errors when initializing a SQL-based backend.
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 #[derive(Debug)]
 pub enum SqlInitializationError {
     /// A file or directory could not be opened or created.
@@ -10,7 +10,7 @@ pub enum SqlInitializationError {
     SQL(rusqlite::Error),
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl core::fmt::Display for SqlInitializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -24,7 +24,7 @@ impl core::fmt::Display for SqlInitializationError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl std::error::Error for SqlInitializationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -34,14 +34,14 @@ impl std::error::Error for SqlInitializationError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<rusqlite::Error> for SqlInitializationError {
     fn from(value: rusqlite::Error) -> Self {
         Self::SQL(value)
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<std::io::Error> for SqlInitializationError {
     fn from(value: std::io::Error) -> Self {
         Self::IO(value)
@@ -49,7 +49,7 @@ impl From<std::io::Error> for SqlInitializationError {
 }
 
 /// Errors while reading or writing to and from a SQL-based peer backend.
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 #[derive(Debug)]
 pub enum SqlPeerStoreError {
     /// A consensus critical data structure is malformed.
@@ -60,7 +60,7 @@ pub enum SqlPeerStoreError {
     SQL(rusqlite::Error),
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl core::fmt::Display for SqlPeerStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -80,7 +80,7 @@ impl core::fmt::Display for SqlPeerStoreError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl std::error::Error for SqlPeerStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -91,14 +91,14 @@ impl std::error::Error for SqlPeerStoreError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<rusqlite::Error> for SqlPeerStoreError {
     fn from(value: rusqlite::Error) -> Self {
         Self::SQL(value)
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<bitcoin::consensus::encode::Error> for SqlPeerStoreError {
     fn from(value: bitcoin::consensus::encode::Error) -> Self {
         Self::Deserialize(value)
@@ -106,7 +106,7 @@ impl From<bitcoin::consensus::encode::Error> for SqlPeerStoreError {
 }
 
 /// Errors while reading or writing to and from a SQL-based block header backend.
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 #[derive(Debug)]
 pub enum SqlHeaderStoreError {
     /// The headers do not link together.
@@ -117,7 +117,7 @@ pub enum SqlHeaderStoreError {
     SQL(rusqlite::Error),
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl core::fmt::Display for SqlHeaderStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -134,7 +134,7 @@ impl core::fmt::Display for SqlHeaderStoreError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl std::error::Error for SqlHeaderStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -145,14 +145,14 @@ impl std::error::Error for SqlHeaderStoreError {
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<rusqlite::Error> for SqlHeaderStoreError {
     fn from(value: rusqlite::Error) -> Self {
         Self::SQL(value)
     }
 }
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 impl From<bitcoin::consensus::encode::Error> for SqlHeaderStoreError {
     fn from(value: bitcoin::consensus::encode::Error) -> Self {
         Self::Deserialize(value)

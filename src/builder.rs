@@ -6,9 +6,9 @@ use bitcoin::Network;
 use bitcoin::ScriptBuf;
 
 use super::{client::Client, config::NodeConfig, node::Node};
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 use crate::db::error::SqlInitializationError;
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::network::ConnectionType;
@@ -18,7 +18,7 @@ use crate::{
 };
 use crate::{FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 /// The default node returned from the [`NodeBuilder`](crate::core).
 pub type NodeDefault = Node<SqliteHeaderDb, SqlitePeerDb>;
 
@@ -210,7 +210,7 @@ impl NodeBuilder {
     /// # Errors
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
-    #[cfg(feature = "database")]
+    #[cfg(feature = "rusqlite")]
     pub fn build(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
