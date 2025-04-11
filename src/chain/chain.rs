@@ -688,7 +688,7 @@ mod tests {
         filters::cfheader_chain::AppendAttempt,
         {
             dialog::Dialog,
-            messages::{Event, Log, Warning},
+            messages::{Event, Info, Warning},
         },
     };
 
@@ -699,7 +699,8 @@ mod tests {
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: usize,
     ) -> Chain<()> {
-        let (log_tx, _) = tokio::sync::mpsc::channel::<Log>(1);
+        let (log_tx, _) = tokio::sync::mpsc::channel::<String>(1);
+        let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
@@ -712,6 +713,7 @@ mod tests {
             Arc::new(Dialog::new(
                 crate::LogLevel::Debug,
                 log_tx,
+                info_tx,
                 warn_tx,
                 event_tx,
             )),

@@ -1,7 +1,7 @@
 //! Usual sync on Signet.
 
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
-use kyoto::{AddrV2, Address, Client, Event, Log, Network, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, Client, Event, Info, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
@@ -57,6 +57,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        mut info_rx,
         mut warn_rx,
         mut event_rx,
     } = client;
@@ -84,14 +85,18 @@ async fn main() {
                     }
                 }
             }
-            log = log_rx.recv() => {
-                if let Some(log) = log {
-                    match log {
-                        Log::Debug(d)=> tracing::info!("{d}"),
-                        Log::StateChange(node_state) => tracing::info!("{node_state}"),
-                        Log::ConnectionsMet => tracing::info!("All required connections met"),
+            info = info_rx.recv() => {
+                if let Some(info) = info {
+                    match info {
+                        Info::StateChange(node_state) => tracing::info!("{node_state}"),
+                        Info::ConnectionsMet => tracing::info!("All required connections met"),
                         _ => (),
                     }
+                }
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    tracing::info!("{log}");
                 }
             }
             warn = warn_rx.recv() => {
