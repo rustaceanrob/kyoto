@@ -6,7 +6,7 @@ use bitcoin::{block::Header, BlockHash};
 
 use crate::prelude::FutureResult;
 
-use super::PersistedPeer;
+use super::{BlockHeaderChanges, PersistedPeer};
 
 /// Methods required to persist the chain of block headers.
 pub trait HeaderStore: Debug + Send + Sync {
@@ -18,18 +18,8 @@ pub trait HeaderStore: Debug + Send + Sync {
         range: impl RangeBounds<u32> + Send + Sync + 'a,
     ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error>;
 
-    /// Write an indexed map of block headers to the database, ignoring if they already exist.
-    fn write<'a>(
-        &'a mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
-    ) -> FutureResult<'a, (), Self::Error>;
-
-    /// Write the headers to the database, replacing headers over the specified height.
-    fn write_over<'a>(
-        &'a mut self,
-        header_chain: &'a BTreeMap<u32, Header>,
-        height: u32,
-    ) -> FutureResult<'a, (), Self::Error>;
+    /// Write an changes to the backend as new headers are found.
+    fn write(&mut self, changes: BlockHeaderChanges) -> FutureResult<(), Self::Error>;
 
     /// Return the height of a block hash in the database, if it exists.
     fn height_of<'a>(
@@ -114,25 +104,11 @@ mod test {
             Box::pin(do_load())
         }
 
-        fn write<'a>(
-            &'a mut self,
-            _header_chain: &'a BTreeMap<u32, Header>,
-        ) -> FutureResult<'a, (), Self::Error> {
+        fn write(&mut self, _changes: BlockHeaderChanges) -> FutureResult<(), Self::Error> {
             async fn do_write() -> Result<(), Infallible> {
                 Ok(())
             }
             Box::pin(do_write())
-        }
-
-        fn write_over<'a>(
-            &'a mut self,
-            _header_chain: &'a BTreeMap<u32, Header>,
-            _height: u32,
-        ) -> FutureResult<'a, (), Self::Error> {
-            async fn do_write_over() -> Result<(), Infallible> {
-                Ok(())
-            }
-            Box::pin(do_write_over())
         }
 
         fn height_of<'a>(

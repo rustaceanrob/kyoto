@@ -7,8 +7,8 @@ use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, Script
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
-    chain::checkpoints::HeaderCheckpoint, DisconnectedHeader, IndexedBlock, NodeState, TrustedPeer,
-    TxBroadcast,
+    chain::{checkpoints::HeaderCheckpoint, IndexedHeader},
+    IndexedBlock, NodeState, TrustedPeer, TxBroadcast,
 };
 
 use super::error::{FetchBlockError, FetchHeaderError};
@@ -55,7 +55,7 @@ pub enum Event {
     /// The node is fully synced, having scanned the requested range.
     Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
-    BlocksDisconnected(Vec<DisconnectedHeader>),
+    BlocksDisconnected(Vec<IndexedHeader>),
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
