@@ -120,7 +120,7 @@ pub use chain::checkpoints::{
     HeaderCheckpoint, MAINNET_HEADER_CP, SIGNET_HEADER_CP, TESTNET4_HEADER_CP,
 };
 
-#[cfg(feature = "database")]
+#[cfg(feature = "rusqlite")]
 #[doc(inline)]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 
