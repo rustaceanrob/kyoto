@@ -45,6 +45,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        mut info_rx,
         mut warn_rx,
         mut event_rx,
     } = client;
@@ -61,6 +62,11 @@ async fn main() {
             log = log_rx.recv() => {
                 if let Some(log) = log {
                     tracing::info!("{log}");
+                }
+            }
+            info = info_rx.recv() => {
+                if let Some(info) = info {
+                    tracing::info!("{info}");
                 }
             }
             warn = warn_rx.recv() => {

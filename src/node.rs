@@ -39,7 +39,7 @@ use super::{
     config::NodeConfig,
     dialog::Dialog,
     error::NodeError,
-    messages::{ClientMessage, Event, Log, SyncUpdate, Warning},
+    messages::{ClientMessage, Event, Info, SyncUpdate, Warning},
 };
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
@@ -84,13 +84,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         } = config;
         let timeout_config = PeerTimeoutConfig::new(response_timeout, max_connection_time);
         // Set up a communication channel between the node and client
-        let (log_tx, log_rx) = mpsc::channel::<Log>(32);
+        let (log_tx, log_rx) = mpsc::channel::<String>(32);
+        let (info_tx, info_rx) = mpsc::channel::<Info>(32);
         let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
-        let client = Client::new(log_rx, warn_rx, event_rx, ctx);
+        let client = Client::new(log_rx, info_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Arc::new(Dialog::new(log_level, log_tx, warn_tx, event_tx));
+        let dialog = Arc::new(Dialog::new(log_level, log_tx, info_tx, warn_tx, event_tx));
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
@@ -383,7 +384,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     }
                 };
                 if did_broadcast {
-                    self.dialog.send_info(Log::TxSent(txid)).await;
+                    crate::info!(self.dialog, Info::TxSent(txid));
                 } else {
                     self.dialog.send_warning(Warning::TransactionRejected {
                         payload: RejectPayload::from_txid(txid),
@@ -400,27 +401,24 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::Behind => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_synced().await {
-                    self.dialog
-                        .send_info(Log::StateChange(NodeState::HeadersSynced))
-                        .await;
+                    crate::info!(self.dialog, Info::StateChange(NodeState::HeadersSynced));
                     *state = NodeState::HeadersSynced;
                 }
             }
             NodeState::HeadersSynced => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_cf_headers_synced() {
-                    self.dialog
-                        .send_info(Log::StateChange(NodeState::FilterHeadersSynced))
-                        .await;
+                    crate::info!(
+                        self.dialog,
+                        Info::StateChange(NodeState::FilterHeadersSynced)
+                    );
                     *state = NodeState::FilterHeadersSynced;
                 }
             }
             NodeState::FilterHeadersSynced => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_filters_synced() {
-                    self.dialog
-                        .send_info(Log::StateChange(NodeState::FiltersSynced))
-                        .await;
+                    crate::info!(self.dialog, Info::StateChange(NodeState::FiltersSynced));
                     *state = NodeState::FiltersSynced;
                 }
             }
@@ -435,9 +433,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         ),
                         chain.last_ten(),
                     );
-                    self.dialog
-                        .send_info(Log::StateChange(NodeState::TransactionsSynced))
-                        .await;
+                    crate::info!(
+                        self.dialog,
+                        Info::StateChange(NodeState::TransactionsSynced)
+                    );
                     self.dialog.send_event(Event::Synced(update));
                 }
             }
@@ -532,7 +531,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         }
         // Inform the user we are connected to all required peers
         if peer_map.live().eq(&self.required_peers) {
-            self.dialog.send_info(Log::ConnectionsMet).await
+            crate::info!(self.dialog, Info::ConnectionsMet);
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let mut chain = self.chain.lock().await;
@@ -690,9 +689,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     .into_iter()
                     .any(|block| !chain.header_chain.contains(block))
                 {
-                    self.dialog
-                        .send_info(Log::StateChange(NodeState::Behind))
-                        .await;
+                    crate::info!(self.dialog, Info::StateChange(NodeState::Behind));
                     *state = NodeState::Behind;
                     let next_headers = GetHeaderConfig {
                         locators: chain.locators().await,
@@ -722,9 +719,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::HeadersSynced => None,
             _ => {
                 chain.clear_filters();
-                self.dialog
-                    .send_info(Log::StateChange(NodeState::FilterHeadersSynced))
-                    .await;
+                crate::info!(
+                    self.dialog,
+                    Info::StateChange(NodeState::FilterHeadersSynced)
+                );
                 *state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(
                     chain.next_filter_message().await,

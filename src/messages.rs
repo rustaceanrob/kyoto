@@ -15,9 +15,7 @@ use super::error::{FetchBlockError, FetchHeaderError};
 
 /// Informational messages emitted by a node
 #[derive(Debug, Clone)]
-pub enum Log {
-    /// Human readable dialog of what the node is currently doing.
-    Debug(String),
+pub enum Info {
     /// The current state of the node in the syncing process.
     StateChange(NodeState),
     /// The node is connected to all required peers.
@@ -30,14 +28,13 @@ pub enum Log {
     TxSent(Txid),
 }
 
-impl core::fmt::Display for Log {
+impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Log::Debug(d) => write!(f, "{}", d),
-            Log::StateChange(s) => write!(f, "{}", s),
-            Log::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
-            Log::ConnectionsMet => write!(f, "Required connections met"),
-            Log::Progress(p) => {
+            Info::StateChange(s) => write!(f, "{}", s),
+            Info::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
+            Info::ConnectionsMet => write!(f, "Required connections met"),
+            Info::Progress(p) => {
                 let progress_percent = p.percentage_complete();
                 write!(f, "Percent complete: {}", progress_percent)
             }
