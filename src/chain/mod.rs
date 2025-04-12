@@ -45,7 +45,7 @@ pub(crate) struct FilterCommitment {
 pub(crate) struct FilterRequestState {
     pub last_filter_request: Option<FilterRequest>,
     pub last_filter_header_request: Option<FilterHeaderRequest>,
-    pub pending_batch: Option<CFHeaderBatch>,
+    pub pending_batch: Option<(PeerId, CFHeaderBatch)>,
     pub agreement_state: FilterHeaderAgreements,
 }
 
@@ -62,6 +62,7 @@ impl FilterRequestState {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FilterRequest {
+    #[allow(unused)]
     pub start_height: u32,
     pub stop_hash: BlockHash,
 }

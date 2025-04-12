@@ -20,11 +20,11 @@ use crate::{
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::HeaderSyncError,
-        HeightMonitor,
+        CFHeaderChanges, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
-    filters::{cfheader_chain::AppendAttempt, error::CFilterSyncError},
+    filters::error::CFilterSyncError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId, PeerTimeoutConfig},
     FilterSyncPolicy, NodeState, RejectPayload, TxBroadcastPolicy,
 };
@@ -587,12 +587,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        match chain.sync_cf_headers(peer_id.0, cf_headers).await {
+        match chain.sync_cf_headers(peer_id, cf_headers).await {
             Ok(potential_message) => match potential_message {
-                AppendAttempt::AddedToQueue => None,
-                AppendAttempt::Extended => self.next_stateful_message(chain.deref_mut()).await,
-                AppendAttempt::Conflict(_) => {
-                    // TODO: Request the filter and block from the peer
+                CFHeaderChanges::AddedToQueue => None,
+                CFHeaderChanges::Extended => self.next_stateful_message(chain.deref_mut()).await,
+                CFHeaderChanges::Conflict => {
                     self.dialog.send_warning(Warning::UnexpectedSyncError {
                         warning: "Found a conflict while peers are sending filter headers".into(),
                     });

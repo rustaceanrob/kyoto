@@ -9,6 +9,7 @@ pub enum CFHeaderSyncError {
     PrevHeaderMismatch,
     HeaderChainIndexOverflow,
     UnexpectedCFHeaderMessage,
+    StartHeightMisalignment,
 }
 
 impl core::fmt::Display for CFHeaderSyncError {
@@ -32,6 +33,10 @@ impl core::fmt::Display for CFHeaderSyncError {
             CFHeaderSyncError::UnexpectedCFHeaderMessage => write!(
                 f,
                 "we already had a message from this peer staged in our queue."
+            ),
+            CFHeaderSyncError::StartHeightMisalignment => write!(
+                f,
+                "the size of the batch and the requested start height do not align"
             ),
         }
     }

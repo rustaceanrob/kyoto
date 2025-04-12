@@ -1,8 +1,10 @@
-use bitcoin::{p2p::message_filter::CFHeaders, BlockHash, FilterHash, FilterHeader};
+use bitcoin::{p2p::message_filter::CFHeaders, BlockHash, FilterHeader};
+
+use crate::chain::FilterCommitment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CFHeaderBatch {
-    inner: Vec<(FilterHeader, FilterHash)>,
+    inner: Vec<FilterCommitment>,
     prev_filter_header: FilterHeader,
     stop_hash: BlockHash,
 }
@@ -12,11 +14,14 @@ impl CFHeaderBatch {
     // the CFHeader message may make it easier to detect
     // faulty peers sooner
     pub(crate) fn new(batch: CFHeaders) -> Self {
-        let mut headers: Vec<(FilterHeader, FilterHash)> = vec![];
+        let mut headers: Vec<FilterCommitment> = vec![];
         let mut prev_header = batch.previous_filter_header;
         for hash in batch.filter_hashes {
             let next_header = hash.filter_header(&prev_header);
-            headers.push((next_header, hash));
+            headers.push(FilterCommitment {
+                header: next_header,
+                filter_hash: hash,
+            });
             prev_header = next_header;
         }
         Self {
@@ -30,25 +35,16 @@ impl CFHeaderBatch {
         &self.prev_filter_header
     }
 
-    pub(crate) fn stop_hash(&self) -> &BlockHash {
-        &self.stop_hash
+    pub(crate) fn stop_hash(&self) -> BlockHash {
+        self.stop_hash
     }
 
-    pub(crate) fn len(&self) -> usize {
-        self.inner.len()
+    pub(crate) fn len(&self) -> u32 {
+        self.inner.len() as u32
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn inner(&self) -> Vec<(FilterHeader, FilterHash)> {
-        self.inner.clone()
-    }
-
-    pub(crate) fn take_inner(&mut self) -> Vec<(FilterHeader, FilterHash)> {
+    pub(crate) fn take_inner(&mut self) -> Vec<FilterCommitment> {
         core::mem::take(&mut self.inner)
-    }
-
-    pub(crate) fn last_header(&self) -> Option<FilterHeader> {
-        self.inner.last().map(|(header, _)| *header)
     }
 }
 

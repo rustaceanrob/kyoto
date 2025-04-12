@@ -406,6 +406,10 @@ impl BlockTree {
         self.headers.get(&hash).map(|node| node.height.to_u32())
     }
 
+    pub(crate) fn header_at_hash(&self, hash: BlockHash) -> Option<Header> {
+        self.headers.get(&hash).map(|node| node.header)
+    }
+
     pub(crate) fn height(&self) -> u32 {
         self.active_tip.height.to_u32()
     }
