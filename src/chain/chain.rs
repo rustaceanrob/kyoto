@@ -148,7 +148,7 @@ impl<H: HeaderStore> Chain<H> {
     // The last ten heights and headers in the chain
     pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
         self.header_chain
-            .iter()
+            .iter_headers()
             .take(10)
             .map(|index| (index.height, index.header))
             .collect()

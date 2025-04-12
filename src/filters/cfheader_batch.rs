@@ -1,5 +1,6 @@
 use bitcoin::{p2p::message_filter::CFHeaders, BlockHash, FilterHash, FilterHeader};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CFHeaderBatch {
     inner: Vec<(FilterHeader, FilterHash)>,
     prev_filter_header: FilterHeader,
