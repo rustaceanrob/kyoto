@@ -449,6 +449,34 @@ impl BlockTree {
         }
     }
 
+    pub(crate) fn reset_all_filters(&mut self) {
+        let mut curr = self.tip_hash();
+        while let Some(node) = self.headers.get_mut(&curr) {
+            match self.headers.get_mut(&curr) {
+                Some(node) => {
+                    node.filter_checked = false;
+                    curr = node.header.prev_blockhash;
+                }
+                None => break,
+            }
+        }
+        for fork in &self.candidate_forks {
+            curr = fork.hash;
+            while let Some(node) = self.headers.get_mut(&curr) {
+                match self.headers.get_mut(&curr) {
+                    Some(node) => {
+                        if !node.filter_checked {
+                            break;
+                        }
+                        node.filter_checked = false;
+                        curr = node.header.prev_blockhash;
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
     pub(crate) fn filter_headers_synced(&self) -> bool {
         self.iter_data()
             .map(|node| node.filter_commitment)

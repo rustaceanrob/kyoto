@@ -17,7 +17,7 @@ use super::{
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection, Tip},
-    HeightMonitor,
+    FilterRequest, FilterRequestState, HeightMonitor,
 };
 #[cfg(feature = "filter-control")]
 use crate::error::FetchBlockError;
@@ -34,7 +34,6 @@ use crate::{
         cfheader_batch::CFHeaderBatch,
         cfheader_chain::{AppendAttempt, CFHeaderChain, QueuedCFHeader},
         error::{CFHeaderSyncError, CFilterSyncError},
-        filter_chain::FilterChain,
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     messages::{Event, Warning},
@@ -48,7 +47,7 @@ const FILTER_BASIC: u8 = 0x00;
 pub(crate) struct Chain<H: HeaderStore> {
     pub(crate) header_chain: BlockTree,
     cf_header_chain: CFHeaderChain,
-    filter_chain: FilterChain,
+    request_state: FilterRequestState,
     checkpoints: HeaderCheckpoints,
     network: Network,
     db: Arc<Mutex<H>>,
@@ -68,18 +67,17 @@ impl<H: HeaderStore> Chain<H> {
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         db: H,
-        quorum_required: usize,
+        quorum_required: u8,
     ) -> Self {
         let header_chain = BlockTree::new(anchor, network);
-        let cf_header_chain = CFHeaderChain::new(anchor, quorum_required);
-        let filter_chain = FilterChain::new(anchor);
+        let cf_header_chain = CFHeaderChain::new(anchor, quorum_required.into());
         Chain {
             header_chain,
             checkpoints,
+            request_state: FilterRequestState::new(quorum_required),
             network,
             db: Arc::new(Mutex::new(db)),
             cf_header_chain,
-            filter_chain,
             heights: height_monitor,
             scripts,
             block_queue: BlockQueue::new(),
@@ -312,7 +310,6 @@ impl<H: HeaderStore> Chain<H> {
                         .map(|index| index.header.block_hash())
                         .collect();
                     self.cf_header_chain.remove(&removed_hashes);
-                    self.filter_chain.remove(&removed_hashes);
                     self.block_queue.remove(&removed_hashes);
                     self.write_changes(BlockHeaderChanges::Reorganized {
                         accepted,
@@ -385,7 +382,10 @@ impl<H: HeaderStore> Chain<H> {
             .chain_update(
                 self.header_chain.height(),
                 self.cf_header_chain.height(),
-                self.filter_chain.height(),
+                self.header_chain
+                    .iter_data()
+                    .filter(|node| node.filter_checked)
+                    .count() as u32,
                 peer_max.unwrap_or(self.header_chain.height()),
             )
             .await;
@@ -527,11 +527,12 @@ impl<H: HeaderStore> Chain<H> {
             );
         }
 
-        self.filter_chain.put_hash(filter_message.block_hash);
+        self.header_chain.check_filter(filter_message.block_hash);
         let stop_hash = self
-            .filter_chain
-            .last_stop_hash_request()
-            .ok_or(CFilterSyncError::UnrequestedStophash)?;
+            .request_state
+            .last_filter_request
+            .ok_or(CFilterSyncError::UnrequestedStophash)?
+            .stop_hash;
         if filter_message.block_hash.eq(&stop_hash) {
             if !self.is_filters_synced() {
                 Ok(Some(self.next_filter_message().await))
@@ -545,7 +546,14 @@ impl<H: HeaderStore> Chain<H> {
 
     // Next filter message, if there is one
     pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
-        let stop_hash_index = self.filter_chain.height() + FILTER_BATCH_SIZE + 1;
+        let mut last_unchecked_filter = self.header_chain.height();
+        for block_data in self.header_chain.iter_data() {
+            if block_data.filter_checked {
+                break;
+            }
+            last_unchecked_filter = block_data.height.to_u32();
+        }
+        let stop_hash_index = last_unchecked_filter + FILTER_BATCH_SIZE;
         let stop_hash = self
             .blockhash_at_height(stop_hash_index)
             .await
@@ -555,21 +563,27 @@ impl<H: HeaderStore> Chain<H> {
             .chain_update(
                 self.header_chain.height(),
                 self.cf_header_chain.height(),
-                self.filter_chain.height(),
+                self.header_chain
+                    .iter_data()
+                    .filter(|node| node.filter_checked)
+                    .count() as u32,
                 peer_max.unwrap_or(self.header_chain.height()),
             )
             .await;
-        self.filter_chain.set_last_stop_hash(stop_hash);
+        self.request_state.last_filter_request = Some(FilterRequest {
+            stop_hash,
+            start_height: last_unchecked_filter,
+        });
         GetCFilters {
             filter_type: FILTER_BASIC,
-            start_height: self.filter_chain.height() + 1,
+            start_height: last_unchecked_filter,
             stop_hash,
         }
     }
 
     // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
-        self.header_chain.height().le(&self.filter_chain.height())
+        self.header_chain.filters_synced()
     }
 
     // Pop a block from the queue of interesting blocks
@@ -664,7 +678,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) fn clear_filters(&mut self) {
-        self.filter_chain.clear_cache();
+        self.header_chain.reset_all_filters();
     }
 }
 
@@ -697,7 +711,7 @@ mod tests {
     fn new_regtest(
         anchor: HeaderCheckpoint,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        peers: usize,
+        peers: u8,
     ) -> Chain<()> {
         let (log_tx, _) = tokio::sync::mpsc::channel::<String>(1);
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);

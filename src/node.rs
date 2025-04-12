@@ -124,7 +124,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             Arc::clone(&dialog),
             height_monitor,
             header_store,
-            required_peers.into(),
+            required_peers,
         );
         let chain = Arc::new(Mutex::new(chain));
         (
