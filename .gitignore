@@ -1,5 +1,6 @@
 /target
 /data
+/light_client_data
 /kyoto
 .DS_Store
 .idea/

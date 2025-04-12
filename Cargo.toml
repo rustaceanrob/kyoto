@@ -33,8 +33,8 @@ tokio = { version = "1", default-features = false, features = [
 rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
 
 [features]
-default = ["database"]
-database = ["rusqlite"]
+default = ["rusqlite"]
+rusqlite = ["dep:rusqlite"]
 filter-control = []
 
 [dev-dependencies]
