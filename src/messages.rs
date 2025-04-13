@@ -99,22 +99,22 @@ pub struct Progress {
     pub filter_headers: u32,
     /// The number of block filters that have been assumed checked and downloaded.
     pub filters: u32,
-    /// The best known height to the tip of the chain.
-    pub tip_height: u32,
+    /// The number of filters to check.
+    pub total_to_check: u32,
 }
 
 impl Progress {
-    pub(crate) fn new(filter_headers: u32, filters: u32, tip_height: u32) -> Self {
+    pub(crate) fn new(filter_headers: u32, filters: u32, total_to_check: u32) -> Self {
         Self {
             filter_headers,
             filters,
-            tip_height,
+            total_to_check,
         }
     }
 
     /// The total progress represented as a fraction.
     pub fn percentage_complete(&self) -> f32 {
-        let total = (2 * self.tip_height) as f32;
+        let total = (2 * self.total_to_check) as f32;
         (self.filter_headers + self.filters) as f32 / total
     }
 }

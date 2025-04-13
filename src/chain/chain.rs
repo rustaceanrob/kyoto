@@ -36,7 +36,7 @@ use crate::{
         Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
     },
     messages::{Event, Warning},
-    IndexedBlock,
+    IndexedBlock, Info, Progress,
 };
 
 const REORG_LOOKBACK: u32 = 7;
@@ -372,21 +372,6 @@ impl<H: HeaderStore> Chain<H> {
         cf_headers: CFHeaders,
     ) -> Result<CFHeaderChanges, CFHeaderSyncError> {
         let batch: CFHeaderBatch = cf_headers.into();
-        let peer_max = self.heights.lock().await.max();
-        self.dialog
-            .chain_update(
-                self.header_chain.height(),
-                self.header_chain
-                    .iter_data()
-                    .filter(|node| node.filter_commitment.is_some())
-                    .count() as u32,
-                self.header_chain
-                    .iter_data()
-                    .filter(|node| node.filter_checked)
-                    .count() as u32,
-                peer_max.unwrap_or(self.header_chain.height()),
-            )
-            .await;
         let request = self
             .request_state
             .last_filter_header_request
@@ -503,6 +488,7 @@ impl<H: HeaderStore> Chain<H> {
             start_height: last_unchecked_cfheader,
             stop_hash,
         });
+        self.send_chain_update().await;
         GetCFHeaders {
             filter_type: FILTER_BASIC,
             start_height: last_unchecked_cfheader,
@@ -594,25 +580,11 @@ impl<H: HeaderStore> Chain<H> {
             .blockhash_at_height(stop_hash_index)
             .await
             .unwrap_or(self.header_chain.tip_hash());
-        let peer_max = self.heights.lock().await.max();
-        self.dialog
-            .chain_update(
-                self.header_chain.height(),
-                self.header_chain
-                    .iter_data()
-                    .filter(|node| node.filter_commitment.is_some())
-                    .count() as u32,
-                self.header_chain
-                    .iter_data()
-                    .filter(|node| node.filter_checked)
-                    .count() as u32,
-                peer_max.unwrap_or(self.header_chain.height()),
-            )
-            .await;
         self.request_state.last_filter_request = Some(FilterRequest {
             stop_hash,
             start_height: last_unchecked_filter,
         });
+        self.send_chain_update().await;
         GetCFilters {
             filter_type: FILTER_BASIC,
             start_height: last_unchecked_filter,
@@ -720,6 +692,33 @@ impl<H: HeaderStore> Chain<H> {
     // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) fn clear_filters(&mut self) {
         self.header_chain.reset_all_filters();
+    }
+
+    async fn send_chain_update(&self) {
+        crate::info!(
+            self.dialog,
+            Info::Progress(Progress::new(
+                self.header_chain.total_filter_headers_synced(),
+                self.header_chain.total_filters_synced(),
+                self.header_chain.internally_cached_headers() as u32
+            ))
+        );
+        crate::log!(
+            self.dialog,
+            format!(
+                "Headers: ({}/{}) CFHeaders: ({}/{}) CFilters: ({}/{})",
+                self.header_chain.height(),
+                self.heights
+                    .lock()
+                    .await
+                    .max()
+                    .unwrap_or(self.header_chain.height()),
+                self.header_chain.total_filter_headers_synced(),
+                self.header_chain.internally_cached_headers() as u32,
+                self.header_chain.total_filters_synced(),
+                self.header_chain.internally_cached_headers() as u32,
+            )
+        );
     }
 }
 
