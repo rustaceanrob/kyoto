@@ -10,10 +10,8 @@ use bitcoin::{address::NetworkChecked, ScriptBuf};
 use corepc_node::serde_json;
 use corepc_node::{anyhow, exe_path};
 use kyoto::{
-    chain::checkpoints::HeaderCheckpoint,
-    BlockHash, Event, Log, NodeState, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer,
-    Warning,
-    {client::Client, node::Node},
+    chain::checkpoints::HeaderCheckpoint, client::Client, node::Node, BlockHash, Event, LogLevel,
+    ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer, Warning,
 };
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -116,7 +114,7 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<
     }
 }
 
-async fn print_logs(mut log_rx: Receiver<Log>, mut warn_rx: UnboundedReceiver<Warning>) {
+async fn print_logs(mut log_rx: Receiver<String>, mut warn_rx: UnboundedReceiver<Warning>) {
     loop {
         tokio::select! {
             log = log_rx.recv() => {
@@ -157,6 +155,7 @@ async fn live_reorg() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -212,6 +211,7 @@ async fn live_reorg_additional_sync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -270,6 +270,7 @@ async fn various_client_methods() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -309,6 +310,7 @@ async fn stop_reorg_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -329,6 +331,7 @@ async fn stop_reorg_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -360,6 +363,7 @@ async fn stop_reorg_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -393,6 +397,7 @@ async fn stop_reorg_two_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -414,6 +419,7 @@ async fn stop_reorg_two_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -444,6 +450,7 @@ async fn stop_reorg_two_resync() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -476,6 +483,7 @@ async fn stop_reorg_start_on_orphan() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -500,6 +508,7 @@ async fn stop_reorg_start_on_orphan() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -537,6 +546,7 @@ async fn stop_reorg_start_on_orphan() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -561,6 +571,7 @@ async fn stop_reorg_start_on_orphan() {
     let Client {
         requester,
         log_rx,
+        info_rx: _,
         warn_rx,
         event_rx: mut channel,
     } = client;
@@ -604,25 +615,22 @@ async fn halting_download_works() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx: mut log,
+        log_rx: _,
+        info_rx: mut info,
         warn_rx: _,
         event_rx: mut channel,
     } = client;
-    // Ensure SQL is able to catch the fork by loading in headers from the database
-    while let Some(message) = log.recv().await {
-        match message {
-            Log::Debug(d) => println!("{d}"),
-            Log::StateChange(node_state) => {
-                if let NodeState::FilterHeadersSynced = node_state {
-                    println!("Sleeping for one second...");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    requester.continue_download().await.unwrap();
-                    break;
-                }
+    while let Some(message) = info.recv().await {
+        if let kyoto::Info::StateChange(node_state) = message {
+            if let kyoto::NodeState::FilterHeadersSynced = node_state {
+                println!("Sleeping for one second...");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                requester.continue_download().await.unwrap();
+                break;
             }
-            _ => (),
         }
     }
+
     while let Some(message) = channel.recv().await {
         if let kyoto::messages::Event::Synced(update) = message {
             println!("Done");
@@ -650,6 +658,7 @@ async fn signet_syncs() {
         .add_peer(host)
         .add_scripts(set)
         .data_dir(tempdir)
+        .log_level(LogLevel::Info)
         .build()
         .unwrap();
     tokio::task::spawn(async move { node.run().await });
@@ -663,7 +672,7 @@ async fn signet_syncs() {
                         break;
                     }
                 }
-                log = client.log_rx.recv() => {
+                log = client.info_rx.recv() => {
                     if let Some(log) = log {
                         println!("{log}");
                     }

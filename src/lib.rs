@@ -10,7 +10,7 @@
 //! ```no_run
 //! use std::str::FromStr;
 //! use std::collections::HashSet;
-//! use kyoto::{NodeBuilder, Log, Event, Client, Address, Network, HeaderCheckpoint, BlockHash};
+//! use kyoto::{NodeBuilder, Event, Client, Address, Network, HeaderCheckpoint, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -42,16 +42,13 @@
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, mut log_rx, warn_rx: _, mut event_rx } = client;
+//!     let Client { requester, mut log_rx, info_rx: _, warn_rx: _, mut event_rx } = client;
 //!     // Sync with the single script added
 //!     loop {
 //!         tokio::select! {
 //!             log = log_rx.recv() => {
 //!                 if let Some(log) = log {
-//!                     match log {
-//!                         Log::Debug(d) => tracing::info!("{d}"),
-//!                         _ => (),
-//!                     }
+//!                     tracing::info!("{log}");
 //!                 }
 //!             }
 //!             event = event_rx.recv() => {
@@ -137,7 +134,7 @@ pub use {
     crate::builder::NodeBuilder,
     crate::client::{Client, Requester},
     crate::error::{ClientError, NodeError},
-    crate::messages::{Event, Log, Progress, RejectPayload, SyncUpdate, Warning},
+    crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
     crate::network::PeerTimeoutConfig,
     crate::node::Node,
 };
@@ -389,12 +386,13 @@ pub enum PeerStoreSizeConfig {
 /// Select the category of messages for the node to emit.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
-    /// Send `Log::Debug` messages. These messages are intended for debugging or troubleshooting
+    /// Send debug strings. These messages are intended for debugging or troubleshooting
     /// node operation.
     #[default]
     Debug,
-    /// Omit `Log::Debug` messages, including their memory allocations. Ideal for a production
-    /// application that uses minimal logging.
+    /// Send info and warning messages, but omit debug strings - including their memory allocations. Ideal for a production application that uses minimal logging.
+    Info,
+    /// Send warnings only.
     Warning,
 }
 
@@ -445,9 +443,20 @@ macro_rules! log {
     ($dialog:expr, $expr:expr) => {
         match $dialog.log_level {
             crate::LogLevel::Debug => $dialog.send_dialog($expr).await,
-            crate::LogLevel::Warning => (),
+            _ => (),
         }
     };
 }
 
+macro_rules! info {
+    ($dialog:expr, $expr:expr) => {
+        match $dialog.log_level {
+            crate::LogLevel::Debug => $dialog.send_info($expr).await,
+            crate::LogLevel::Info => $dialog.send_info($expr).await,
+            _ => (),
+        }
+    };
+}
+
+pub(crate) use info;
 pub(crate) use log;

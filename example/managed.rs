@@ -45,8 +45,8 @@ async fn main() {
         .anchor_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(1)
-        // Omit informational messages
-        .log_level(LogLevel::Warning)
+        // Omit debug messages
+        .log_level(LogLevel::Info)
         // Create the node and client
         .build()
         .unwrap();
@@ -55,17 +55,23 @@ async fn main() {
 
     let Client {
         requester,
-        mut log_rx,
-        warn_rx: _,
+        log_rx: _,
+        mut info_rx,
+        mut warn_rx,
         mut event_rx,
     } = client;
 
     // Continually listen for events until the node is synced to its peers.
     loop {
         tokio::select! {
-            log = log_rx.recv() => {
-                if let Some(log) = log {
-                    tracing::info!("{log}");
+            info = info_rx.recv() => {
+                if let Some(info) = info {
+                    tracing::info!("{info}");
+                }
+            }
+            warn = warn_rx.recv() => {
+                if let Some(warn) = warn {
+                    tracing::warn!("{warn}");
                 }
             }
             event = event_rx.recv() => {

@@ -1,7 +1,7 @@
 //! Usual sync on Testnet.
 
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
-use kyoto::{Address, Client, Event, Log, Network, PeerStoreSizeConfig, TrustedPeer};
+use kyoto::{Address, Client, Event, Info, Network, PeerStoreSizeConfig, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
@@ -52,6 +52,7 @@ async fn main() {
     let Client {
         requester,
         mut log_rx,
+        mut info_rx,
         mut warn_rx,
         mut event_rx,
     } = client;
@@ -76,14 +77,18 @@ async fn main() {
                     }
                 }
             }
-            log = log_rx.recv() => {
-                if let Some(log) = log {
-                    match log {
-                        Log::Debug(d)=> tracing::info!("{d}"),
-                        Log::StateChange(node_state) => tracing::info!("{node_state}"),
-                        Log::ConnectionsMet => tracing::info!("All required connections met"),
+            info = info_rx.recv() => {
+                if let Some(info) = info {
+                    match info {
+                        Info::StateChange(node_state) => tracing::info!("{node_state}"),
+                        Info::ConnectionsMet => tracing::info!("All required connections met"),
                         _ => (),
                     }
+                }
+            }
+            log = log_rx.recv() => {
+                if let Some(log) = log {
+                    tracing::info!("{log}");
                 }
             }
             warn = warn_rx.recv() => {
