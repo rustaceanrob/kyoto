@@ -35,6 +35,11 @@ const MAINNET_SEEDS: &[&str; 9] = &[
     "seed.bitcoin.wiz.biz",
 ];
 
+const SERVICE_BITS_PREFIX: &[&str; 2] = &[
+    "x49",  // Compact Filters, Node Network
+    "x849", // Compact Filters, Node Network, P2P V2
+];
+
 pub(crate) const DNS_RESOLVER_PORT: u16 = 53;
 const LOCAL_HOST: &str = "0.0.0.0:0";
 
@@ -102,9 +107,13 @@ impl Dns<'_> {
         let mut ip_addrs: Vec<IpAddr> = vec![];
 
         for host in &self.seeds {
-            match DNSQuery::new(host).lookup(self.dns_resolver.into()).await {
-                Ok(addrs) => ip_addrs.extend(addrs),
-                Err(e) => eprintln!("{e}"),
+            for filter in SERVICE_BITS_PREFIX {
+                if let Ok(addrs) = DNSQuery::new(host, filter)
+                    .lookup(self.dns_resolver.into())
+                    .await
+                {
+                    ip_addrs.extend(addrs);
+                }
             }
         }
 
@@ -124,7 +133,7 @@ struct DNSQuery {
 }
 
 impl DNSQuery {
-    fn new(seed: &str) -> Self {
+    fn new(seed: &str, service_bit_prefix: &str) -> Self {
         // Build a header
         let mut rng = thread_rng();
         let mut message_id = [0, 0];
@@ -134,7 +143,7 @@ impl DNSQuery {
         message.push(0x00); // QDCOUNT
         message.push(0x01); // QDCOUNT
         message.extend(COUNTS);
-        let mut question = encode_qname(seed);
+        let mut question = encode_qname(seed, service_bit_prefix);
         question.extend(QTYPE);
         message.extend_from_slice(&question);
         Self {
@@ -260,12 +269,14 @@ mod test {
     async fn dns_responds() {
         let socket_addr = "1.1.1.1:53".parse::<SocketAddr>().unwrap();
         let addrs = Dns::new(
-            bitcoin::network::Network::Signet,
+            bitcoin::network::Network::Bitcoin,
             DnsResolver { socket_addr },
         )
         .bootstrap()
         .await
         .unwrap();
         assert!(addrs.len() > 1);
+        let first = addrs.first().unwrap();
+        println!("Example IP: {first:?}");
     }
 }
