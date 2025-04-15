@@ -19,12 +19,11 @@ use crate::{
     chain::{
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
-        error::HeaderSyncError,
+        error::{CFilterSyncError, HeaderSyncError},
         CFHeaderChanges, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
-    filters::error::CFilterSyncError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId, PeerTimeoutConfig},
     FilterSyncPolicy, NodeState, RejectPayload, TxBroadcastPolicy,
 };

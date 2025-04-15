@@ -78,7 +78,6 @@
 pub mod chain;
 pub mod db;
 
-mod filters;
 mod network;
 mod prelude;
 
@@ -105,7 +104,7 @@ pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, Fet
 #[cfg(feature = "filter-control")]
 use crate::error::FetchBlockError;
 #[cfg(feature = "filter-control")]
-use filters::Filter;
+use chain::Filter;
 #[cfg(feature = "filter-control")]
 use std::collections::HashSet;
 
