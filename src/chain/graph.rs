@@ -7,7 +7,7 @@ use bitcoin::{
     Network, Work,
 };
 
-use super::IndexedHeader;
+use super::{FilterCommitment, IndexedHeader};
 
 const LOCATOR_INDEX: &[u32] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 
@@ -110,7 +110,8 @@ pub(crate) struct BlockNode {
     pub height: Height,
     pub header: Header,
     pub acc_work: Work,
-    pub filter_hash: Option<FilterHash>,
+    pub filter_commitment: Option<FilterCommitment>,
+    pub filter_checked: bool,
 }
 
 impl BlockNode {
@@ -119,7 +120,8 @@ impl BlockNode {
             height,
             header,
             acc_work,
-            filter_hash: None,
+            filter_commitment: None,
+            filter_checked: false,
         }
     }
 }
@@ -404,6 +406,10 @@ impl BlockTree {
         self.headers.get(&hash).map(|node| node.height.to_u32())
     }
 
+    pub(crate) fn header_at_hash(&self, hash: BlockHash) -> Option<Header> {
+        self.headers.get(&hash).map(|node| node.header)
+    }
+
     pub(crate) fn height(&self) -> u32 {
         self.active_tip.height.to_u32()
     }
@@ -417,13 +423,82 @@ impl BlockTree {
     }
 
     pub(crate) fn filter_hash(&self, block_hash: BlockHash) -> Option<FilterHash> {
-        self.headers.get(&block_hash)?.filter_hash
+        Some(
+            self.headers
+                .get(&block_hash)?
+                .filter_commitment?
+                .filter_hash,
+        )
+    }
+
+    pub(crate) fn filter_commitment(&self, block_hash: BlockHash) -> Option<&FilterCommitment> {
+        self.headers.get(&block_hash)?.filter_commitment.as_ref()
     }
 
     pub(crate) fn filter_hash_at_height(&self, height: impl Into<Height>) -> Option<FilterHash> {
         let height = height.into();
         let hash = self.canonical_hashes.get(&height)?;
-        self.headers.get(hash)?.filter_hash
+        Some(self.headers.get(hash)?.filter_commitment?.filter_hash)
+    }
+
+    pub(crate) fn set_commitment(&mut self, commitment: FilterCommitment, hash: BlockHash) {
+        if let Some(node) = self.headers.get_mut(&hash) {
+            node.filter_commitment = Some(commitment)
+        }
+    }
+
+    pub(crate) fn check_filter(&mut self, hash: BlockHash) {
+        if let Some(node) = self.headers.get_mut(&hash) {
+            node.filter_checked = true
+        }
+    }
+
+    pub(crate) fn reset_all_filters(&mut self) {
+        let mut curr = self.tip_hash();
+        while let Some(node) = self.headers.get_mut(&curr) {
+            match self.headers.get_mut(&curr) {
+                Some(node) => {
+                    node.filter_checked = false;
+                    curr = node.header.prev_blockhash;
+                }
+                None => break,
+            }
+        }
+        for fork in &self.candidate_forks {
+            curr = fork.hash;
+            while let Some(node) = self.headers.get_mut(&curr) {
+                match self.headers.get_mut(&curr) {
+                    Some(node) => {
+                        if !node.filter_checked {
+                            break;
+                        }
+                        node.filter_checked = false;
+                        curr = node.header.prev_blockhash;
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    pub(crate) fn filter_headers_synced(&self) -> bool {
+        self.iter_data()
+            .map(|node| node.filter_commitment)
+            .all(|commitment| commitment.is_some())
+    }
+
+    pub(crate) fn filters_synced(&self) -> bool {
+        self.iter_data().all(|node| node.filter_checked)
+    }
+
+    pub(crate) fn total_filters_synced(&self) -> u32 {
+        self.iter_data().filter(|node| node.filter_checked).count() as u32
+    }
+
+    pub(crate) fn total_filter_headers_synced(&self) -> u32 {
+        self.iter_data()
+            .filter(|node| node.filter_commitment.is_some())
+            .count() as u32
     }
 
     pub(crate) fn locators(&self) -> Vec<BlockHash> {
@@ -446,26 +521,48 @@ impl BlockTree {
         self.headers.len()
     }
 
-    pub(crate) fn iter(&self) -> BlockTreeIterator {
-        BlockTreeIterator {
+    pub(crate) fn iter_data(&self) -> BlockNodeIterator {
+        BlockNodeIterator {
+            block_tree: self,
+            current: self.active_tip.hash,
+        }
+    }
+
+    pub(crate) fn iter_headers(&self) -> BlockHeaderIterator {
+        BlockHeaderIterator {
             block_tree: self,
             current: self.active_tip.hash,
         }
     }
 }
 
-pub(crate) struct BlockTreeIterator<'a> {
+pub(crate) struct BlockHeaderIterator<'a> {
     block_tree: &'a BlockTree,
     current: BlockHash,
 }
 
-impl Iterator for BlockTreeIterator<'_> {
+impl Iterator for BlockHeaderIterator<'_> {
     type Item = IndexedHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.block_tree.headers.get(&self.current)?;
         self.current = node.header.prev_blockhash;
         Some(IndexedHeader::new(node.height.to_u32(), node.header))
+    }
+}
+
+pub(crate) struct BlockNodeIterator<'a> {
+    block_tree: &'a BlockTree,
+    current: BlockHash,
+}
+
+impl<'a> Iterator for BlockNodeIterator<'a> {
+    type Item = &'a BlockNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.block_tree.headers.get(&self.current)?;
+        self.current = node.header.prev_blockhash;
+        Some(node)
     }
 }
 

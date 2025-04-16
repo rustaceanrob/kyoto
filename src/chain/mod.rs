@@ -14,9 +14,9 @@ pub(crate) mod header_batch;
 
 use std::collections::HashMap;
 
-use bitcoin::block::Header;
+use bitcoin::{block::Header, BlockHash, FilterHash, FilterHeader};
 
-use crate::network::PeerId;
+use crate::{filters::cfheader_batch::CFHeaderBatch, network::PeerId};
 
 type Height = u32;
 
@@ -33,6 +33,81 @@ impl IndexedHeader {
     pub(crate) fn new(height: u32, header: Header) -> Self {
         Self { height, header }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct FilterCommitment {
+    pub header: FilterHeader,
+    pub filter_hash: FilterHash,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FilterRequestState {
+    pub last_filter_request: Option<FilterRequest>,
+    pub last_filter_header_request: Option<FilterHeaderRequest>,
+    pub pending_batch: Option<(PeerId, CFHeaderBatch)>,
+    pub agreement_state: FilterHeaderAgreements,
+}
+
+impl FilterRequestState {
+    pub(crate) fn new(required: u8) -> Self {
+        Self {
+            last_filter_request: None,
+            last_filter_header_request: None,
+            pending_batch: None,
+            agreement_state: FilterHeaderAgreements::new(required),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FilterRequest {
+    #[allow(unused)]
+    pub start_height: u32,
+    pub stop_hash: BlockHash,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FilterHeaderRequest {
+    pub start_height: u32,
+    pub stop_hash: BlockHash,
+    pub expected_prev_filter_header: Option<FilterHeader>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FilterHeaderAgreements {
+    current: u8,
+    required: u8,
+}
+
+impl FilterHeaderAgreements {
+    pub(crate) fn new(required: u8) -> Self {
+        Self {
+            current: 0,
+            required,
+        }
+    }
+
+    pub(crate) fn got_agreement(&mut self) {
+        self.current += 1;
+    }
+
+    pub(crate) fn enough_agree(&self) -> bool {
+        self.current.ge(&self.required)
+    }
+
+    pub(crate) fn reset_agreements(&mut self) {
+        self.current = 0;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CFHeaderChanges {
+    AddedToQueue,
+    Extended,
+    // Unfortunately, auditing each peer by reconstruction the filter would be costly in network
+    // and compute. Instead it is easier to disconnect from all peers and try again.
+    Conflict,
 }
 
 #[derive(Debug)]

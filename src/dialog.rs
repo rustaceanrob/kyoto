@@ -1,6 +1,6 @@
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 
-use super::messages::{Event, Info, Progress, Warning};
+use super::messages::{Event, Info, Warning};
 use crate::LogLevel;
 
 #[derive(Debug, Clone)]
@@ -31,32 +31,6 @@ impl Dialog {
 
     pub(crate) async fn send_dialog(&self, dialog: impl Into<String>) {
         let _ = self.log_tx.send(dialog.into()).await;
-    }
-
-    pub(crate) async fn chain_update(
-        &self,
-        num_headers: u32,
-        num_cf_headers: u32,
-        num_filters: u32,
-        best_height: u32,
-    ) {
-        if matches!(self.log_level, LogLevel::Debug | LogLevel::Info) {
-            let _ = self
-                .info_tx
-                .send(Info::Progress(Progress::new(
-                    num_cf_headers,
-                    num_filters,
-                    best_height,
-                )))
-                .await;
-        }
-        if matches!(self.log_level, LogLevel::Debug) {
-            let message = format!(
-                "Headers ({}/{}) Compact Filter Headers ({}/{}) Filters ({}/{})",
-                num_headers, best_height, num_cf_headers, best_height, num_filters, best_height
-            );
-            let _ = self.log_tx.send(message).await;
-        }
     }
 
     pub(crate) fn send_warning(&self, warning: Warning) {
