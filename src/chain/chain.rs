@@ -14,10 +14,12 @@ use tokio::sync::Mutex;
 
 use super::{
     block_queue::BlockQueue,
+    cfheader_batch::CFHeaderBatch,
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
-    error::{BlockScanError, HeaderSyncError},
+    error::{BlockScanError, CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection, Tip},
-    CFHeaderChanges, FilterHeaderRequest, FilterRequest, FilterRequestState, HeightMonitor, PeerId,
+    CFHeaderChanges, Filter, FilterHeaderRequest, FilterRequest, FilterRequestState, HeightMonitor,
+    PeerId,
 };
 #[cfg(feature = "filter-control")]
 use crate::error::FetchBlockError;
@@ -30,17 +32,14 @@ use crate::{
     db::{traits::HeaderStore, BlockHeaderChanges},
     dialog::Dialog,
     error::HeaderPersistenceError,
-    filters::{
-        cfheader_batch::CFHeaderBatch,
-        error::{CFHeaderSyncError, CFilterSyncError},
-        Filter, CF_HEADER_BATCH_SIZE, FILTER_BATCH_SIZE,
-    },
     messages::{Event, Warning},
     IndexedBlock, Info, Progress,
 };
 
 const REORG_LOOKBACK: u32 = 7;
 const FILTER_BASIC: u8 = 0x00;
+const CF_HEADER_BATCH_SIZE: u32 = 1_999;
+const FILTER_BATCH_SIZE: u32 = 999;
 
 #[derive(Debug)]
 pub(crate) struct Chain<H: HeaderStore> {

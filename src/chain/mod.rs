@@ -2,6 +2,7 @@
 //!
 //! Notably, [`checkpoints`] contains known Bitcoin block hashes and heights with significant work, so Kyoto nodes do not have to sync from genesis.
 pub(crate) mod block_queue;
+mod cfheader_batch;
 #[allow(clippy::module_inception)]
 pub(crate) mod chain;
 /// Expected block header checkpoints and corresponding structure.
@@ -14,9 +15,13 @@ pub(crate) mod header_batch;
 
 use std::collections::HashMap;
 
-use bitcoin::{block::Header, BlockHash, FilterHash, FilterHeader};
+use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::{bip158::BlockFilter, block::Header, BlockHash, FilterHash, FilterHeader, ScriptBuf};
 
-use crate::{filters::cfheader_batch::CFHeaderBatch, network::PeerId};
+use crate::network::PeerId;
+
+use cfheader_batch::CFHeaderBatch;
+use error::FilterError;
 
 type Height = u32;
 
@@ -108,6 +113,44 @@ pub(crate) enum CFHeaderChanges {
     // Unfortunately, auditing each peer by reconstruction the filter would be costly in network
     // and compute. Instead it is easier to disconnect from all peers and try again.
     Conflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Filter {
+    filter_hash: FilterHash,
+    block_hash: BlockHash,
+    block_filter: BlockFilter,
+}
+
+#[allow(dead_code)]
+impl Filter {
+    pub fn new(contents: Vec<u8>, block_hash: BlockHash) -> Self {
+        let hash = sha256d::Hash::hash(&contents);
+        let filter_hash = FilterHash::from_raw_hash(hash);
+        let block_filter = BlockFilter::new(&contents);
+        Self {
+            filter_hash,
+            block_hash,
+            block_filter,
+        }
+    }
+
+    pub fn filter_hash(&self) -> &FilterHash {
+        &self.filter_hash
+    }
+
+    pub fn block_hash(&self) -> &BlockHash {
+        &self.block_hash
+    }
+
+    pub fn contains_any<'a>(
+        &'a mut self,
+        scripts: impl Iterator<Item = &'a ScriptBuf>,
+    ) -> Result<bool, FilterError> {
+        self.block_filter
+            .match_any(&self.block_hash, scripts.map(|script| script.to_bytes()))
+            .map_err(|_| FilterError::IORead)
+    }
 }
 
 #[derive(Debug)]
