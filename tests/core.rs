@@ -38,39 +38,23 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     Ok((bitcoind, socket_addr))
 }
 
-fn new_node_sql(
+fn new_node(
     addrs: HashSet<ScriptBuf>,
     socket_addr: SocketAddrV4,
     tempdir_path: PathBuf,
+    checkpoint: Option<HeaderCheckpoint>,
 ) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let mut builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    if let Some(checkpoint) = checkpoint {
+        builder = builder.anchor_checkpoint(checkpoint);
+    }
     let (node, client) = builder
         .add_peer(host)
         .add_scripts(addrs)
         .data_dir(tempdir_path)
-        .build()
-        .unwrap();
-    (node, client)
-}
-
-fn new_node_anchor_sql(
-    addrs: HashSet<ScriptBuf>,
-    checkpoint: HeaderCheckpoint,
-    socket_addr: SocketAddrV4,
-    tempdir_path: PathBuf,
-) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
-    let addr = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
-    let mut trusted: TrustedPeer = addr.into();
-    trusted.set_services(ServiceFlags::P2P_V2);
-    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
-    let (node, client) = builder
-        .add_peer(trusted)
-        .add_scripts(addrs)
-        .data_dir(tempdir_path)
-        .anchor_checkpoint(checkpoint)
         .build()
         .unwrap();
     (node, client)
@@ -144,7 +128,7 @@ async fn live_reorg() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -194,7 +178,7 @@ async fn live_reorg_additional_sync() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -247,7 +231,7 @@ async fn various_client_methods() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -281,7 +265,7 @@ async fn stop_reorg_resync() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -302,7 +286,7 @@ async fn stop_reorg_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Spin up the node on a cold start
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -334,7 +318,7 @@ async fn stop_reorg_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -362,7 +346,7 @@ async fn stop_reorg_two_resync() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -384,7 +368,7 @@ async fn stop_reorg_two_resync() {
     let best = best_hash(rpc);
     drop(handle);
     // Make sure the reorganization is caught after a cold start
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -415,7 +399,7 @@ async fn stop_reorg_two_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir);
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -442,7 +426,7 @@ async fn stop_reorg_start_on_orphan() {
     let mut scripts = HashSet::new();
     let other = rpc.new_address().unwrap();
     scripts.insert(other.into());
-    let (node, client) = new_node_sql(scripts.clone(), socket_addr, tempdir.clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -462,11 +446,11 @@ async fn stop_reorg_start_on_orphan() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Spin up the node on a cold start with a stale tip
-    let (node, client) = new_node_anchor_sql(
+    let (node, client) = new_node(
         scripts.clone(),
-        HeaderCheckpoint::new(old_height as u32, old_best),
         socket_addr,
         tempdir.clone(),
+        Some(HeaderCheckpoint::new(old_height as u32, old_best)),
     );
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -500,11 +484,11 @@ async fn stop_reorg_start_on_orphan() {
     let old_height = num_blocks(rpc);
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_anchor_sql(
+    let (node, client) = new_node(
         scripts.clone(),
-        HeaderCheckpoint::new(old_height as u32, cp),
         socket_addr,
         tempdir.clone(),
+        Some(HeaderCheckpoint::new(old_height as u32, cp)),
     );
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -525,11 +509,11 @@ async fn stop_reorg_start_on_orphan() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node_anchor_sql(
+    let (node, client) = new_node(
         scripts.clone(),
-        HeaderCheckpoint::new(old_height as u32, cp),
         socket_addr,
         tempdir,
+        Some(HeaderCheckpoint::new(old_height as u32, cp)),
     );
     tokio::task::spawn(async move { node.run().await });
     let Client {
