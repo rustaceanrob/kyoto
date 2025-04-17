@@ -1,36 +1,47 @@
-default:
-  just --list
-
-build:
-  cargo build
-
+set ignore-comments
+  
+# Hidden default lists all available recipies.
+_default:
+  @just --list --list-heading $'KYOTO\n'
+  
+# Quick check of the code including lints and formatting.
 check:
-   cargo fmt
-   cargo clippy --all-targets
+  cargo fmt -- --check
+  # Turn warnings into errors.
+  cargo clippy --all-targets -- -D warnings
+  cargo check --all-features
 
-test:
+# Run a test suite: unit, integration, features, msrv, or sync.
+test suite="unit":
+  just _test-{{suite}}
+
+# Unit test suite.
+_test-unit:
   cargo test --lib
   cargo test --doc
+  cargo test --examples
 
-sync: 
+# Run integration tests, excluding the network sync.
+_test-integration: 
+  cargo test --tests -- --test-threads 1 --nocapture --skip signet_syncs
+
+# Run the network sync integration test.
+_test-sync: 
   cargo test signet_syncs -- --nocapture
 
-integrate: 
-  cargo test -- --test-threads 1 --nocapture --skip signet_syncs
+# Test feature flag matrix compatability.
+_test-features:
+  # Build and test with all features, no features, and some combinations.
+  cargo test --lib --all-features
+  cargo test --lib --no-default-features
+  cargo test --lib --no-default-features --features rusqlite,filter-control 
 
-example:
-  cargo run --example signet --release
+# Check code with MSRV compiler.
+_test-msrv:
+  # Handles creating sandboxed environments to ensure no newer binaries sneak in.
+  cargo install cargo-msrv@0.18.4
+  cargo msrv verify --all-features
 
-signet:
-  cargo run --example signet --release
-
-testnet:
-  cargo run --example testnet --release
-
-all:
-  cargo fmt 
-  cargo clippy --all-targets
-  cargo test --lib
-  cargo test --doc
-  cargo test -- --test-threads 1 --nocapture --skip signet_syncs
-  cargo run --example signet
+# Run the example: signet or testnet.
+example name="signet":
+  cargo run --example {{name}} --release

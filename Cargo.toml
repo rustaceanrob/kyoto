@@ -9,8 +9,6 @@ repository = "https://github.com/rustaceanrob/kyoto"
 readme = "README.md"
 keywords = ["bitcoin", "cryptography", "network", "peer-to-peer"]
 categories = ["cryptography::cryptocurrencies"]
-# MSRV-aware resolver which is the default in edition2024.
-resolver = "3"
 rust-version = "1.63.0"
 
 [dependencies]

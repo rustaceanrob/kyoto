@@ -508,6 +508,7 @@ impl<H: HeaderStore> Chain<H> {
         if self.is_filters_synced() {
             return Ok(None);
         }
+        #[allow(unused_mut)]
         let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self
             .header_chain

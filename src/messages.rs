@@ -142,6 +142,7 @@ pub(crate) enum ClientMessage {
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(TxBroadcast),
     /// Add more Bitcoin [`ScriptBuf`] to look for.
+    #[allow(dead_code)]
     AddScript(ScriptBuf),
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
     Rescan,
