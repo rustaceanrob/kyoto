@@ -171,13 +171,13 @@ async fn live_reorg() {
             }
             kyoto::messages::Event::Synced(update) => {
                 assert_eq!(update.tip().hash, best);
-                requester.shutdown().await.unwrap();
+                requester.shutdown().unwrap();
                 break;
             }
             _ => {}
         }
     }
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -231,7 +231,7 @@ async fn live_reorg_additional_sync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     sync_assert(&best, &mut channel).await;
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -263,9 +263,9 @@ async fn various_client_methods() {
     let _ = requester.broadcast_min_feerate().await.unwrap();
     let _ = requester.get_header(3).await.unwrap();
     let script = rpc.new_address().unwrap();
-    requester.add_script(script).await.unwrap();
-    assert!(requester.is_running().await);
-    requester.shutdown().await.unwrap();
+    requester.add_script(script).unwrap();
+    assert!(requester.is_running());
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -294,7 +294,7 @@ async fn stop_reorg_resync() {
     sync_assert(&best, &mut channel).await;
     let batch = requester.get_header_range(0..10).await.unwrap();
     assert!(!batch.is_empty());
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -328,7 +328,7 @@ async fn stop_reorg_resync() {
             _ => {}
         }
     }
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     drop(handle);
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
@@ -346,7 +346,7 @@ async fn stop_reorg_resync() {
     tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -373,7 +373,7 @@ async fn stop_reorg_two_resync() {
     } = client;
     let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Reorganize the blocks
     let old_height = num_blocks(rpc);
     let old_best = best;
@@ -410,7 +410,7 @@ async fn stop_reorg_two_resync() {
         }
     }
     drop(handle);
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -427,7 +427,7 @@ async fn stop_reorg_two_resync() {
     tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -454,7 +454,7 @@ async fn stop_reorg_start_on_orphan() {
     let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     drop(handle);
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -494,7 +494,7 @@ async fn stop_reorg_start_on_orphan() {
         }
     }
     drop(handle);
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Don't do anything, but reload the node from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -518,7 +518,7 @@ async fn stop_reorg_start_on_orphan() {
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
     drop(handle);
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     // Mine more blocks and reload from the checkpoint
     let cp = best_hash(rpc);
     let old_height = num_blocks(rpc);
@@ -542,7 +542,7 @@ async fn stop_reorg_start_on_orphan() {
     tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -583,7 +583,7 @@ async fn halting_download_works() {
             if let kyoto::NodeState::FilterHeadersSynced = node_state {
                 println!("Sleeping for one second...");
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                requester.continue_download().await.unwrap();
+                requester.continue_download().unwrap();
                 break;
             }
         }
@@ -596,7 +596,7 @@ async fn halting_download_works() {
             break;
         }
     }
-    requester.shutdown().await.unwrap();
+    requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 

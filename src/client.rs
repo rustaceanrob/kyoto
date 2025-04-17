@@ -6,7 +6,7 @@ use bitcoin::Transaction;
 use bitcoin::{block::Header, FeeRate};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{Event, Info, TrustedPeer, TxBroadcast, Warning};
 
@@ -38,7 +38,7 @@ impl Client {
         info_rx: mpsc::Receiver<Info>,
         warn_rx: mpsc::UnboundedReceiver<Warning>,
         event_rx: mpsc::UnboundedReceiver<Event>,
-        ntx: Sender<ClientMessage>,
+        ntx: UnboundedSender<ClientMessage>,
     ) -> Self {
         Self {
             requester: Requester::new(ntx),
@@ -53,11 +53,11 @@ impl Client {
 /// Send messages to a node that is running so the node may complete a task.
 #[derive(Debug, Clone)]
 pub struct Requester {
-    ntx: Sender<ClientMessage>,
+    ntx: UnboundedSender<ClientMessage>,
 }
 
 impl Requester {
-    fn new(ntx: Sender<ClientMessage>) -> Self {
+    fn new(ntx: UnboundedSender<ClientMessage>) -> Self {
         Self { ntx }
     }
 
@@ -66,25 +66,9 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has already stopped running.
-    pub async fn shutdown(&self) -> Result<(), ClientError> {
+    pub fn shutdown(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Shutdown)
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Tell the node to shut down from a synchronus context.
-    ///
-    /// # Errors
-    ///
-    /// If the node has already stopped running.
-    ///
-    /// # Panics
-    ///
-    /// When called within an asynchronus context (e.g `tokio::main`).
-    pub fn shutdown_blocking(&self) -> Result<(), ClientError> {
-        self.ntx
-            .blocking_send(ClientMessage::Shutdown)
             .map_err(|_| ClientError::SendError)
     }
 
@@ -102,10 +86,9 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
+    pub fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Broadcast(tx))
-            .await
             .map_err(|_| ClientError::SendError)
     }
 
@@ -114,26 +97,10 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn broadcast_random(&self, tx: Transaction) -> Result<(), ClientError> {
+    pub fn broadcast_random(&self, tx: Transaction) -> Result<(), ClientError> {
         let tx_broadcast = TxBroadcast::random_broadcast(tx);
         self.ntx
             .send(ClientMessage::Broadcast(tx_broadcast))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Broadcast a new transaction to the network from a synchronus context.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    ///
-    /// # Panics
-    ///
-    /// When called within an asynchronus context (e.g `tokio::main`).
-    pub fn broadcast_tx_blocking(&self, tx: TxBroadcast) -> Result<(), ClientError> {
-        self.ntx
-            .blocking_send(ClientMessage::Broadcast(tx))
             .map_err(|_| ClientError::SendError)
     }
 
@@ -150,7 +117,6 @@ impl Requester {
         let (tx, rx) = tokio::sync::oneshot::channel::<FeeRate>();
         self.ntx
             .send(ClientMessage::GetBroadcastMinFeeRate(tx))
-            .await
             .map_err(|_| FetchFeeRateError::SendError)?;
         rx.await.map_err(|_| FetchFeeRateError::RecvError)
     }
@@ -162,27 +128,9 @@ impl Requester {
     ///
     /// If the node has stopped running.
     #[cfg(not(feature = "filter-control"))]
-    pub async fn add_script(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
+    pub fn add_script(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::AddScript(script.into()))
-            .await
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Add more Bitcoin [`ScriptBuf`] to watch for from a synchronus context. Does not rescan the filters.
-    /// If the script was already present in the node's collection, no change will occur.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    ///
-    /// # Panics
-    ///
-    /// When called within an asynchronus context (e.g `tokio::main`).
-    #[cfg(not(feature = "filter-control"))]
-    pub fn add_script_blocking(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
-        self.ntx
-            .blocking_send(ClientMessage::AddScript(script.into()))
             .map_err(|_| ClientError::SendError)
     }
 
@@ -201,33 +149,8 @@ impl Requester {
         let message = HeaderRequest::new(tx, height);
         self.ntx
             .send(ClientMessage::GetHeader(message))
-            .await
             .map_err(|_| FetchHeaderError::SendError)?;
         rx.await.map_err(|_| FetchHeaderError::RecvError)?
-    }
-
-    /// Get a header at the specified height in a synchronus context, if it exists.
-    ///
-    /// # Note
-    ///
-    /// The height of the chain is the canonical index of the header in the chain.
-    /// For example, the genesis block is at a height of zero.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    ///
-    /// # Panics
-    ///
-    /// When called within an asynchronus context (e.g `tokio::main`).
-    pub fn get_header_blocking(&self, height: u32) -> Result<Header, FetchHeaderError> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
-        let message = HeaderRequest::new(tx, height);
-        self.ntx
-            .blocking_send(ClientMessage::GetHeader(message))
-            .map_err(|_| FetchHeaderError::SendError)?;
-        rx.blocking_recv()
-            .map_err(|_| FetchHeaderError::RecvError)?
     }
 
     /// Get a range of headers by the specified range.
@@ -244,7 +167,6 @@ impl Requester {
         let message = BatchHeaderRequest::new(tx, range);
         self.ntx
             .send(ClientMessage::GetHeaderBatch(message))
-            .await
             .map_err(|_| FetchHeaderError::SendError)?;
         rx.await.map_err(|_| FetchHeaderError::RecvError)?
     }
@@ -262,7 +184,6 @@ impl Requester {
         let message = BlockRequest::new(tx, block_hash);
         self.ntx
             .send(ClientMessage::GetBlock(message))
-            .await
             .map_err(|_| FetchBlockError::SendError)?;
         rx.await.map_err(|_| FetchBlockError::RecvError)?
     }
@@ -274,15 +195,11 @@ impl Requester {
     ///
     /// If the node has stopped running.
     #[cfg(feature = "filter-control")]
-    pub async fn request_block(
-        &self,
-        block_hash: BlockHash,
-    ) -> Result<BlockReceiver, FetchBlockError> {
+    pub fn request_block(&self, block_hash: BlockHash) -> Result<BlockReceiver, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
         let message = BlockRequest::new(tx, block_hash);
         self.ntx
             .send(ClientMessage::GetBlock(message))
-            .await
             .map_err(|_| FetchBlockError::SendError)?;
         Ok(rx)
     }
@@ -292,10 +209,9 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn rescan(&self) -> Result<(), ClientError> {
+    pub fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Rescan)
-            .await
             .map_err(|_| ClientError::SendError)
     }
 
@@ -304,10 +220,9 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn set_response_timeout(&self, duration: Duration) -> Result<(), ClientError> {
+    pub fn set_response_timeout(&self, duration: Duration) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::SetDuration(duration))
-            .await
             .map_err(|_| ClientError::SendError)
     }
 
@@ -316,10 +231,9 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn add_peer(&self, peer: impl Into<TrustedPeer>) -> Result<(), ClientError> {
+    pub fn add_peer(&self, peer: impl Into<TrustedPeer>) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::AddPeer(peer.into()))
-            .await
             .map_err(|_| ClientError::SendError)
     }
 
@@ -329,16 +243,15 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn continue_download(&self) -> Result<(), ClientError> {
+    pub fn continue_download(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::ContinueDownload)
-            .await
             .map_err(|_| ClientError::SendError)
     }
 
     /// Check if the node is running.
-    pub async fn is_running(&self) -> bool {
-        self.ntx.send(ClientMessage::NoOp).await.is_ok()
+    pub fn is_running(&self) -> bool {
+        self.ntx.send(ClientMessage::NoOp).is_ok()
     }
 }
 
@@ -362,7 +275,7 @@ mod tests {
         let (_, info_rx) = tokio::sync::mpsc::channel::<Info>(1);
         let (_, warn_rx) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (_, event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-        let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
+        let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
         let Client {
             requester,
             mut log_rx,
@@ -379,15 +292,13 @@ mod tests {
         let message = log_rx.recv().await;
         assert!(message.is_some());
         drop(log_rx);
-        let broadcast = requester
-            .broadcast_tx(TxBroadcast::new(
-                transaction.clone(),
-                crate::TxBroadcastPolicy::AllPeers,
-            ))
-            .await;
+        let broadcast = requester.broadcast_tx(TxBroadcast::new(
+            transaction.clone(),
+            crate::TxBroadcastPolicy::AllPeers,
+        ));
         assert!(broadcast.is_ok());
         drop(crx);
-        let broadcast = requester.shutdown().await;
+        let broadcast = requester.shutdown();
         assert!(broadcast.is_err());
     }
 }
