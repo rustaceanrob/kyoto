@@ -133,13 +133,7 @@ async fn print_logs(mut log_rx: Receiver<String>, mut warn_rx: UnboundedReceiver
 
 #[tokio::test]
 async fn live_reorg() {
-    let rpc_result = start_bitcoind(false);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks
@@ -189,13 +183,7 @@ async fn live_reorg() {
 
 #[tokio::test]
 async fn live_reorg_additional_sync() {
-    let rpc_result = start_bitcoind(false);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks
@@ -249,13 +237,7 @@ async fn live_reorg_additional_sync() {
 
 #[tokio::test]
 async fn various_client_methods() {
-    let rpc_result = start_bitcoind(false);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine a lot of blocks
@@ -289,13 +271,7 @@ async fn various_client_methods() {
 
 #[tokio::test]
 async fn stop_reorg_resync() {
-    let rpc_result = start_bitcoind(true);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks.
@@ -376,13 +352,7 @@ async fn stop_reorg_resync() {
 
 #[tokio::test]
 async fn stop_reorg_two_resync() {
-    let rpc_result = start_bitcoind(true);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     // Mine some blocks.
@@ -463,13 +433,7 @@ async fn stop_reorg_two_resync() {
 
 #[tokio::test]
 async fn stop_reorg_start_on_orphan() {
-    let rpc_result = start_bitcoind(true);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     let miner = rpc.new_address().unwrap();
@@ -585,13 +549,7 @@ async fn stop_reorg_start_on_orphan() {
 #[tokio::test]
 #[allow(clippy::collapsible_match)]
 async fn halting_download_works() {
-    let rpc_result = start_bitcoind(true);
-    // If we can't fetch the genesis block then bitcoind is not running. Just exit.
-    if rpc_result.is_err() {
-        println!("Bitcoin Core is not running. Skipping this test...");
-        return;
-    }
-    let (bitcoind, socket_addr) = rpc_result.unwrap();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
 
