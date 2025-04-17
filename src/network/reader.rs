@@ -60,7 +60,10 @@ impl Reader {
                 let addresses: Vec<CombinedAddr> = addresses
                     .iter()
                     .map(|(_, addr)| addr)
-                    .filter(|addr| addr.services.has(ServiceFlags::COMPACT_FILTERS))
+                    .filter(|addr| {
+                        addr.services.has(ServiceFlags::COMPACT_FILTERS)
+                            && addr.services.has(ServiceFlags::NETWORK)
+                    })
                     .filter_map(|addr| addr.socket_addr().ok().map(|sock| (addr.port, sock)))
                     .map(|(port, addr)| {
                         let ip = match addr.ip() {
@@ -165,7 +168,10 @@ impl Reader {
                 }
                 let addresses: Vec<CombinedAddr> = addresses
                     .into_iter()
-                    .filter(|f| f.services.has(ServiceFlags::COMPACT_FILTERS))
+                    .filter(|f| {
+                        f.services.has(ServiceFlags::COMPACT_FILTERS)
+                            && f.services.has(ServiceFlags::NETWORK)
+                    })
                     .map(|addr| {
                         let port = addr.port;
                         let mut ip = CombinedAddr::new(addr.addr, port);
