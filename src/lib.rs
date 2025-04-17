@@ -64,7 +64,7 @@
 //!             }
 //!         }
 //!     }
-//!     requester.shutdown().await;
+//!     requester.shutdown();
 //! }
 //! ```
 //!

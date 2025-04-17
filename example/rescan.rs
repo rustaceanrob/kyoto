@@ -82,9 +82,9 @@ async fn main() {
             .unwrap()
             .require_network(NETWORK)
             .unwrap();
-    requester.add_script(new_script).await.unwrap();
+    requester.add_script(new_script).unwrap();
     // // Tell the node to look for these new scripts
-    requester.rescan().await.unwrap();
+    requester.rescan().unwrap();
     tracing::info!("Starting rescan");
     loop {
         tokio::select! {
@@ -107,6 +107,6 @@ async fn main() {
             }
         }
     }
-    let _ = requester.shutdown().await;
+    let _ = requester.shutdown();
     tracing::info!("Shutting down");
 }

@@ -106,6 +106,6 @@ async fn main() {
             }
         }
     }
-    let _ = requester.shutdown().await;
+    let _ = requester.shutdown();
     tracing::info!("Shutting down");
 }

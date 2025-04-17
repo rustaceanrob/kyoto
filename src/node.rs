@@ -9,7 +9,10 @@ use bitcoin::{
     },
     Block, BlockHash, Network, ScriptBuf,
 };
-use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
+use tokio::sync::{
+    mpsc::{Receiver, UnboundedReceiver},
+    Mutex, RwLock,
+};
 use tokio::{
     select,
     sync::mpsc::{self},
@@ -55,7 +58,7 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
     tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: PeerRequirement,
     dialog: Arc<Dialog>,
-    client_recv: Arc<Mutex<Receiver<ClientMessage>>>,
+    client_recv: Arc<Mutex<UnboundedReceiver<ClientMessage>>>,
     peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
     filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
@@ -87,7 +90,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
         let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
-        let (ctx, crx) = mpsc::channel::<ClientMessage>(5);
+        let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
         let client = Client::new(log_rx, info_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
         let dialog = Arc::new(Dialog::new(log_level, log_tx, info_tx, warn_tx, event_tx));
