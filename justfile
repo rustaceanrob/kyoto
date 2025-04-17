@@ -45,3 +45,16 @@ _test-msrv:
 # Run the example: signet or testnet.
 example name="signet":
   cargo run --example {{name}} --release
+
+# Delete unused files or branches: data, lockfile, branches
+delete item="data":
+  just _delete-{{item}}
+
+_delete-data:
+  rm -rf light_client_data
+
+_delete-lockfile:
+  rm Cargo.lock
+
+_delete-branches:
+  git branch --merged | grep -v \* | xargs git branch -d
