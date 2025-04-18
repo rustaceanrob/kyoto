@@ -70,7 +70,7 @@
 //!
 //! # Features
 //!
-//! `database`: use the default `rusqlite` database implementations. Default and recommend feature.
+//! `rusqlite`: use the default `rusqlite` database implementations. Default and recommend feature.
 //!
 //! `filter-control`: check filters and request blocks directly. Recommended for silent payments or strict chain ordering implementations.
 
