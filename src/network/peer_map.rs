@@ -381,7 +381,6 @@ impl<P: PeerStore> PeerMap<P> {
         let new_peers = Dns::new(self.network, self.dns_resolver)
             .bootstrap()
             .await
-            .map_err(|_| PeerManagerError::Dns)?
             .into_iter()
             .map(|ip| match ip {
                 IpAddr::V4(ip) => AddrV2::Ipv4(ip),
@@ -392,7 +391,6 @@ impl<P: PeerStore> PeerMap<P> {
             self.dialog,
             format!("Adding {} sourced from DNS", new_peers.len())
         );
-        // DNS fails if there is an insufficient number of peers
         for peer in new_peers {
             db_lock
                 .update(PersistedPeer::new(

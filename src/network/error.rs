@@ -114,21 +114,6 @@ impl From<std::io::Error> for Socks5Error {
 }
 
 #[derive(Debug)]
-pub(crate) enum DnsBootstrapError {
-    NotEnoughPeersError,
-}
-
-impl core::fmt::Display for DnsBootstrapError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DnsBootstrapError::NotEnoughPeersError => write!(f, "most dns seeding failed."),
-        }
-    }
-}
-
-impl_sourceless_error!(DnsBootstrapError);
-
-#[derive(Debug)]
 pub(crate) enum DNSQueryError {
     MessageID,
     Question,

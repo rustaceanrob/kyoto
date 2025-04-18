@@ -3,7 +3,8 @@ name: Release
 about: Create a new release [for release managers only]
 title: 'Release MAJOR.MINOR.PATCH'
 labels: 'release'
-assignee
+assignees: ''
+
 ---
 
 **Steps** 
