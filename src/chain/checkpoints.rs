@@ -156,6 +156,10 @@ pub const MAINNET_HEADER_CP: &[(Height, &str)] = &[
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
     ),
     (
+        2015,
+        "00000000693067b0e6b440bc51450b9f3850561b07f6d3c021c54fbd6abb9763",
+    ),
+    (
         10000,
         "0000000099c744455f58e6c6e98b671e1bf7f37346bfd4cf5d0274ad8ee660cb",
     ),
