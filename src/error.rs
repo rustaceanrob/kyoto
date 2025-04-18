@@ -41,8 +41,6 @@ impl<H: Debug + Display, P: Debug + Display> From<PeerManagerError<P>> for NodeE
 /// Errors when managing persisted peers.
 #[derive(Debug)]
 pub enum PeerManagerError<P: Debug + Display> {
-    /// DNS failed to respond.
-    Dns,
     /// Reading or writing from the database failed.
     Database(P),
 }
@@ -50,7 +48,6 @@ pub enum PeerManagerError<P: Debug + Display> {
 impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PeerManagerError::Dns => write!(f, "DNS servers failed to respond."),
             PeerManagerError::Database(e) => {
                 write!(f, "database: {e}")
             }

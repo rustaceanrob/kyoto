@@ -1,5 +1,5 @@
 extern crate alloc;
-use crate::{network::error::DnsBootstrapError, prelude::encode_qname};
+use crate::prelude::encode_qname;
 use bitcoin::{
     key::rand::{thread_rng, RngCore},
     Network,
@@ -11,8 +11,6 @@ use std::{
 use tokio::net::UdpSocket;
 
 use super::error::DNSQueryError;
-
-const MIN_PEERS: usize = 10;
 
 const SIGNET_SEEDS: &[&str; 2] = &["seed.dlsouza.lol", "seed.signet.bitcoin.sprovoost.nl"];
 
@@ -33,6 +31,11 @@ const MAINNET_SEEDS: &[&str; 9] = &[
     "seed.bitcoin.sprovoost.nl",
     "dnsseed.emzy.de",
     "seed.bitcoin.wiz.biz",
+];
+
+const TESTNET4_SEEDS: &[&str; 2] = &[
+    "seed.testnet4.bitcoin.sprovoost.nl",
+    "seed.testnet4.wiz.biz",
 ];
 
 const SERVICE_BITS_PREFIX: &[&str; 2] = &[
@@ -94,7 +97,7 @@ impl Dns<'_> {
             Network::Testnet => TESTNET_SEEDS.to_vec(),
             Network::Signet => SIGNET_SEEDS.to_vec(),
             Network::Regtest => Vec::with_capacity(0),
-            Network::Testnet4 => Vec::with_capacity(0),
+            Network::Testnet4 => TESTNET4_SEEDS.to_vec(),
             _ => unreachable!(),
         };
         Self {
@@ -103,9 +106,8 @@ impl Dns<'_> {
         }
     }
 
-    pub async fn bootstrap(&self) -> Result<Vec<IpAddr>, DnsBootstrapError> {
+    pub async fn bootstrap(&self) -> Vec<IpAddr> {
         let mut ip_addrs: Vec<IpAddr> = vec![];
-
         for host in &self.seeds {
             for filter in SERVICE_BITS_PREFIX {
                 if let Ok(addrs) = DNSQuery::new(host, filter)
@@ -116,13 +118,7 @@ impl Dns<'_> {
                 }
             }
         }
-
-        // Arbitrary number for now
-        if ip_addrs.len() < MIN_PEERS {
-            return Err(DnsBootstrapError::NotEnoughPeersError);
-        }
-
-        Ok(ip_addrs)
+        ip_addrs
     }
 }
 
@@ -273,8 +269,7 @@ mod test {
             DnsResolver { socket_addr },
         )
         .bootstrap()
-        .await
-        .unwrap();
+        .await;
         assert!(addrs.len() > 1);
         let first = addrs.first().unwrap();
         println!("Example IP: {first:?}");
