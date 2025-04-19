@@ -526,6 +526,9 @@ impl<H: HeaderStore> Chain<H> {
         }
 
         #[cfg(feature = "filter-control")]
+        if !self
+            .header_chain
+            .is_filter_checked(&filter_message.block_hash)
         {
             let height = self
                 .height_of_hash(filter_message.block_hash)
