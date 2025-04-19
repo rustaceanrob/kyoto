@@ -151,6 +151,10 @@ impl Filter {
             .match_any(&self.block_hash, scripts.map(|script| script.to_bytes()))
             .map_err(|_| FilterError::IORead)
     }
+
+    pub fn contents(self) -> Vec<u8> {
+        self.block_filter.content
+    }
 }
 
 #[derive(Debug)]

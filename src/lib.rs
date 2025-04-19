@@ -136,6 +136,9 @@ pub use {
     crate::node::Node,
 };
 
+#[cfg(feature = "filter-control")]
+#[doc(inline)]
+pub use bitcoin::bip158::BlockFilter;
 #[doc(inline)]
 pub use bitcoin::{
     block::Header, p2p::address::AddrV2, p2p::message_network::RejectReason, p2p::ServiceFlags,
@@ -143,29 +146,6 @@ pub use bitcoin::{
 };
 
 pub extern crate tokio;
-
-/// A Bitcoin [`Transaction`] with additional context.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(crate) struct IndexedTransaction {
-    /// The Bitcoin transaction.
-    pub transaction: Transaction,
-    /// The height of the block in the chain that includes this transaction.
-    pub height: u32,
-    /// The hash of the block.
-    pub hash: BlockHash,
-}
-
-#[allow(dead_code)]
-impl IndexedTransaction {
-    pub(crate) fn new(transaction: Transaction, height: u32, hash: BlockHash) -> Self {
-        Self {
-            transaction,
-            height,
-            hash,
-        }
-    }
-}
 
 /// A Bitcoin [`Block`] with associated height.
 #[derive(Debug, Clone)]
@@ -211,6 +191,11 @@ impl IndexedFilter {
         self.filter
             .contains_any(scripts)
             .expect("vec reader is infallible")
+    }
+
+    /// Consume the filter and get the raw bytes
+    pub fn into_contents(self) -> Vec<u8> {
+        self.filter.contents()
     }
 }
 
