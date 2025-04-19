@@ -453,6 +453,13 @@ impl BlockTree {
         }
     }
 
+    pub(crate) fn is_filter_checked(&self, hash: &BlockHash) -> bool {
+        if let Some(node) = self.headers.get(hash) {
+            return node.filter_checked;
+        }
+        false
+    }
+
     pub(crate) fn reset_all_filters(&mut self) {
         let mut curr = self.tip_hash();
         while let Some(node) = self.headers.get_mut(&curr) {
