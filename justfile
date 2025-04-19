@@ -11,7 +11,7 @@ check:
   cargo clippy --all-targets -- -D warnings
   cargo check --all-features
 
-# Run a test suite: unit, integration, features, msrv, or sync.
+# Run a test suite: unit, integration, features, msrv, min-versions, or sync.
 test suite="unit":
   just _test-{{suite}}
 
@@ -36,6 +36,11 @@ _test-features:
   cargo test --lib --no-default-features
   cargo test --lib --no-default-features --features rusqlite,filter-control 
 
+# Test that minimum versions of dependency contraints are still valid.
+_test-min-versions:
+  just _delete-lockfile
+  cargo +nightly check --all-features -Z direct-minimal-versions
+
 # Check code with MSRV compiler.
 _test-msrv:
   # Handles creating sandboxed environments to ensure no newer binaries sneak in.
@@ -54,7 +59,7 @@ _delete-data:
   rm -rf light_client_data
 
 _delete-lockfile:
-  rm Cargo.lock
+  rm -f Cargo.lock
 
 _delete-branches:
   git branch --merged | grep -v \* | xargs git branch -d
