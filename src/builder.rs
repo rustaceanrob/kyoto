@@ -19,7 +19,7 @@ use crate::{
 use crate::{FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "rusqlite")]
-/// The default node returned from the [`NodeBuilder`](crate::core).
+/// The default node returned from the [`NodeBuilder`].
 pub type NodeDefault = Node<SqliteHeaderDb, SqlitePeerDb>;
 
 const MIN_PEERS: u8 = 1;

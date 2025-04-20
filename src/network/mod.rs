@@ -31,7 +31,7 @@ pub(crate) mod socks;
 pub(crate) mod traits;
 
 pub const PROTOCOL_VERSION: u32 = 70016;
-pub const KYOTO_VERSION: &str = "0.8.0";
+pub const KYOTO_VERSION: &str = "0.10.0";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 
 const THIRTY_MINS: u64 = 60 * 30;
