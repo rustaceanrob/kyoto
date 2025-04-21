@@ -77,7 +77,7 @@ async fn main() {
             event = event_rx.recv() => {
                 if let Some(event) = event {
                     match event {
-                        Event::IndexedFilter(mut filter) => {
+                        Event::IndexedFilter(filter) => {
                             let height = filter.height();
                             tracing::info!("Checking filter: {height}");
                             if filter.contains_any(addresses.iter()) {

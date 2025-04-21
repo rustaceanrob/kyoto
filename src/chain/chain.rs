@@ -508,8 +508,7 @@ impl<H: HeaderStore> Chain<H> {
         if self.is_filters_synced() {
             return Ok(None);
         }
-        #[allow(unused_mut)]
-        let mut filter = Filter::new(filter_message.filter, filter_message.block_hash);
+        let filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self
             .header_chain
             .filter_commitment(filter_message.block_hash);
@@ -526,6 +525,9 @@ impl<H: HeaderStore> Chain<H> {
         }
 
         #[cfg(feature = "filter-control")]
+        if !self
+            .header_chain
+            .is_filter_checked(&filter_message.block_hash)
         {
             let height = self
                 .height_of_hash(filter_message.block_hash)
