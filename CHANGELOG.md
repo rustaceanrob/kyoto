@@ -5,6 +5,39 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.10.0
+
+## Added
+
+- Template issue for bugs, enhancement requests, releases
+- Mainnet, signet, testnet4 checkpoints
+- Testnet4 DNS seeds
+- Socks5 proxy connections supported
+- `justfile` improvements
+
+## Changed
+
+- Removed the crate lockfile
+- Removed the `core` module
+- Removed the `filter` module
+- Renamed `DisconnectedHeader` to `IndexedHeader`
+- `database` feature is now `rusqlite`
+- Remove `arti` and Tor feature in favor of a Socks5 proxy
+- Folder for data storage is now `light_client_data`
+- SQL header schema has been changed to store `BLOB` of consensus encoded header bytes
+- New log level introduced and `Log` has been renamed to `Info`
+- Debug strings sent on a separate channel
+- Sending messages to the node is synchronous
+- Checking `IndexedFilter` for matches is immutable
+
+## Fixes
+- Introduce `BlockTree` to manage chain data
+    - Constant time data access when indexed by height or hash
+    - Consolidated block headers, filter headers/hashes, filter checks into a single struct
+    - Management of candidate forks
+    - Constant time fork comparison
+- CI refactors and improvements
+
 ## 0.9.0
 
 ## Added
