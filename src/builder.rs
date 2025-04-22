@@ -87,6 +87,11 @@ impl NodeBuilder {
         }
     }
 
+    /// Fetch the [`Network`] for the builder.
+    pub fn network(&self) -> Network {
+        self.network
+    }
+
     /// Add preferred peers to try to connect to.
     pub fn add_peers(mut self, whitelist: impl IntoIterator<Item = TrustedPeer>) -> Self {
         self.config.white_list.extend(whitelist);
