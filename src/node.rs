@@ -571,7 +571,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 }
                 _ => {
                     self.dialog.send_warning(Warning::UnexpectedSyncError {
-                        warning: format!("Unexpected header syncing error: {}", e),
+                        warning: format!("Unexpected header syncing error: {e}"),
                     });
                     let mut lock = self.peer_map.lock().await;
                     lock.ban(peer_id).await;
@@ -602,7 +602,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             },
             Err(e) => {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
-                    warning: format!("Compact filter header syncing encountered an error: {}", e),
+                    warning: format!("Compact filter header syncing encountered an error: {e}"),
                 });
                 let mut lock = self.peer_map.lock().await;
                 lock.ban(peer_id).await;
@@ -618,7 +618,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
             Err(e) => {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
-                    warning: format!("Compact filter syncing encountered an error: {}", e),
+                    warning: format!("Compact filter syncing encountered an error: {e}"),
                 });
                 match e {
                     CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
@@ -637,7 +637,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut chain = self.chain.lock().await;
         if let Err(e) = chain.check_send_block(block).await {
             self.dialog.send_warning(Warning::UnexpectedSyncError {
-                warning: format!("Unexpected block scanning error: {}", e),
+                warning: format!("Unexpected block scanning error: {e}"),
             });
             let mut lock = self.peer_map.lock().await;
             lock.ban(peer_id).await;
