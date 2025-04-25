@@ -31,12 +31,12 @@ pub enum Info {
 impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Info::StateChange(s) => write!(f, "{}", s),
-            Info::TxSent(txid) => write!(f, "Transaction sent: {}", txid),
+            Info::StateChange(s) => write!(f, "{s}"),
+            Info::TxSent(txid) => write!(f, "Transaction sent: {txid}"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
             Info::Progress(p) => {
                 let progress_percent = p.percentage_complete();
-                write!(f, "Percent complete: {}", progress_percent)
+                write!(f, "Percent complete: {progress_percent}")
             }
         }
     }
@@ -271,8 +271,7 @@ impl core::fmt::Display for Warning {
             } => {
                 write!(
                     f,
-                    "Looking for connections to peers. Connected: {}, Required: {}",
-                    connected, required
+                    "Looking for connections to peers. Connected: {connected}, Required: {required}"
                 )
             }
             Warning::InvalidStartHeight => write!(
@@ -295,12 +294,12 @@ impl core::fmt::Display for Warning {
                 write!(f, "A transaction got rejected: TXID {}", payload.txid)
             }
             Warning::FailedPersistence { warning } => {
-                write!(f, "A database failed to persist some data: {}", warning)
+                write!(f, "A database failed to persist some data: {warning}")
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
             Warning::UnexpectedSyncError { warning } => {
-                write!(f, "Error handling a P2P message: {}", warning)
+                write!(f, "Error handling a P2P message: {warning}")
             }
             Warning::CorruptedHeaders => {
                 write!(f, "The headers in the database do not link together.")

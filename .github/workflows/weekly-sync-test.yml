@@ -1,0 +1,17 @@
+name: Weekly Sync Test
+
+on:
+  # Allows manual triggering.
+  workflow_dispatch:  
+  schedule:
+   # Run at midnight on Sundays.
+   - cron: "0 0 * * 0" 
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: just test sync
