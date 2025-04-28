@@ -318,7 +318,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_map.send_message(nonce, message).await;
     }
 
-    // Broadcast a messsage to all connected peers
+    // Broadcast a message to all connected peers
     async fn broadcast(&self, message: MainThreadMessage) {
         let mut peer_map = self.peer_map.lock().await;
         peer_map.broadcast(message).await;
@@ -476,14 +476,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             return Some(MainThreadMessage::GetHeaders(headers));
         } else if !chain.is_cf_headers_synced() {
             return Some(MainThreadMessage::GetFilterHeaders(
-                chain.next_cf_header_message().await,
+                chain.next_cf_header_message(),
             ));
         } else if !chain.is_filters_synced() {
             let filter_download = self.filter_sync_policy.read().await;
             if matches!(*filter_download, FilterSyncPolicy::Continue) {
-                return Some(MainThreadMessage::GetFilters(
-                    chain.next_filter_message().await,
-                ));
+                return Some(MainThreadMessage::GetFilters(chain.next_filter_message()));
             }
         }
         None
@@ -589,7 +587,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        match chain.sync_cf_headers(peer_id, cf_headers).await {
+        chain.send_chain_update().await;
+        match chain.sync_cf_headers(peer_id, cf_headers) {
             Ok(potential_message) => match potential_message {
                 CFHeaderChanges::AddedToQueue => None,
                 CFHeaderChanges::Extended => self.next_stateful_message(chain.deref_mut()).await,
@@ -614,8 +613,13 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // Handle a new compact block filter
     async fn handle_filter(&self, peer_id: PeerId, filter: CFilter) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        match chain.sync_filter(filter).await {
-            Ok(potential_message) => potential_message.map(MainThreadMessage::GetFilters),
+        match chain.sync_filter(filter) {
+            Ok(potential_message) => {
+                if potential_message.is_some() {
+                    chain.send_chain_update().await;
+                }
+                potential_message.map(MainThreadMessage::GetFilters)
+            }
             Err(e) => {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
                     warning: format!("Compact filter syncing encountered an error: {e}"),
@@ -635,7 +639,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // Scan a block for transactions.
     async fn handle_block(&self, peer_id: PeerId, block: Block) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        if let Err(e) = chain.check_send_block(block).await {
+        if let Err(e) = chain.check_send_block(block) {
             self.dialog.send_warning(Warning::UnexpectedSyncError {
                 warning: format!("Unexpected block scanning error: {e}"),
             });
@@ -725,9 +729,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     Info::StateChange(NodeState::FilterHeadersSynced)
                 );
                 *state = NodeState::FilterHeadersSynced;
-                Some(MainThreadMessage::GetFilters(
-                    chain.next_filter_message().await,
-                ))
+                Some(MainThreadMessage::GetFilters(chain.next_filter_message()))
             }
         }
     }

@@ -8,7 +8,7 @@ use std::{
 use bitcoin::{
     block::Header,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    Block, BlockHash, Network, ScriptBuf, TxOut,
+    Block, BlockHash, Network, ScriptBuf,
 };
 use tokio::sync::Mutex;
 
@@ -79,60 +79,6 @@ impl<H: HeaderStore> Chain<H> {
             dialog,
         }
     }
-
-    // This header chain contains a block hash, potentially checking the disk
-    pub(crate) async fn height_of_hash(&self, blockhash: BlockHash) -> Option<u32> {
-        match self.header_chain.height_of_hash(blockhash) {
-            Some(height) => Some(height),
-            None => {
-                let mut lock = self.db.lock().await;
-                lock.height_of(&blockhash).await.unwrap_or(None)
-            }
-        }
-    }
-
-    // This header chain contains a block hash in memory
-    pub(crate) fn cached_header_at_height(&self, height: u32) -> Option<Header> {
-        self.header_chain.header_at_height(height)
-    }
-
-    // Fetch a header from the cache or disk.
-    pub(crate) async fn fetch_header(
-        &mut self,
-        height: u32,
-    ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
-        match self.header_chain.header_at_height(height) {
-            Some(header) => Ok(Some(header)),
-            None => {
-                let mut db = self.db.lock().await;
-                let header_opt = db.header_at(height).await;
-                if header_opt.is_err() {
-                    self.dialog
-                        .send_warning(Warning::FailedPersistence {
-                            warning: format!(
-                                "Unexpected error fetching a header from the header store at height {height}"
-                            ),
-                        });
-                }
-                header_opt.map_err(HeaderPersistenceError::Database)
-            }
-        }
-    }
-
-    // The hash at the given height, potentially checking on disk
-    pub(crate) async fn blockhash_at_height(&self, height: u32) -> Option<BlockHash> {
-        match self
-            .cached_header_at_height(height)
-            .map(|header| header.block_hash())
-        {
-            Some(hash) => Some(hash),
-            None => {
-                let mut lock = self.db.lock().await;
-                lock.hash_at(height).await.unwrap_or(None)
-            }
-        }
-    }
-
     // Have we hit the known checkpoints
     pub(crate) fn checkpoints_complete(&self) -> bool {
         self.checkpoints.is_exhausted()
@@ -365,7 +311,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Sync the compact filter headers, possibly encountering conflicts
-    pub(crate) async fn sync_cf_headers(
+    pub(crate) fn sync_cf_headers(
         &mut self,
         peer_id: PeerId,
         cf_headers: CFHeaders,
@@ -455,7 +401,7 @@ impl<H: HeaderStore> Chain<H> {
                 Some(header) => {
                     curr = header.prev_blockhash;
                 }
-                // This is not expected to happen, as to request this fitler header in the first place,
+                // This is not expected to happen, as to request this filter header in the first place,
                 // this header had to exist in the header chain.
                 None => break,
             }
@@ -463,7 +409,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
-    pub(crate) async fn next_cf_header_message(&mut self) -> GetCFHeaders {
+    pub(crate) fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let mut last_unchecked_cfheader = self.header_chain.height();
         let mut prev_header = None;
         for data in self.header_chain.iter_data() {
@@ -479,15 +425,14 @@ impl<H: HeaderStore> Chain<H> {
         }
         let stop_hash_index = last_unchecked_cfheader + CF_HEADER_BATCH_SIZE;
         let stop_hash = self
-            .blockhash_at_height(stop_hash_index)
-            .await
+            .header_chain
+            .block_hash_at_height(stop_hash_index)
             .unwrap_or(self.header_chain.tip_hash());
         self.request_state.last_filter_header_request = Some(FilterHeaderRequest {
             expected_prev_filter_header: prev_header,
             start_height: last_unchecked_cfheader,
             stop_hash,
         });
-        self.send_chain_update().await;
         GetCFHeaders {
             filter_type: FILTER_BASIC,
             start_height: last_unchecked_cfheader,
@@ -501,7 +446,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Handle a new filter
-    pub(crate) async fn sync_filter(
+    pub(crate) fn sync_filter(
         &mut self,
         filter_message: CFilter,
     ) -> Result<Option<GetCFilters>, CFilterSyncError> {
@@ -530,8 +475,8 @@ impl<H: HeaderStore> Chain<H> {
             .is_filter_checked(&filter_message.block_hash)
         {
             let height = self
+                .header_chain
                 .height_of_hash(filter_message.block_hash)
-                .await
                 .ok_or(CFilterSyncError::UnknownFilterHash)?;
             let indexed_filter = IndexedFilter::new(height, filter);
             self.dialog.send_event(Event::IndexedFilter(indexed_filter));
@@ -548,10 +493,6 @@ impl<H: HeaderStore> Chain<H> {
         {
             // Add to the block queue
             self.block_queue.add(filter_message.block_hash);
-            crate::log!(
-                self.dialog,
-                format!("Found script at block: {}", filter_message.block_hash)
-            );
         }
 
         self.header_chain.check_filter(filter_message.block_hash);
@@ -562,7 +503,7 @@ impl<H: HeaderStore> Chain<H> {
             .stop_hash;
         if filter_message.block_hash.eq(&stop_hash) {
             if !self.is_filters_synced() {
-                Ok(Some(self.next_filter_message().await))
+                Ok(Some(self.next_filter_message()))
             } else {
                 Ok(None)
             }
@@ -572,7 +513,7 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Next filter message, if there is one
-    pub(crate) async fn next_filter_message(&mut self) -> GetCFilters {
+    pub(crate) fn next_filter_message(&mut self) -> GetCFilters {
         let mut last_unchecked_filter = self.header_chain.height();
         for block_data in self.header_chain.iter_data() {
             if block_data.filter_checked {
@@ -582,14 +523,13 @@ impl<H: HeaderStore> Chain<H> {
         }
         let stop_hash_index = last_unchecked_filter + FILTER_BATCH_SIZE;
         let stop_hash = self
-            .blockhash_at_height(stop_hash_index)
-            .await
+            .header_chain
+            .block_hash_at_height(stop_hash_index)
             .unwrap_or(self.header_chain.tip_hash());
         self.request_state.last_filter_request = Some(FilterRequest {
             stop_hash,
             start_height: last_unchecked_filter,
         });
-        self.send_chain_update().await;
         GetCFilters {
             filter_type: FILTER_BASIC,
             start_height: last_unchecked_filter,
@@ -613,14 +553,14 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     // Make sure we have this hash in our chain, check the merkle root, and pass the block
-    pub(crate) async fn check_send_block(&mut self, block: Block) -> Result<(), BlockScanError> {
+    pub(crate) fn check_send_block(&mut self, block: Block) -> Result<(), BlockScanError> {
         let block_hash = block.block_hash();
         if !self.block_queue.need(&block_hash) {
             return Ok(());
         }
         let height = self
+            .header_chain
             .height_of_hash(block_hash)
-            .await
             .ok_or(BlockScanError::NoBlockHash)?;
         if !block.check_merkle_root() {
             return Err(BlockScanError::InvalidMerkleRoot);
@@ -641,14 +581,6 @@ impl<H: HeaderStore> Chain<H> {
         Ok(())
     }
 
-    // Should we care about this block
-    #[allow(dead_code)]
-    fn scan_outputs(&mut self, inputs: &[TxOut]) -> bool {
-        inputs
-            .iter()
-            .any(|out| self.scripts.contains(&out.script_pubkey))
-    }
-
     // Add a script to our list
     pub(crate) fn put_script(&mut self, script: ScriptBuf) {
         self.scripts.insert(script);
@@ -657,7 +589,7 @@ impl<H: HeaderStore> Chain<H> {
     // Explicitly request a block
     #[cfg(feature = "filter-control")]
     pub(crate) async fn get_block(&mut self, request: BlockRequest) {
-        let height_opt = self.height_of_hash(request.hash).await;
+        let height_opt = self.header_chain.height_of_hash(request.hash);
         if height_opt.is_none() {
             let err_reponse = request.oneshot.send(Err(FetchBlockError::UnknownHash));
             if err_reponse.is_err() {
@@ -669,6 +601,29 @@ impl<H: HeaderStore> Chain<H> {
                 format!("Adding block {} to queue", request.hash)
             );
             self.block_queue.add(request)
+        }
+    }
+
+    // Fetch a header from the cache or disk.
+    pub(crate) async fn fetch_header(
+        &mut self,
+        height: u32,
+    ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
+        match self.header_chain.header_at_height(height) {
+            Some(header) => Ok(Some(header)),
+            None => {
+                let mut db = self.db.lock().await;
+                let header_opt = db.header_at(height).await;
+                if header_opt.is_err() {
+                    self.dialog
+                        .send_warning(Warning::FailedPersistence {
+                            warning: format!(
+                                "Unexpected error fetching a header from the header store at height {height}"
+                            ),
+                        });
+                }
+                header_opt.map_err(HeaderPersistenceError::Database)
+            }
         }
     }
 
@@ -699,7 +654,7 @@ impl<H: HeaderStore> Chain<H> {
         self.header_chain.reset_all_filters();
     }
 
-    async fn send_chain_update(&self) {
+    pub(crate) async fn send_chain_update(&self) {
         crate::info!(
             self.dialog,
             Info::Progress(Progress::new(
@@ -852,7 +807,7 @@ mod tests {
         let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -863,43 +818,35 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let append_attempt = cf_header_sync_res.unwrap();
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
-        chain.next_filter_message().await;
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_1,
-            })
-            .await;
+        chain.next_filter_message();
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_1,
+        });
         assert!(sync_filter_1.is_ok());
-        let sync_filter_3 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_3.block_hash(),
-                filter: filter_3,
-            })
-            .await;
+        let sync_filter_3 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_3.block_hash(),
+            filter: filter_3,
+        });
         assert!(sync_filter_3.is_ok());
-        let sync_filter_2 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_2.block_hash(),
-                filter: filter_2,
-            })
-            .await;
+        let sync_filter_2 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_2.block_hash(),
+            filter: filter_2,
+        });
         assert!(sync_filter_2.is_ok());
-        let sync_filter_4 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_4.block_hash(),
-                filter: filter_4,
-            })
-            .await;
+        let sync_filter_4 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_4.block_hash(),
+            filter: filter_4,
+        });
         assert!(sync_filter_4.is_ok());
         assert!(chain.is_filters_synced());
     }
@@ -935,7 +882,7 @@ mod tests {
         let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -946,27 +893,23 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let append_attempt = cf_header_sync_res.unwrap();
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
-        chain.next_filter_message().await;
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_2,
-            })
-            .await;
+        chain.next_filter_message();
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_2,
+        });
         assert!(sync_filter_1.is_err());
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_1,
-            })
-            .await;
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_1,
+        });
         assert!(sync_filter_1.is_ok());
     }
 
@@ -1001,7 +944,7 @@ mod tests {
         let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             // Wrong block hash
@@ -1013,10 +956,10 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         // Try the request again
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1027,27 +970,23 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let append_attempt = cf_header_sync_res.unwrap();
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
-        chain.next_filter_message().await;
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_2.block_hash(),
-                filter: filter_1.clone(),
-            })
-            .await;
+        chain.next_filter_message();
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_2.block_hash(),
+            filter: filter_1.clone(),
+        });
         assert!(sync_filter_1.is_err());
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_1,
-            })
-            .await;
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_1,
+        });
         assert!(sync_filter_1.is_ok());
     }
 
@@ -1082,7 +1021,7 @@ mod tests {
         let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1093,7 +1032,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
@@ -1106,11 +1045,11 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_3],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Conflict);
         assert!(chain.request_state.pending_batch.is_none());
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1121,7 +1060,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
@@ -1134,7 +1073,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(3.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(3.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
         assert!(chain.is_cf_headers_synced());
@@ -1171,7 +1110,7 @@ mod tests {
         let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1182,7 +1121,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         // Not enough filter hashes
@@ -1196,7 +1135,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         // Wrong stop hash
         let cf_headers = CFHeaders {
@@ -1209,7 +1148,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1221,7 +1160,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
     }
@@ -1265,13 +1204,13 @@ mod tests {
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         let new_filter_hash_4 = FilterHash::from_raw_hash(new_filter_hash_4);
         let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         // Reorganize the blocks
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1282,7 +1221,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1300,7 +1239,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
@@ -1319,33 +1258,27 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
-        chain.next_filter_message().await;
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_1,
-            })
-            .await;
+        chain.next_filter_message();
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_1,
+        });
         assert!(sync_filter_1.is_ok());
-        let sync_filter_4 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_4.block_hash(),
-                filter: filter_4,
-            })
-            .await;
+        let sync_filter_4 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_4.block_hash(),
+            filter: filter_4,
+        });
         assert!(sync_filter_4.is_err());
-        let sync_filter_4 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: new_block_4.block_hash(),
-                filter: new_filter_4,
-            })
-            .await;
+        let sync_filter_4 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: new_block_4.block_hash(),
+            filter: new_filter_4,
+        });
         assert!(sync_filter_4.is_ok());
     }
 
@@ -1388,7 +1321,7 @@ mod tests {
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         let new_filter_hash_4 = FilterHash::from_raw_hash(new_filter_hash_4);
         let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1399,7 +1332,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         // Reorganize the blocks
         let header_batch = vec![new_block_4, block_5];
@@ -1407,7 +1340,7 @@ mod tests {
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         // Request the CF headers again
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
@@ -1424,7 +1357,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
@@ -1443,7 +1376,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
     }
@@ -1488,7 +1421,7 @@ mod tests {
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         let new_filter_hash_4 = FilterHash::from_raw_hash(new_filter_hash_4);
         let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1499,7 +1432,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1511,17 +1444,15 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
-        chain.next_filter_message().await;
-        let sync_filter_1 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_1.block_hash(),
-                filter: filter_1,
-            })
-            .await;
+        chain.next_filter_message();
+        let sync_filter_1 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_1.block_hash(),
+            filter: filter_1,
+        });
         assert!(sync_filter_1.is_ok());
         // Reorganize the blocks
         let header_batch = vec![new_block_4, block_5];
@@ -1530,7 +1461,7 @@ mod tests {
         height_monitor.lock().await.increment(1.into());
         assert!(chain.is_synced().await);
         // Request the headers again
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
@@ -1541,7 +1472,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![new_filter_hash_4, filter_hash_5],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
@@ -1554,24 +1485,20 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![new_filter_hash_4, filter_hash_5],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
-        let sync_filter_4 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: block_4.block_hash(),
-                filter: filter_4,
-            })
-            .await;
+        let sync_filter_4 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: block_4.block_hash(),
+            filter: filter_4,
+        });
         assert!(sync_filter_4.is_err());
-        let sync_filter_4 = chain
-            .sync_filter(CFilter {
-                filter_type: 0x00,
-                block_hash: new_block_4.block_hash(),
-                filter: new_filter_4,
-            })
-            .await;
+        let sync_filter_4 = chain.sync_filter(CFilter {
+            filter_type: 0x00,
+            block_hash: new_block_4.block_hash(),
+            filter: new_filter_4,
+        });
         assert!(sync_filter_4.is_ok());
     }
 
@@ -1610,12 +1537,12 @@ mod tests {
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         assert!(chain.is_synced().await);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1626,9 +1553,9 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
@@ -1645,7 +1572,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1663,7 +1590,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
     }
 
@@ -1702,7 +1629,7 @@ mod tests {
         let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
         let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
@@ -1713,13 +1640,13 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.clear_compact_filter_queue();
-        chain.next_cf_header_message().await;
+        chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
@@ -1736,7 +1663,7 @@ mod tests {
                 filter_hash_5,
             ],
         };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers).await;
+        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         assert!(!chain.is_cf_headers_synced());
