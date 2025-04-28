@@ -98,3 +98,36 @@ create an issue on GitHub.
 Related to the security aspect, Kyoto developers take testing very seriously.
 Due to the modular nature of the project, writing new functional tests is easy
 and good test coverage of the codebase is an important goal.
+
+### Integration Testing
+
+The preferred workflow is by using `just`. If you do not have `just` installed, check out the [installation page](https://just.systems/man/en/chapter_4.html).
+
+To run the unit tests and doc tests:
+
+```
+just test
+```
+
+To sync with a live Signet node:
+
+```
+just test sync
+```
+
+And to run scenarios against your `bitcoind` instance, set a `BITCOIND_EXE` environment variable to the path to `bitcoind`:
+
+```
+export BITCOIND_EXE = "/usr/path/to/bitcoind/"
+```
+
+You may want to add this to your bash or zsh profile.
+
+To run the `bitcoind` tests:
+
+```
+just test integration
+```
+
+If you do not have `bitcoind` installed, you may simply run `just test integration` and it will be installed for you in the `build` folder.
+

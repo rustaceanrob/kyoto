@@ -4,6 +4,8 @@ While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the s
 
 This document outlines some miscellaneous information about the project and some recommendations for implementation. The goal for Kyoto is to run on mobile devices with a low-enough memory footprint to allow users to interact with Lightning Network applications as well. To that end, some assumptions and design goals were made to cater to low-resource devices. Neutrino and LND are the current standard of a server-style, SPV Lightning Node implementation, so Kyoto is generally compliment and not a substitution.
 
+Some lower-level architecture decisions are documented in a blog series over at [blog.yonson.dev](https://blog.yonson.dev/series/kyoto/).
+
 # Scope
 
 ### Functional Goals
