@@ -3,58 +3,14 @@ use std::collections::{BTreeMap, HashMap};
 use crate::{prelude::ZerolikeExt, HeaderCheckpoint};
 
 use bitcoin::{
-    block::Header, constants::genesis_block, params::Params, BlockHash, CompactTarget, FilterHash,
-    Network, Work,
+    block::Header, constants::genesis_block, BlockHash, CompactTarget, FilterHash, Network, Work,
 };
 
-use super::{FilterCommitment, IndexedHeader};
+use super::{FilterCommitment, HeightExt, IndexedHeader};
 
-const LOCATOR_INDEX: &[u32] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+type Height = u32;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Height(u32);
-
-impl Height {
-    fn new(height: u32) -> Self {
-        Height(height)
-    }
-
-    fn from_u64_checked(height: u64) -> Option<Self> {
-        match height.try_into() {
-            Ok(height) => Some(Height::new(height)),
-            Err(_) => None,
-        }
-    }
-
-    fn increment(&self) -> Self {
-        Self(self.0 + 1)
-    }
-
-    fn checked_sub(&self, other: impl Into<Height>) -> Option<Self> {
-        let other = other.into();
-        let height_sub_checked = self.0.checked_sub(other.0);
-        height_sub_checked.map(Self)
-    }
-
-    fn is_adjustment_multiple(&self, params: impl AsRef<Params>) -> bool {
-        self.0 as u64 % params.as_ref().difficulty_adjustment_interval() == 0
-    }
-
-    pub(crate) fn to_u32(self) -> u32 {
-        self.0
-    }
-
-    #[allow(dead_code)]
-    fn to_u64(self) -> u64 {
-        self.0 as u64
-    }
-}
-
-impl From<u32> for Height {
-    fn from(value: u32) -> Self {
-        Height(value)
-    }
-}
+const LOCATOR_INDEX: &[Height] = &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 
 #[derive(Debug, Clone)]
 pub(crate) enum AcceptHeaderChanges {
@@ -89,8 +45,7 @@ pub(crate) struct Tip {
 }
 
 impl Tip {
-    pub(crate) fn from_checkpoint(height: impl Into<Height>, hash: BlockHash) -> Self {
-        let height = height.into();
+    pub(crate) fn from_checkpoint(height: Height, hash: BlockHash) -> Self {
         Self {
             hash,
             height,
@@ -150,7 +105,7 @@ impl BlockTree {
 
     pub(crate) fn from_genesis(network: Network) -> Self {
         let genesis = genesis_block(network);
-        let height = Height::new(0);
+        let height = 0;
         let hash = genesis.block_hash();
         let tip = Tip {
             hash,
@@ -161,7 +116,7 @@ impl BlockTree {
         let block_node = BlockNode::new(height, genesis.header, genesis.header.work());
         headers.insert(hash, block_node);
         let mut canonical_hashes = BTreeMap::new();
-        canonical_hashes.insert(Height::new(0), hash);
+        canonical_hashes.insert(0, hash);
         Self {
             canonical_hashes,
             headers,
@@ -230,7 +185,7 @@ impl BlockTree {
             self.active_tip = new_tip;
             self.canonical_hashes.insert(new_height, new_hash);
             return AcceptHeaderChanges::Accepted {
-                connected_at: IndexedHeader::new(new_height.to_u32(), new_header),
+                connected_at: IndexedHeader::new(new_height, new_header),
             };
         }
 
@@ -288,7 +243,7 @@ impl BlockTree {
                 } else {
                     self.candidate_forks.push(new_tip);
                     return AcceptHeaderChanges::ExtendedFork {
-                        connected_at: IndexedHeader::new(new_height.to_u32(), new_header),
+                        connected_at: IndexedHeader::new(new_height, new_header),
                     };
                 }
             }
@@ -325,7 +280,7 @@ impl BlockTree {
                 let new_block_node = BlockNode::new(new_height, new_header, acc_work);
                 self.headers.insert(new_hash, new_block_node);
                 AcceptHeaderChanges::ExtendedFork {
-                    connected_at: IndexedHeader::new(new_height.to_u32(), new_header),
+                    connected_at: IndexedHeader::new(new_height, new_header),
                 }
             }
             // This chain doesn't link to ours in any known way
@@ -346,14 +301,11 @@ impl BlockTree {
                             let reorged_hash = *canonical_hash;
                             if reorged_hash.ne(&curr_hash) {
                                 if let Some(reorged) = self.headers.get(&reorged_hash) {
-                                    disconnections.push(IndexedHeader::new(
-                                        reorged.height.to_u32(),
-                                        reorged.header,
-                                    ));
+                                    disconnections
+                                        .push(IndexedHeader::new(reorged.height, reorged.header));
                                 }
                                 *canonical_hash = curr_hash;
-                                connections
-                                    .push(IndexedHeader::new(node.height.to_u32(), node.header));
+                                connections.push(IndexedHeader::new(node.height, node.header));
                                 curr_hash = next;
                             } else {
                                 return (connections, disconnections);
@@ -361,7 +313,7 @@ impl BlockTree {
                         }
                         None => {
                             self.canonical_hashes.insert(node.height, curr_hash);
-                            connections.push(IndexedHeader::new(node.height.to_u32(), node.header));
+                            connections.push(IndexedHeader::new(node.height, node.header));
                             curr_hash = next;
                         }
                     }
@@ -375,7 +327,7 @@ impl BlockTree {
         let adjustment_period =
             Height::from_u64_checked(self.network.params().difficulty_adjustment_interval())?;
         let epoch_start = new_height.checked_sub(adjustment_period)?;
-        let epoch_end = new_height.checked_sub(Height::new(1))?;
+        let epoch_end = new_height.checked_sub(1)?;
         let epoch_start_hash = self.canonical_hashes.get(&epoch_start)?;
         let epoch_end_hash = self.canonical_hashes.get(&epoch_end)?;
         let epoch_start_header = self.headers.get(epoch_start_hash).map(|node| node.header)?;
@@ -388,30 +340,28 @@ impl BlockTree {
         Some(new_target)
     }
 
-    pub(crate) fn block_hash_at_height(&self, height: impl Into<Height>) -> Option<BlockHash> {
-        let height = height.into();
+    pub(crate) fn block_hash_at_height(&self, height: Height) -> Option<BlockHash> {
         if self.active_tip.height.eq(&height) {
             return Some(self.active_tip.hash);
         }
         self.canonical_hashes.get(&height).copied()
     }
 
-    pub(crate) fn header_at_height(&self, height: impl Into<Height>) -> Option<Header> {
-        let height = height.into();
+    pub(crate) fn header_at_height(&self, height: Height) -> Option<Header> {
         let hash = self.canonical_hashes.get(&height)?;
         self.headers.get(hash).map(|node| node.header)
     }
 
-    pub(crate) fn height_of_hash(&self, hash: BlockHash) -> Option<u32> {
-        self.headers.get(&hash).map(|node| node.height.to_u32())
+    pub(crate) fn height_of_hash(&self, hash: BlockHash) -> Option<Height> {
+        self.headers.get(&hash).map(|node| node.height)
     }
 
     pub(crate) fn header_at_hash(&self, hash: BlockHash) -> Option<Header> {
         self.headers.get(&hash).map(|node| node.header)
     }
 
-    pub(crate) fn height(&self) -> u32 {
-        self.active_tip.height.to_u32()
+    pub(crate) fn height(&self) -> Height {
+        self.active_tip.height
     }
 
     pub(crate) fn contains(&self, hash: BlockHash) -> bool {
@@ -554,7 +504,7 @@ impl Iterator for BlockHeaderIterator<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.block_tree.headers.get(&self.current)?;
         self.current = node.header.prev_blockhash;
-        Some(IndexedHeader::new(node.height.to_u32(), node.header))
+        Some(IndexedHeader::new(node.height, node.header))
     }
 }
 

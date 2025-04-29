@@ -419,7 +419,7 @@ impl<H: HeaderStore> Chain<H> {
                     break;
                 }
                 None => {
-                    last_unchecked_cfheader = data.height.to_u32();
+                    last_unchecked_cfheader = data.height;
                 }
             }
         }
@@ -519,7 +519,7 @@ impl<H: HeaderStore> Chain<H> {
             if block_data.filter_checked {
                 break;
             }
-            last_unchecked_filter = block_data.height.to_u32();
+            last_unchecked_filter = block_data.height;
         }
         let stop_hash_index = last_unchecked_filter + FILTER_BATCH_SIZE;
         let stop_hash = self
