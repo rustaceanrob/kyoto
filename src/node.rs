@@ -470,7 +470,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn next_stateful_message(&self, chain: &mut Chain<H>) -> Option<MainThreadMessage> {
         if !chain.is_synced().await {
             let headers = GetHeaderConfig {
-                locators: chain.locators().await,
+                locators: chain.header_chain.locators(),
                 stop_hash: None,
             };
             return Some(MainThreadMessage::GetHeaders(headers));
@@ -534,9 +534,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             crate::info!(self.dialog, Info::ConnectionsMet);
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
-        let mut chain = self.chain.lock().await;
+        let chain = self.chain.lock().await;
         let next_headers = GetHeaderConfig {
-            locators: chain.locators().await,
+            locators: chain.header_chain.locators(),
             stop_hash: None,
         };
         Ok(MainThreadMessage::GetHeaders(next_headers))
@@ -697,7 +697,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     crate::info!(self.dialog, Info::StateChange(NodeState::Behind));
                     *state = NodeState::Behind;
                     let next_headers = GetHeaderConfig {
-                        locators: chain.locators().await,
+                        locators: chain.header_chain.locators(),
                         stop_hash: None,
                     };
                     chain.clear_compact_filter_queue();
