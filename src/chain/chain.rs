@@ -100,15 +100,6 @@ impl<H: HeaderStore> Chain<H> {
         }
     }
 
-    // Write the chain to disk
-    pub(crate) async fn write_changes(&mut self, changes: BlockHeaderChanges) {
-        if let Err(e) = self.db.lock().await.write(changes).await {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: format!("Could not save headers to disk: {e}"),
-            });
-        }
-    }
-
     // Load in headers, ideally allowing the difficulty adjustment to be audited and
     // reorganizations to be handled gracefully.
     pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
@@ -189,6 +180,8 @@ impl<H: HeaderStore> Chain<H> {
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
         let next_checkpoint = self.checkpoints.next().copied();
+        let mut db = self.db.lock().await;
+        let mut reorg_occured = false;
         for header in header_batch.into_iter() {
             let changes = self.header_chain.accept_header(header);
             match changes {
@@ -201,8 +194,7 @@ impl<H: HeaderStore> Chain<H> {
                             connected_at.header.block_hash()
                         )
                     );
-                    self.write_changes(BlockHeaderChanges::Connected(connected_at))
-                        .await;
+                    db.stage(BlockHeaderChanges::Connected(connected_at));
                     if let Some(checkpoint) = next_checkpoint {
                         if connected_at.height.eq(&checkpoint.height) {
                             if connected_at.header.block_hash().eq(&checkpoint.hash) {
@@ -241,17 +233,16 @@ impl<H: HeaderStore> Chain<H> {
                     disconnected,
                 } => {
                     crate::log!(self.dialog, "Valid reorganization found");
-                    self.clear_compact_filter_queue();
+                    reorg_occured = true;
                     let removed_hashes: Vec<BlockHash> = disconnected
                         .iter()
                         .map(|index| index.header.block_hash())
                         .collect();
                     self.block_queue.remove(&removed_hashes);
-                    self.write_changes(BlockHeaderChanges::Reorganized {
+                    db.stage(BlockHeaderChanges::Reorganized {
                         accepted,
                         reorganized: disconnected.clone(),
-                    })
-                    .await;
+                    });
                     let disconnected_event =
                         Event::BlocksDisconnected(disconnected.into_iter().rev().collect());
                     self.dialog.send_event(disconnected_event);
@@ -267,6 +258,15 @@ impl<H: HeaderStore> Chain<H> {
                     }
                 },
             }
+        }
+        if let Err(e) = db.write().await {
+            self.dialog.send_warning(Warning::FailedPersistence {
+                warning: format!("Could not save headers to disk: {e}"),
+            });
+        }
+        drop(db);
+        if reorg_occured {
+            self.clear_compact_filter_queue();
         }
         Ok(())
     }

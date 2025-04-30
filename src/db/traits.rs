@@ -12,15 +12,17 @@ use super::{BlockHeaderChanges, PersistedPeer};
 pub trait HeaderStore: Debug + Send + Sync {
     /// Errors that may occur within a [`HeaderStore`].
     type Error: Debug + Display;
-    /// Load all headers with heights *strictly after* the specified anchor height.
+    /// Load the headers of the canonical chain for the specified range.
     fn load<'a>(
         &'a mut self,
         range: impl RangeBounds<u32> + Send + Sync + 'a,
     ) -> FutureResult<'a, BTreeMap<u32, Header>, Self::Error>;
 
-    /// Write any changes to the backend as new headers are found, potentially caching before
-    /// writing to disk.
-    fn write(&mut self, changes: BlockHeaderChanges) -> FutureResult<(), Self::Error>;
+    /// Stage changes to the chain to be written in the future.
+    fn stage(&mut self, changes: BlockHeaderChanges);
+
+    /// Commit the changes by writing them to disk.
+    fn write(&mut self) -> FutureResult<(), Self::Error>;
 
     /// Return the height of a block hash in the database, if it exists.
     fn height_of<'a>(
@@ -105,7 +107,9 @@ mod test {
             Box::pin(do_load())
         }
 
-        fn write(&mut self, _changes: BlockHeaderChanges) -> FutureResult<(), Self::Error> {
+        fn stage(&mut self, _changes: BlockHeaderChanges) {}
+
+        fn write(&mut self) -> FutureResult<(), Self::Error> {
             async fn do_write() -> Result<(), Infallible> {
                 Ok(())
             }
