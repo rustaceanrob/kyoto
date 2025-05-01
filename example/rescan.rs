@@ -29,8 +29,8 @@ async fn main() {
     let (node, client) = builder
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
-        // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(HeaderCheckpoint::closest_checkpoint_below_height(
+        // Only scan blocks strictly after a checkpoint
+        .after_checkpoint(HeaderCheckpoint::closest_checkpoint_below_height(
             RECOVERY_HEIGHT,
             NETWORK,
         ))

@@ -85,7 +85,7 @@ impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
         match self {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
             HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
-            HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured anchor checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
+            HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
             HeaderPersistenceError::Database(e) => write!(f, "database: {e}"),
         }
     }

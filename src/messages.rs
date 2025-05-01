@@ -81,11 +81,6 @@ impl SyncUpdate {
     }
 
     /// Get the ten most recent blocks in chronological order after this sync.
-    /// For nodes that do not save any block header history, it is recommmended to use
-    /// a block with significant depth, say 10 blocks deep, as the anchor for the
-    /// next sync. This is so the node may gracefully handle block reorganizations,
-    /// so long as they occur within 10 blocks of depth. This occurs at more than
-    /// a 99% probability.
     pub fn recent_history(&self) -> &BTreeMap<u32, Header> {
         &self.recent_history
     }

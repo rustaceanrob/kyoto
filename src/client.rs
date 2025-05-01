@@ -204,7 +204,7 @@ impl Requester {
         Ok(rx)
     }
 
-    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    /// Starting after the configured checkpoint, look for block inclusions with newly added scripts.
     ///
     /// # Errors
     ///

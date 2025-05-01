@@ -33,8 +33,8 @@ async fn main() {
         .add_peer(peer)
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
-        // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(checkpoint)
+        // Only scan blocks strictly after a checkpoint
+        .after_checkpoint(checkpoint)
         // Store a limited number of peers
         .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // The number of connections we would like to maintain
