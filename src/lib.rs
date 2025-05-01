@@ -33,8 +33,8 @@
 //!     let (node, client) = builder
 //!         // The Bitcoin scripts to monitor
 //!         .add_scripts(addresses)
-//!         // Only scan blocks strictly after an anchor checkpoint
-//!         .anchor_checkpoint(checkpoint)
+//!         // Only scan blocks strictly after a checkpoint
+//!         .after_checkpoint(checkpoint)
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
 //!         .build()

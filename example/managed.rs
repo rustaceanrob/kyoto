@@ -41,8 +41,8 @@ async fn main() {
     let (node, client) = builder
         // Add the peers
         .add_peer(peer)
-        // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(checkpoint)
+        // Only scan blocks strictly after a checkpoint
+        .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(1)
         // Omit debug messages

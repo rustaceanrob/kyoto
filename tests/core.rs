@@ -49,7 +49,7 @@ fn new_node(
     trusted.set_services(ServiceFlags::P2P_V2);
     let mut builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
     if let Some(checkpoint) = checkpoint {
-        builder = builder.anchor_checkpoint(checkpoint);
+        builder = builder.after_checkpoint(checkpoint);
     }
     let (node, client) = builder
         .add_peer(host)

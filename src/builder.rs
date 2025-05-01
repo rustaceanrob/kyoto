@@ -66,8 +66,8 @@ const MAX_PEERS: u8 = 15;
 /// let (mut node, client) = builder
 ///     // The Bitcoin scripts to monitor
 ///     .add_scripts(script_set)
-///     // Only scan blocks strictly after an anchor checkpoint
-///     .anchor_checkpoint(checkpoint)
+///     // Only scan blocks strictly after a checkpoint
+///     .after_checkpoint(checkpoint)
 ///     // The number of connections we would like to maintain
 ///     .required_peers(2)
 ///     .build()
@@ -144,7 +144,7 @@ impl NodeBuilder {
     /// In the case of a block reorganization, the node may scan for blocks below the given block height
     /// to accurately reflect which relevant blocks are in the best chain.
     /// If none is provided, the _most recent_ checkpoint will be used.
-    pub fn anchor_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
+    pub fn after_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
         self.config.header_checkpoint = Some(checkpoint.into());
         self
     }

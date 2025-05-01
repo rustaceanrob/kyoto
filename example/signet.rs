@@ -42,8 +42,8 @@ async fn main() {
         .add_peers(vec![(peer_1, None).into(), peer_2])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
-        // Only scan blocks strictly after an anchor checkpoint
-        .anchor_checkpoint(checkpoint)
+        // Only scan blocks strictly after a checkpoint
+        .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(2)
         // Create the node and client
