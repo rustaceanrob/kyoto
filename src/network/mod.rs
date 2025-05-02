@@ -9,11 +9,7 @@ use bitcoin::{
     p2p::{address::AddrV2, message::CommandString, Magic},
 };
 use socks::create_socks5;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-    time::Instant,
-};
+use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
 
@@ -36,9 +32,6 @@ pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 
 const THIRTY_MINS: u64 = 60 * 30;
 const CONNECTION_TIMEOUT: u64 = 2;
-
-pub(crate) type StreamReader = Box<dyn AsyncRead + Send + Sync + Unpin>;
-pub(crate) type StreamWriter = Box<dyn AsyncWrite + Send + Sync + Unpin>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -116,11 +109,7 @@ impl ConnectionType {
         }
     }
 
-    pub(crate) async fn connect(
-        &self,
-        addr: AddrV2,
-        port: u16,
-    ) -> Result<(StreamReader, StreamWriter), PeerError> {
+    pub(crate) async fn connect(&self, addr: AddrV2, port: u16) -> Result<TcpStream, PeerError> {
         let socket_addr = match addr {
             AddrV2::Ipv4(ip) => IpAddr::V4(ip),
             AddrV2::Ipv6(ip) => IpAddr::V6(ip),
@@ -135,8 +124,7 @@ impl ConnectionType {
                 .await
                 .map_err(|_| PeerError::ConnectionFailed)?;
                 let tcp_stream = timeout.map_err(|_| PeerError::ConnectionFailed)?;
-                let (reader, writer) = tcp_stream.into_split();
-                Ok((Box::new(reader), Box::new(writer)))
+                Ok(tcp_stream)
             }
             Self::Socks5Proxy(proxy) => {
                 let socks5_timeout = tokio::time::timeout(
@@ -145,8 +133,8 @@ impl ConnectionType {
                 )
                 .await
                 .map_err(|_| PeerError::ConnectionFailed)?;
-                let (reader, writer) = socks5_timeout.map_err(PeerError::Socks5)?;
-                Ok((reader, writer))
+                let tcp_stream = socks5_timeout.map_err(PeerError::Socks5)?;
+                Ok(tcp_stream)
             }
         }
     }
