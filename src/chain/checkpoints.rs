@@ -625,10 +625,6 @@ impl HeaderCheckpoints {
         self.checkpoints.pop_front();
     }
 
-    pub fn is_exhausted(&self) -> bool {
-        self.checkpoints.is_empty()
-    }
-
     pub fn last(&self) -> HeaderCheckpoint {
         self.last
     }

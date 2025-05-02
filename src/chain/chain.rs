@@ -17,9 +17,9 @@ use super::{
     cfheader_batch::CFHeaderBatch,
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
-    graph::{AcceptHeaderChanges, BlockTree, HeaderRejection, Tip},
-    CFHeaderChanges, Filter, FilterHeaderRequest, FilterRequest, FilterRequestState, HeightMonitor,
-    PeerId,
+    graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
+    CFHeaderChanges, Filter, FilterHeaderRequest, FilterRequest, FilterRequestState, HeightExt,
+    HeightMonitor, PeerId,
 };
 #[cfg(feature = "filter-control")]
 use crate::error::FetchBlockError;
@@ -79,10 +79,6 @@ impl<H: HeaderStore> Chain<H> {
             dialog,
         }
     }
-    // Have we hit the known checkpoints
-    pub(crate) fn checkpoints_complete(&self) -> bool {
-        self.checkpoints.is_exhausted()
-    }
 
     // The last ten heights and headers in the chain
     pub(crate) fn last_ten(&self) -> BTreeMap<u32, Header> {
@@ -104,32 +100,6 @@ impl<H: HeaderStore> Chain<H> {
         }
     }
 
-    // The "locators" are the headers we inform our peers we know about
-    pub(crate) async fn locators(&mut self) -> Vec<BlockHash> {
-        // If a peer is sending us a fork at this point they are faulty.
-        if !self.checkpoints_complete() {
-            vec![self.header_chain.tip_hash()]
-        } else {
-            // We should try to catch any reorgs if we are on a fresh start.
-            // The database may have a header that is useful to the remote node
-            // that is not currently in memory.
-            if self.header_chain.internally_cached_headers() < REORG_LOOKBACK as usize {
-                let older_locator = self.header_chain.height().saturating_sub(REORG_LOOKBACK);
-                let mut db_lock = self.db.lock().await;
-                let hash = db_lock.hash_at(older_locator).await;
-                if let Ok(Some(locator)) = hash {
-                    vec![self.header_chain.tip_hash(), locator]
-                } else {
-                    // We couldn't find a header deep enough to send over. Just proceed as usual
-                    self.header_chain.locators()
-                }
-            } else {
-                // We have enough headers in memory to catch a reorg.
-                self.header_chain.locators()
-            }
-        }
-    }
-
     // Write the chain to disk
     pub(crate) async fn write_changes(&mut self, changes: BlockHeaderChanges) {
         if let Err(e) = self.db.lock().await.write(changes).await {
@@ -139,13 +109,35 @@ impl<H: HeaderStore> Chain<H> {
         }
     }
 
-    // Load in the headers
+    // Load in headers, ideally allowing the difficulty adjustment to be audited and
+    // reorganizations to be handled gracefully.
     pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
-        let loaded_headers = self
-            .db
-            .lock()
-            .await
-            .load(self.header_chain.height() + 1..)
+        let mut db = self.db.lock().await;
+        // The original height the user requested a scan after
+        let scan_height = self.header_chain.height();
+        // The header relevant to compute the next adjustment
+        let last_adjustment = scan_height.last_epoch_start(self.network);
+        // Seven blocks ago
+        let reorg = scan_height.saturating_sub(REORG_LOOKBACK);
+        // To handle adjustments and reorgs, we would have the minimum of each of these heights
+        let min_interesting_height = last_adjustment.min(reorg);
+        let max_interesting_height = last_adjustment.max(reorg);
+        // Get the maximum of the two interesting heights. In case the minimum is not available
+        if let Some(header) = db.header_at(max_interesting_height).await.ok().flatten() {
+            self.header_chain =
+                BlockTree::from_header(max_interesting_height, header, self.network);
+        }
+        // If this succeeds, both reorgs and difficulty adjustments can be handled gracefully.
+        if let Some(header) = db.header_at(min_interesting_height).await.ok().flatten() {
+            self.header_chain =
+                BlockTree::from_header(min_interesting_height, header, self.network);
+        }
+        // Now that the block tree is updated to the appropriate start, load in the rest of
+        // the history from this point onward. This is either: from the user start height,
+        // from the last difficulty adjustment, or seven blocks ago, depending on what the
+        // header store was able to provide.
+        let loaded_headers = db
+            .load(self.header_chain.height().increment()..)
             .await
             .map_err(HeaderPersistenceError::Database)?;
         for (height, header) in loaded_headers {
@@ -180,6 +172,10 @@ impl<H: HeaderStore> Chain<H> {
                 _ => (),
             }
         }
+        // Because the user requested a scan after the `scan_height`, the filters below this point
+        // may be assumed as checked. Note that in a reorg, filters below this height may still be
+        // retrieved, as this only considers the canonical chain as checked.
+        self.header_chain.assume_checked_to(scan_height);
         Ok(())
     }
 
@@ -265,25 +261,9 @@ impl<H: HeaderStore> Chain<H> {
                         expected: _,
                         got: _,
                     } => return Err(HeaderSyncError::InvalidBits),
-                    HeaderRejection::UnknownPrevHash(hash) => {
-                        let mut db = self.db.lock().await;
-                        let header_res = db.height_of(&hash).await.ok().flatten();
-                        match header_res {
-                            Some(height) => {
-                                let tip = Tip::from_checkpoint(height, hash);
-                                self.header_chain = BlockTree::new(tip, self.network);
-                                drop(db);
-                                if let Err(e) = self.load_headers().await {
-                                    crate::log!(self.dialog,
-                                        "Failure when attempting to fetch previous headers while syncing"
-                                    );
-                                    self.dialog.send_warning(Warning::FailedPersistence {
-                                        warning: format!("Persistence failure: {e}"),
-                                    });
-                                }
-                            }
-                            None => return Err(HeaderSyncError::FloatingHeaders),
-                        }
+                    HeaderRejection::UnknownPrevHash(prev) => {
+                        crate::log!(self.dialog, format!("Unknown prevhash does not link to the current header chain: {prev}"));
+                        return Err(HeaderSyncError::FloatingHeaders);
                     }
                 },
             }

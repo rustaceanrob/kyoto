@@ -403,6 +403,16 @@ impl BlockTree {
         }
     }
 
+    pub(crate) fn assume_checked_to(&mut self, assumed_height: Height) {
+        let mut curr = self.tip_hash();
+        while let Some(node) = self.headers.get_mut(&curr) {
+            if node.height <= assumed_height {
+                node.filter_checked = true
+            }
+            curr = node.header.prev_blockhash
+        }
+    }
+
     pub(crate) fn is_filter_checked(&self, hash: &BlockHash) -> bool {
         if let Some(node) = self.headers.get(hash) {
             return node.filter_checked;
@@ -712,5 +722,22 @@ mod tests {
             accept_4,
             AcceptHeaderChanges::Accepted { connected_at: _ }
         ));
+    }
+
+    #[test]
+    fn test_assumed_checked() {
+        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb5724d5855e66ffff7f2004000000").unwrap()).unwrap();
+        let block_2: Header = deserialize(&hex::decode("00000020d1d80f53343a084bd0da6d6ab846f9fe4a133de051ea00e7cae16ed19f601065798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c4d6855e66ffff7f2000000000").unwrap()).unwrap();
+        let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
+        let block_4: Header = deserialize(&hex::decode("000000204877fed370af64c0a1f7a76f6944e1127aad965b1865f99ecfdf8fa72ae23377f51921d01ff1131bd589500a8ca142884297ceeb1aa762ad727249e9a23f2cb023865e66ffff7f2000000000").unwrap()).unwrap();
+        let mut chain = BlockTree::from_genesis(Network::Regtest);
+        chain.accept_header(block_1);
+        chain.accept_header(block_2);
+        chain.accept_header(block_3);
+        chain.accept_header(block_4);
+        chain.assume_checked_to(3);
+        assert!(!chain.filters_synced());
+        chain.assume_checked_to(4);
+        assert!(chain.filters_synced());
     }
 }
