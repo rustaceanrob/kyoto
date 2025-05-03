@@ -1,14 +1,11 @@
 use bitcoin::{
-    p2p::{
-        message::NetworkMessage,
-        message_filter::{GetCFHeaders, GetCFilters},
-    },
+    p2p::message_filter::{GetCFHeaders, GetCFilters},
     BlockHash, Transaction, Wtxid,
 };
 
-use crate::{channel_messages::GetBlockConfig, prelude::FutureResult};
+use crate::channel_messages::GetBlockConfig;
 
-use super::error::{PeerError, PeerReadError};
+use super::error::PeerError;
 
 // Responsible for serializing messages to write over the wire, either encrypted or plaintext.
 pub(crate) trait MessageGenerator: Send + Sync {
@@ -39,9 +36,4 @@ pub(crate) trait MessageGenerator: Send + Sync {
     fn announce_transaction(&mut self, wtxid: Wtxid) -> Result<Vec<u8>, PeerError>;
 
     fn broadcast_transaction(&mut self, transaction: Transaction) -> Result<Vec<u8>, PeerError>;
-}
-
-// Responsible for parsing plaintext or encrypted messages off of the  wire.
-pub(crate) trait MessageParser: Send + Sync {
-    fn read_message(&mut self) -> FutureResult<Option<NetworkMessage>, PeerReadError>;
 }

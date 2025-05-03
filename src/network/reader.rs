@@ -3,13 +3,14 @@ use std::net::IpAddr;
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags};
 use bitcoin::{FeeRate, Txid};
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::Sender;
 
 use crate::channel_messages::{CombinedAddr, PeerMessage};
 use crate::messages::RejectPayload;
 
 use super::error::PeerReadError;
-use super::traits::MessageParser;
+use super::parsers::MessageParser;
 
 const ONE_MONTH: u64 = 2_500_000;
 const ONE_MINUTE: u64 = 60;
@@ -19,17 +20,14 @@ const MAX_ADDR: usize = 1_000;
 const MAX_INV: usize = 50_000;
 const MAX_HEADERS: usize = 2_000;
 
-pub(crate) struct Reader {
-    parser: Box<dyn MessageParser>,
+pub(crate) struct Reader<R: AsyncReadExt + Send + Sync + Unpin> {
+    parser: MessageParser<R>,
     tx: Sender<PeerMessage>,
 }
 
-impl Reader {
-    pub fn new(parser: impl MessageParser + 'static, tx: Sender<PeerMessage>) -> Self {
-        Self {
-            parser: Box::new(parser),
-            tx,
-        }
+impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
+    pub fn new(parser: MessageParser<R>, tx: Sender<PeerMessage>) -> Self {
+        Self { parser, tx }
     }
 
     pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {

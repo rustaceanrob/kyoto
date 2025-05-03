@@ -11,8 +11,6 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::network::{StreamReader, StreamWriter};
-
 use super::error::Socks5Error;
 
 const CONNECTION_TIMEOUT: u64 = 2;
@@ -29,7 +27,7 @@ pub(crate) async fn create_socks5(
     proxy: SocketAddr,
     ip_addr: IpAddr,
     port: u16,
-) -> Result<(StreamReader, StreamWriter), Socks5Error> {
+) -> Result<TcpStream, Socks5Error> {
     // Connect to the proxy, likely a local Tor daemon.
     let timeout = tokio::time::timeout(
         Duration::from_secs(CONNECTION_TIMEOUT),
@@ -88,7 +86,7 @@ pub(crate) async fn create_socks5(
         }
         _ => return Err(Socks5Error::ConnectionFailed),
     }
+
     // Proxy handshake is complete, the TCP reader/writer can be returned
-    let (reader, writer) = tcp_stream.into_split();
-    Ok((Box::new(reader), Box::new(writer)))
+    Ok(tcp_stream)
 }

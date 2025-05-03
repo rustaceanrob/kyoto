@@ -5,6 +5,7 @@ use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network, Transaction, Wtxid};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    net::TcpStream,
     select,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -23,12 +24,11 @@ use crate::{
 };
 
 use super::{
-    counter::MessageCounter, error::PeerError, parsers::V1MessageParser, reader::Reader,
-    traits::MessageGenerator, PeerId, PeerTimeoutConfig, StreamReader, StreamWriter,
+    counter::MessageCounter, error::PeerError, parsers::MessageParser, reader::Reader,
+    traits::MessageGenerator, PeerId, PeerTimeoutConfig,
 };
 
 use super::outbound_messages::V2OutboundMessage;
-use super::parsers::V2MessageParser;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 4;
@@ -71,13 +71,10 @@ impl Peer {
         }
     }
 
-    pub async fn run(
-        &mut self,
-        mut reader: StreamReader,
-        mut writer: StreamWriter,
-    ) -> Result<(), PeerError> {
+    pub async fn run(&mut self, connection: TcpStream) -> Result<(), PeerError> {
         let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
+        let (mut reader, mut writer) = connection.into_split();
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
         let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
             let handshake_result = tokio::time::timeout(
@@ -96,12 +93,12 @@ impl Peer {
             let (decryptor, encryptor) = handshake_result?;
             let message_mutex: MutexMessageGenerator =
                 Mutex::new(Box::new(V2OutboundMessage::new(self.network, encryptor)));
-            let reader = Reader::new(V2MessageParser::new(reader, decryptor), tx);
+            let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
             (message_mutex, reader)
         } else {
             let outbound_messages = V1OutboundMessage::new(self.network);
             let message_mutex: MutexMessageGenerator = Mutex::new(Box::new(outbound_messages));
-            let reader = Reader::new(V1MessageParser::new(reader, self.network), tx);
+            let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
             (message_mutex, reader)
         };
 

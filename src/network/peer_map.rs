@@ -171,11 +171,11 @@ impl<P: PeerStore> PeerMap<P> {
             self.dialog,
             format!("Connecting to {:?}:{}", loaded_peer.addr, loaded_peer.port)
         );
-        let (reader, writer) = self
+        let connection = self
             .connector
             .connect(loaded_peer.addr.clone(), loaded_peer.port)
             .await?;
-        let handle = tokio::spawn(async move { peer.run(reader, writer).await });
+        let handle = tokio::spawn(async move { peer.run(connection).await });
         self.map.insert(
             self.current_id,
             ManagedPeer {
