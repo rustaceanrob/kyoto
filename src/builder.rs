@@ -16,7 +16,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer};
+use crate::{LogLevel, PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "rusqlite")]
 /// The default node returned from the [`NodeBuilder`].
@@ -208,14 +208,6 @@ impl NodeBuilder {
         let ip_addr = proxy.into();
         let connection = ConnectionType::Socks5Proxy(ip_addr);
         self.config.connection_type = connection;
-        self
-    }
-
-    /// Stop the node from downloading and checking compact block filters until an explicit command by the client is made.
-    /// This is only useful if the scripts to check for may not be known do to some expensive computation, like in a silent
-    /// payments context.
-    pub fn halt_filter_download(mut self) -> Self {
-        self.config.filter_sync_policy = FilterSyncPolicy::Halt;
         self
     }
 
