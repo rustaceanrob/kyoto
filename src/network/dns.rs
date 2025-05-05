@@ -170,11 +170,11 @@ impl DNSQuery {
         if amt < HEADER_BYTES {
             return Err(DNSQueryError::MalformedHeader);
         }
-        let ips = self.parse_message(&response_buf[..amt]).await?;
+        let ips = self.parse_message(&response_buf[..amt])?;
         Ok(ips)
     }
 
-    async fn parse_message(&self, mut response: &[u8]) -> Result<Vec<IpAddr>, DNSQueryError> {
+    fn parse_message(&self, mut response: &[u8]) -> Result<Vec<IpAddr>, DNSQueryError> {
         let mut ips = Vec::with_capacity(10);
         let mut buf: [u8; 2] = [0, 0];
         response

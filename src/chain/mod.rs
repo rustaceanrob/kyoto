@@ -198,7 +198,7 @@ trait HeightExt: Clone + Copy + std::hash::Hash + PartialEq + Eq + PartialOrd + 
     fn from_u64_checked(height: u64) -> Option<Self>;
 
     fn is_adjustment_multiple(&self, params: impl AsRef<Params>) -> bool;
-    #[allow(unused)]
+
     fn last_epoch_start(&self, params: impl AsRef<Params>) -> Self;
 }
 
