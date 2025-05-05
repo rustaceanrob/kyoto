@@ -165,7 +165,7 @@ impl NodeBuilder {
     ///
     /// If none is provided, a timeout of 5 seconds will be used.
     pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
-        self.config.response_timeout = response_timeout;
+        self.config.peer_timeout_config.response_timeout = response_timeout;
         self
     }
 
@@ -180,7 +180,7 @@ impl NodeBuilder {
     ///
     /// If none is provided, a maximum connection time of two hours will be used.
     pub fn maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
-        self.config.max_connection_time = max_connection_time;
+        self.config.peer_timeout_config.max_connection_time = max_connection_time;
         self
     }
 

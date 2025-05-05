@@ -31,6 +31,9 @@ pub const KYOTO_VERSION: &str = "0.10.0";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 
 const THIRTY_MINS: u64 = 60 * 30;
+const TIMEOUT_SECS: u64 = 5;
+//                    sec  min  hour
+const TWO_HOUR: u64 = 60 * 60 * 2;
 const CONNECTION_TIMEOUT: u64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,6 +72,15 @@ impl PeerTimeoutConfig {
         Self {
             response_timeout,
             max_connection_time,
+        }
+    }
+}
+
+impl Default for PeerTimeoutConfig {
+    fn default() -> Self {
+        Self {
+            response_timeout: Duration::from_secs(TIMEOUT_SECS),
+            max_connection_time: Duration::from_secs(TWO_HOUR),
         }
     }
 }

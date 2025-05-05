@@ -27,7 +27,7 @@ use crate::{
     },
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
-    network::{peer_map::PeerMap, LastBlockMonitor, PeerId, PeerTimeoutConfig},
+    network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     FilterSyncPolicy, NodeState, RejectPayload, TxBroadcastPolicy,
 };
 
@@ -79,12 +79,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             header_checkpoint,
             connection_type,
             target_peer_size,
-            response_timeout,
-            max_connection_time,
+            peer_timeout_config,
             filter_sync_policy,
             log_level,
         } = config;
-        let timeout_config = PeerTimeoutConfig::new(response_timeout, max_connection_time);
         // Set up a communication channel between the node and client
         let (log_tx, log_rx) = mpsc::channel::<String>(32);
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
@@ -107,7 +105,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             Arc::clone(&dialog),
             connection_type,
             target_peer_size,
-            timeout_config,
+            peer_timeout_config,
             Arc::clone(&height_monitor),
             dns_resolver,
         )));

@@ -1,17 +1,14 @@
-use std::{collections::HashSet, path::PathBuf, time::Duration};
+use std::{collections::HashSet, path::PathBuf};
 
 use bitcoin::ScriptBuf;
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     network::{dns::DnsResolver, ConnectionType},
-    FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, TrustedPeer,
+    FilterSyncPolicy, LogLevel, PeerStoreSizeConfig, PeerTimeoutConfig, TrustedPeer,
 };
 
 const REQUIRED_PEERS: u8 = 1;
-const TIMEOUT_SECS: u64 = 5;
-//                    sec  min  hour
-const TWO_HOUR: u64 = 60 * 60 * 2;
 
 pub(crate) struct NodeConfig {
     pub required_peers: u8,
@@ -22,8 +19,7 @@ pub(crate) struct NodeConfig {
     pub header_checkpoint: Option<HeaderCheckpoint>,
     pub connection_type: ConnectionType,
     pub target_peer_size: PeerStoreSizeConfig,
-    pub response_timeout: Duration,
-    pub max_connection_time: Duration,
+    pub peer_timeout_config: PeerTimeoutConfig,
     pub filter_sync_policy: FilterSyncPolicy,
     pub log_level: LogLevel,
 }
@@ -39,8 +35,7 @@ impl Default for NodeConfig {
             header_checkpoint: Default::default(),
             connection_type: Default::default(),
             target_peer_size: PeerStoreSizeConfig::default(),
-            response_timeout: Duration::from_secs(TIMEOUT_SECS),
-            max_connection_time: Duration::from_secs(TWO_HOUR),
+            peer_timeout_config: PeerTimeoutConfig::default(),
             filter_sync_policy: Default::default(),
             log_level: Default::default(),
         }
