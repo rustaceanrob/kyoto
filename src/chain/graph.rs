@@ -484,8 +484,8 @@ impl BlockTree {
         locators.into_iter().rev().collect()
     }
 
-    pub(crate) fn internally_cached_headers(&self) -> usize {
-        self.headers.len()
+    pub(crate) fn internal_chain_len(&self) -> usize {
+        self.canonical_hashes.len()
     }
 
     pub(crate) fn iter_data(&self) -> BlockNodeIterator {

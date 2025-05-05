@@ -640,7 +640,7 @@ impl<H: HeaderStore> Chain<H> {
             Info::Progress(Progress::new(
                 self.header_chain.total_filter_headers_synced(),
                 self.header_chain.total_filters_synced(),
-                self.header_chain.internally_cached_headers() as u32
+                self.header_chain.internal_chain_len() as u32
             ))
         );
         crate::log!(
@@ -654,9 +654,9 @@ impl<H: HeaderStore> Chain<H> {
                     .max()
                     .unwrap_or(self.header_chain.height()),
                 self.header_chain.total_filter_headers_synced(),
-                self.header_chain.internally_cached_headers() as u32,
+                self.header_chain.internal_chain_len() as u32,
                 self.header_chain.total_filters_synced(),
-                self.header_chain.internally_cached_headers() as u32,
+                self.header_chain.internal_chain_len() as u32,
             )
         );
     }
