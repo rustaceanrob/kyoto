@@ -44,7 +44,7 @@ const MAX_PEERS: u8 = 15;
 ///     .unwrap();
 /// ```
 ///
-/// Or, more pratically, known Bitcoin scripts to monitor for may be added
+/// Or, more practically, known Bitcoin scripts to monitor for may be added
 /// as the node is built.
 ///
 /// ```rust
@@ -155,6 +155,15 @@ impl NodeBuilder {
         self
     }
 
+    /// Set the time a peer has to complete the initial TCP handshake. Even on unstable
+    /// connections this may be fast.
+    ///
+    /// If none is provided, a timeout of two seconds will be used.
+    pub fn handshake_timeout(mut self, handshake_timeout: impl Into<Duration>) -> Self {
+        self.config.peer_timeout_config.handshake_timeout = handshake_timeout.into();
+        self
+    }
+
     /// Set the time duration a peer has to respond to a message from the local node.
     ///
     /// ## Note
@@ -164,8 +173,8 @@ impl NodeBuilder {
     /// nodes may be slower to respond while processing blocks and transactions.
     ///
     /// If none is provided, a timeout of 5 seconds will be used.
-    pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
-        self.config.response_timeout = response_timeout;
+    pub fn response_timeout(mut self, response_timeout: impl Into<Duration>) -> Self {
+        self.config.peer_timeout_config.response_timeout = response_timeout.into();
         self
     }
 
@@ -179,8 +188,8 @@ impl NodeBuilder {
     /// new and reliable peers faster, so the maximum connection time may be shorter.
     ///
     /// If none is provided, a maximum connection time of two hours will be used.
-    pub fn maximum_connection_time(mut self, max_connection_time: Duration) -> Self {
-        self.config.max_connection_time = max_connection_time;
+    pub fn maximum_connection_time(mut self, max_connection_time: impl Into<Duration>) -> Self {
+        self.config.peer_timeout_config.max_connection_time = max_connection_time.into();
         self
     }
 

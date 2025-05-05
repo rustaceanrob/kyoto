@@ -173,7 +173,11 @@ impl<P: PeerStore> PeerMap<P> {
         );
         let connection = self
             .connector
-            .connect(loaded_peer.addr.clone(), loaded_peer.port)
+            .connect(
+                loaded_peer.addr.clone(),
+                loaded_peer.port,
+                self.timeout_config.handshake_timeout,
+            )
             .await?;
         let handle = tokio::spawn(async move { peer.run(connection).await });
         self.map.insert(
@@ -376,7 +380,7 @@ impl<P: PeerStore> PeerMap<P> {
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
         use crate::network::dns::Dns;
         use std::net::IpAddr;
-        crate::log!(self.dialog, "Bootstraping peers with DNS");
+        crate::log!(self.dialog, "Bootstrapping peers with DNS");
         let mut db_lock = self.db.lock().await;
         let new_peers = Dns::new(self.network, self.dns_resolver)
             .bootstrap()

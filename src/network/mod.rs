@@ -31,7 +31,10 @@ pub const KYOTO_VERSION: &str = "0.10.0";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.4";
 
 const THIRTY_MINS: u64 = 60 * 30;
-const CONNECTION_TIMEOUT: u64 = 2;
+const MESSAGE_TIMEOUT_SECS: u64 = 5;
+//                    sec  min  hour
+const TWO_HOUR: u64 = 60 * 60 * 2;
+const TCP_CONNECTION_TIMEOUT: u64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -61,14 +64,31 @@ pub struct PeerTimeoutConfig {
     pub(crate) response_timeout: Duration,
     /// Maximum time to maintain a connection with a peer
     pub(crate) max_connection_time: Duration,
+    /// How much time does the peer have to make the initial TCP handshake
+    pub(crate) handshake_timeout: Duration,
 }
 
 impl PeerTimeoutConfig {
     /// Create a new peer timeout configuration
-    pub fn new(response_timeout: Duration, max_connection_time: Duration) -> Self {
+    pub fn new(
+        response_timeout: Duration,
+        max_connection_time: Duration,
+        handshake_timeout: Duration,
+    ) -> Self {
         Self {
             response_timeout,
             max_connection_time,
+            handshake_timeout,
+        }
+    }
+}
+
+impl Default for PeerTimeoutConfig {
+    fn default() -> Self {
+        Self {
+            response_timeout: Duration::from_secs(MESSAGE_TIMEOUT_SECS),
+            max_connection_time: Duration::from_secs(TWO_HOUR),
+            handshake_timeout: Duration::from_secs(TCP_CONNECTION_TIMEOUT),
         }
     }
 }
@@ -109,7 +129,12 @@ impl ConnectionType {
         }
     }
 
-    pub(crate) async fn connect(&self, addr: AddrV2, port: u16) -> Result<TcpStream, PeerError> {
+    pub(crate) async fn connect(
+        &self,
+        addr: AddrV2,
+        port: u16,
+        handshake_timeout: Duration,
+    ) -> Result<TcpStream, PeerError> {
         let socket_addr = match addr {
             AddrV2::Ipv4(ip) => IpAddr::V4(ip),
             AddrV2::Ipv6(ip) => IpAddr::V6(ip),
@@ -118,7 +143,7 @@ impl ConnectionType {
         match &self {
             Self::ClearNet => {
                 let timeout = tokio::time::timeout(
-                    Duration::from_secs(CONNECTION_TIMEOUT),
+                    handshake_timeout,
                     TcpStream::connect((socket_addr, port)),
                 )
                 .await
@@ -128,7 +153,7 @@ impl ConnectionType {
             }
             Self::Socks5Proxy(proxy) => {
                 let socks5_timeout = tokio::time::timeout(
-                    Duration::from_secs(CONNECTION_TIMEOUT),
+                    handshake_timeout,
                     create_socks5(*proxy, socket_addr, port),
                 )
                 .await
