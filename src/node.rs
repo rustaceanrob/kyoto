@@ -28,7 +28,7 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    FilterSyncPolicy, NodeState, RejectPayload, TxBroadcastPolicy,
+    NodeState, RejectPayload, TxBroadcastPolicy,
 };
 
 use super::{
@@ -60,7 +60,6 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
     dialog: Arc<Dialog>,
     client_recv: Arc<Mutex<UnboundedReceiver<ClientMessage>>>,
     peer_recv: Arc<Mutex<Receiver<PeerThreadMessage>>>,
-    filter_sync_policy: Arc<RwLock<FilterSyncPolicy>>,
 }
 
 impl<H: HeaderStore, P: PeerStore> Node<H, P> {
@@ -80,7 +79,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             connection_type,
             target_peer_size,
             peer_timeout_config,
-            filter_sync_policy,
             log_level,
         } = config;
         // Set up a communication channel between the node and client
@@ -137,7 +135,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 dialog,
                 client_recv: Arc::new(Mutex::new(crx)),
                 peer_recv: Arc::new(Mutex::new(mrx)),
-                filter_sync_policy: Arc::new(RwLock::new(filter_sync_policy)),
             },
             client,
         )
@@ -253,11 +250,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan().await {
                                     self.broadcast(response).await;
-                                }
-                            },
-                            ClientMessage::ContinueDownload => {
-                                if let Some(response) = self.start_filter_download().await {
-                                    self.broadcast(response).await
                                 }
                             },
                             #[cfg(feature = "filter-control")]
@@ -477,10 +469,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 chain.next_cf_header_message(),
             ));
         } else if !chain.is_filters_synced() {
-            let filter_download = self.filter_sync_policy.read().await;
-            if matches!(*filter_download, FilterSyncPolicy::Continue) {
-                return Some(MainThreadMessage::GetFilters(chain.next_filter_message()));
-            }
+            return Some(MainThreadMessage::GetFilters(chain.next_filter_message()));
         }
         None
     }
@@ -728,22 +717,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 );
                 *state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(chain.next_filter_message()))
-            }
-        }
-    }
-
-    // Continue the filter syncing process by explicit command
-    async fn start_filter_download(&self) -> Option<MainThreadMessage> {
-        let mut download_policy = self.filter_sync_policy.write().await;
-        *download_policy = FilterSyncPolicy::Continue;
-        drop(download_policy);
-        let current_state = self.state.read().await;
-        match *current_state {
-            NodeState::Behind => None,
-            NodeState::HeadersSynced => None,
-            _ => {
-                let mut chain = self.chain.lock().await;
-                self.next_stateful_message(chain.deref_mut()).await
             }
         }
     }

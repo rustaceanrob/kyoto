@@ -237,18 +237,6 @@ impl Requester {
             .map_err(|_| ClientError::SendError)
     }
 
-    /// Explicitly start the block filter syncing process. Note that the node will automatically download and check
-    /// filters unless the policy is to explicitly halt.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub fn continue_download(&self) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::ContinueDownload)
-            .map_err(|_| ClientError::SendError)
-    }
-
     /// Check if the node is running.
     pub fn is_running(&self) -> bool {
         self.ntx.send(ClientMessage::NoOp).is_ok()

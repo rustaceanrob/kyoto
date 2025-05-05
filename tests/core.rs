@@ -531,60 +531,6 @@ async fn stop_reorg_start_on_orphan() {
 }
 
 #[tokio::test]
-#[allow(clippy::collapsible_match)]
-async fn halting_download_works() {
-    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
-    let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
-
-    let miner = rpc.new_address().unwrap();
-    mine_blocks(rpc, &miner, 10, 1).await;
-    let best = best_hash(rpc);
-    let mut scripts = HashSet::new();
-    let other = rpc.new_address().unwrap();
-    scripts.insert(other.into());
-
-    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
-    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
-    let (node, client) = builder
-        .add_peers(vec![host.into()])
-        .add_scripts(scripts)
-        .data_dir(tempdir)
-        .halt_filter_download()
-        .build()
-        .unwrap();
-
-    tokio::task::spawn(async move { node.run().await });
-    let Client {
-        requester,
-        log_rx: _,
-        info_rx: mut info,
-        warn_rx: _,
-        event_rx: mut channel,
-    } = client;
-    while let Some(message) = info.recv().await {
-        if let kyoto::Info::StateChange(node_state) = message {
-            if let kyoto::NodeState::FilterHeadersSynced = node_state {
-                println!("Sleeping for one second...");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                requester.continue_download().unwrap();
-                break;
-            }
-        }
-    }
-
-    while let Some(message) = channel.recv().await {
-        if let kyoto::messages::Event::Synced(update) = message {
-            println!("Done");
-            assert_eq!(update.tip().hash, best);
-            break;
-        }
-    }
-    requester.shutdown().unwrap();
-    rpc.stop().unwrap();
-}
-
-#[tokio::test]
 async fn signet_syncs() {
     let tempdir = tempfile::TempDir::new().unwrap().into_path();
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")

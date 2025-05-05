@@ -392,16 +392,6 @@ pub enum LogLevel {
     Warning,
 }
 
-/// Should the node immediately download filters or wait for a command
-#[derive(Debug, Default)]
-pub enum FilterSyncPolicy {
-    /// The node will wait for an explicit command to start downloading and checking filters
-    Halt,
-    /// Filters are downloaded immediately after CBF headers are synced.
-    #[default]
-    Continue,
-}
-
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
 pub enum NodeState {
