@@ -1,6 +1,6 @@
 # Description
 
-While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the standard SPV for [LND](https://github.com/lightningnetwork/lnd), integrations with existing Rust clients for [LDK](https://github.com/lightningdevkit) and [BDK](https://github.com/bitcoindevkit) haven't come to furition. The [Nakamoto](https://github.com/cloudhead/nakamoto) project is complete with some very modular, elegant programming, but the lead maintainer has other projects to focus on. [Murmel](https://github.com/rust-bitcoin/murmel) is yet another light client in Rust, but the last commit was 4 years ago at the time of writing. The Rust community of crates has evolved quickly in terms of asynchronus frameworks and runtime executors. Like the [LDK node](https://github.com/lightningdevkit/ldk-node?tab=readme-ov-file) project, this project leverages the use of `tokio`. By leveraging how futures and executors have developed over the years, the hope is a light client in Rust should be significantly easier to maintain.
+While [Neutrino](https://github.com/lightninglabs/neutrino/blob/master) is the standard SPV for [LND](https://github.com/lightningnetwork/lnd), integrations with existing Rust clients for [LDK](https://github.com/lightningdevkit) and [BDK](https://github.com/bitcoindevkit) haven't come to furition. The [Nakamoto](https://github.com/cloudhead/nakamoto) project is complete with some very modular, elegant programming, but the lead maintainer has other projects to focus on. [Murmel](https://github.com/rust-bitcoin/murmel) is yet another light client in Rust, but the last commit was 4 years ago at the time of writing. The Rust community of crates has evolved quickly in terms of asynchronous frameworks and runtime executors. Like the [LDK node](https://github.com/lightningdevkit/ldk-node?tab=readme-ov-file) project, this project leverages the use of `tokio`. By leveraging how futures and executors have developed over the years, the hope is a light client in Rust should be significantly easier to maintain.
 
 This document outlines some miscellaneous information about the project and some recommendations for implementation. The goal for Kyoto is to run on mobile devices with a low-enough memory footprint to allow users to interact with Lightning Network applications as well. To that end, some assumptions and design goals were made to cater to low-resource devices. Neutrino and LND are the current standard of a server-style, SPV Lightning Node implementation, so Kyoto is generally compliment and not a substitution.
 
@@ -49,17 +49,13 @@ From an analysis of a `peers.dat`, roughly 20% of nodes signaled for compact blo
 
 # Usage Statistics
 
-Leveraging the [UniFFI](https://github.com/mozilla/uniffi-rs) project, as well as [Bitcoin Dev Kit's FFI project](https://github.com/bitcoindevkit/bdk-ffi), a Swift package was built and ran on an iPhone 15. The application recovered a wallet from block height 800,000 to roughly block height 860,000. The remote node stores compact filters on a hard disk, causing the filter retrieval to be slower than usual.
-
-#### Description
-
-The wallet required 12 block downloads, and took 5 minutes.
+Leveraging the [Bitcoin Dev Kit's FFI project](https://github.com/bitcoindevkit/bdk-ffi), an [example Swift app](https://github.com/rustaceanrob/BDKKyotoExampleApp) was built and ran on an iPhone 15. The application recovered a wallet from block height 830,000 to roughly block height 895,000. This was done three times, relying on DNS to bootstrap the initial peers each time.
 
 #### Network
 
-| Received | Sent    | Average     |
-| -------- | ------- | ----------- |
-| 1.1 GB   | 34.4 KB | 5 MB/second |
+| Received |
+| -------- |
+| 1.5 GB   |
 
 #### Energy Impact
 
@@ -71,13 +67,28 @@ The wallet required 12 block downloads, and took 5 minutes.
 
 #### Memory
 
-| Maximum | Average |
-| ------- | ------- |
-| 37.7 MB | 35.5 MD |
+| Maximum | Start |
+| ------- | ----- |
+| 73.5 MB | 32 MB |
+
+#### Disk
+
+| Reads | Writes |
+| ----- | ------ |
+| 29 MB | 35 MB  |
 
 #### CPU
 
-- Single CPU: 72% usage. Highest 100% during block download.
+| Peer 1 | Peer 2 | Peer 3 |
+| ------ | ------ | ------ |
+| 100%   | 20-50% | 10-50% |
+
+#### Speed
+
+| Peer 1    | Peer 2    | Peer 3     |
+| --------- | --------- | ---------- |
+| 5-10 MB/s |  < 2 MB/s | 0.5-5 MB/s |
+| 76 sec    | 427 sec   | 950 sec    |
 
 # Implementation
 
@@ -89,7 +100,7 @@ Kyoto will first connect to all of the configured peers to maintain the connecti
 
 ## Block Headers and Storage
 
-Kyoto expects users to adopt some form of persistence between sessions when it comes to block header data. Reason being, Kyoto emits block headers that have been reorganized back to the client in such an event. To do so, in a rare but potential circumstance where the client has shut down on a stale tip, one that is reorganized in the future, Kyoto may use the header persistence to load the older chain into memory. Further, this allows the memory footprint of storing headers in a chain structure to remain small. Kyoto has a soft limit of 20,000 headers in memory at any given time, and if the chain representation exceeds that, Kyoto has a reliable backend to move the excess of block headers. To compensate for this, Kyoto only expects some generic datastore, and does not care about how persistence is implemented.
+Kyoto expects users to adopt some form of persistence between sessions when it comes to block header data. Reason being, Kyoto emits block headers that have been reorganized back to the client in such an event. To do so, in a rare but potential circumstance where the client has shut down on a stale tip, one that is reorganized in the future, Kyoto may use the header persistence to load the older chain into memory.
 
 ## Filters
 
@@ -97,9 +108,8 @@ Block filters for a full block may be 300-400 bytes, and may be needless overhea
 
 ## Structure
 
-* `chain`: Contains all logic for syncing block headers, filter headers, filters, parsing blocks. Also contains preset checkpoints for Signet, Regtest, and Bitcoin networks. Notable files: `chain.rs`
+* `chain`: Contains all logic for syncing block headers, filter headers, filters, parsing blocks. Also contains preset checkpoints for Signet, Regtest, and Bitcoin networks. Notable files: `chain.rs`, `graph.rs`
 * `db`: Defines how data must be persisted with `traits.rs`, and includes some opinionated defaults for database components.
-* `filters`: Additional structures for managing compact filter headers and filters, used by `chain.rs`
 * `network`: Opens and closes connections, handles encryption and decryption of messages, generates messages, parses messages, times message response times, performs DNS lookups. Notable files: `peer.rs`, `reader.rs`, `parsers.rs`, `outbound_messages.rs`
 
 ![Layout](https://github.com/user-attachments/assets/21280bb4-aa88-4e11-9223-aed35a885e99)
