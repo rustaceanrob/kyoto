@@ -1,5 +1,5 @@
 extern crate tokio;
-use std::{collections::HashMap, ops::DerefMut, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network, Transaction, Wtxid};
@@ -7,33 +7,27 @@ use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
     select,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Mutex,
-    },
+    sync::mpsc::{self, Receiver, Sender},
     time::Instant,
 };
 
 use crate::{
-    network::outbound_messages::V1OutboundMessage,
-    {
-        channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
-        dialog::Dialog,
-        messages::Warning,
-    },
+    channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
+    dialog::Dialog,
+    messages::Warning,
 };
 
 use super::{
-    counter::MessageCounter, error::PeerError, parsers::MessageParser, reader::Reader,
-    traits::MessageGenerator, PeerId, PeerTimeoutConfig,
+    counter::MessageCounter,
+    error::PeerError,
+    outbound_messages::{MessageGenerator, Transport},
+    parsers::MessageParser,
+    reader::Reader,
+    PeerId, PeerTimeoutConfig,
 };
-
-use super::outbound_messages::V2OutboundMessage;
 
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 4;
-
-type MutexMessageGenerator = Mutex<Box<dyn MessageGenerator>>;
 
 pub(crate) struct Peer {
     nonce: PeerId,
@@ -76,7 +70,7 @@ impl Peer {
         let (tx, mut rx) = mpsc::channel(32);
         let (mut reader, mut writer) = connection.into_split();
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
-        let (message_mutex, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
+        let (mut outbound_messages, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
             let handshake_result = tokio::time::timeout(
                 Duration::from_secs(HANDSHAKE_TIMEOUT),
                 self.try_handshake(&mut writer, &mut reader),
@@ -91,19 +85,21 @@ impl Peer {
                 self.dialog.send_warning(Warning::CouldNotConnect);
             }
             let (decryptor, encryptor) = handshake_result?;
-            let message_mutex: MutexMessageGenerator =
-                Mutex::new(Box::new(V2OutboundMessage::new(self.network, encryptor)));
+            let outbound_messages = MessageGenerator {
+                network: self.network,
+                transport: Transport::V2 { encryptor },
+            };
             let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
-            (message_mutex, reader)
+            (outbound_messages, reader)
         } else {
-            let outbound_messages = V1OutboundMessage::new(self.network);
-            let message_mutex: MutexMessageGenerator = Mutex::new(Box::new(outbound_messages));
+            let outbound_messages = MessageGenerator {
+                network: self.network,
+                transport: Transport::V1,
+            };
             let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
-            (message_mutex, reader)
+            (outbound_messages, reader)
         };
 
-        let mut message_lock = message_mutex.lock().await;
-        let outbound_messages = message_lock.deref_mut();
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(&mut writer, message).await?;
         self.message_counter.sent_version();
@@ -138,7 +134,7 @@ impl Peer {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
-                                match self.handle_peer_message(message, &mut writer, outbound_messages).await {
+                                match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
                                     Ok(()) => continue,
                                     Err(e) => {
                                         match e {
@@ -157,7 +153,7 @@ impl Peer {
                 node_message = self.main_thread_recv.recv() => {
                     match node_message {
                         Some(message) => {
-                            match self.main_thread_request(message, &mut writer, outbound_messages).await {
+                            match self.main_thread_request(message, &mut writer, &mut outbound_messages).await {
                                 Ok(()) => continue,
                                 Err(e) => {
                                     match e {
@@ -179,7 +175,7 @@ impl Peer {
         &mut self,
         message: PeerMessage,
         writer: &mut W,
-        message_generator: &mut Box<dyn MessageGenerator>,
+        message_generator: &mut MessageGenerator,
     ) -> Result<(), PeerError>
     where
         W: AsyncWrite + Send + Unpin,
@@ -318,7 +314,7 @@ impl Peer {
         &mut self,
         request: MainThreadMessage,
         writer: &mut W,
-        message_generator: &mut Box<dyn MessageGenerator>,
+        message_generator: &mut MessageGenerator,
     ) -> Result<(), PeerError>
     where
         W: AsyncWrite + Send + Unpin,
