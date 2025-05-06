@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
@@ -38,6 +38,8 @@ const LOAD_QUERY_ORDERBY_SUFFIX: &str = "ORDER BY height";
 #[derive(Debug)]
 pub struct SqliteHeaderDb {
     conn: Arc<Mutex<Connection>>,
+    accepted: BTreeMap<u32, Header>,
+    disconnected: HashSet<BlockHash>,
 }
 
 impl SqliteHeaderDb {
@@ -66,6 +68,8 @@ impl SqliteHeaderDb {
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            accepted: BTreeMap::new(),
+            disconnected: HashSet::new(),
         })
     }
 
@@ -133,31 +137,45 @@ impl SqliteHeaderDb {
         Ok(headers)
     }
 
-    async fn write(&mut self, changes: BlockHeaderChanges) -> Result<(), SqlHeaderStoreError> {
-        let mut write_lock = self.conn.lock().await;
-        let tx = write_lock.transaction()?;
+    fn stage(&mut self, changes: BlockHeaderChanges) {
         match changes {
             BlockHeaderChanges::Connected(indexed_header) => {
-                let header = indexed_header.header;
-                let hash: Vec<u8> = consensus::serialize(&header.block_hash());
-                let header: Vec<u8> = consensus::serialize(&indexed_header.header);
-                let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, header) VALUES (?1, ?2, ?3)";
-                tx.execute(stmt, params![indexed_header.height, hash, header])?;
+                self.accepted
+                    .insert(indexed_header.height, indexed_header.header);
             }
             BlockHeaderChanges::Reorganized {
                 accepted,
-                reorganized: _,
+                reorganized,
             } => {
+                for indexed_header in reorganized {
+                    let removed_hash = indexed_header.header.block_hash();
+                    self.accepted
+                        .retain(|_, header| header.block_hash().ne(&removed_hash));
+                    self.disconnected.insert(removed_hash);
+                }
                 for indexed_header in accepted {
-                    let header = indexed_header.header;
-                    let hash: Vec<u8> = consensus::serialize(&header.block_hash());
-                    let header: Vec<u8> = consensus::serialize(&indexed_header.header);
-                    let stmt = "INSERT OR REPLACE INTO headers (height, block_hash, header) VALUES (?1, ?2, ?3)";
-                    tx.execute(stmt, params![indexed_header.height, hash, header])?;
+                    self.accepted
+                        .insert(indexed_header.height, indexed_header.header);
                 }
             }
         }
+    }
 
+    async fn write(&mut self) -> Result<(), SqlHeaderStoreError> {
+        let mut write_lock = self.conn.lock().await;
+        let tx = write_lock.transaction()?;
+        for removed in core::mem::take(&mut self.disconnected) {
+            let hash: Vec<u8> = consensus::serialize(&removed);
+            let stmt = "DELETE FROM headers WHERE block_hash = ?1";
+            tx.execute(stmt, params![hash])?;
+        }
+        for (height, header) in core::mem::take(&mut self.accepted) {
+            let hash: Vec<u8> = consensus::serialize(&header.block_hash());
+            let header: Vec<u8> = consensus::serialize(&header);
+            let stmt =
+                "INSERT OR REPLACE INTO headers (height, block_hash, header) VALUES (?1, ?2, ?3)";
+            tx.execute(stmt, params![height, hash, header])?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -212,8 +230,12 @@ impl HeaderStore for SqliteHeaderDb {
         Box::pin(self.load(range))
     }
 
-    fn write(&mut self, changes: BlockHeaderChanges) -> FutureResult<(), Self::Error> {
-        Box::pin(self.write(changes))
+    fn stage(&mut self, changes: BlockHeaderChanges) {
+        self.stage(changes)
+    }
+
+    fn write(&mut self) -> FutureResult<(), Self::Error> {
+        Box::pin(self.write())
     }
 
     fn height_of<'a>(
@@ -256,11 +278,10 @@ mod tests {
         map.insert(10, block_10);
         let block_hash_8 = block_8.block_hash();
         let block_hash_9 = block_9.block_hash();
-        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
+        db.stage(BlockHeaderChanges::Connected(changes_8));
+        db.stage(BlockHeaderChanges::Connected(changes_9));
+        db.stage(BlockHeaderChanges::Connected(changes_10));
+        let w = db.write().await;
         assert!(w.is_ok());
         let get_hash_9 = db.hash_at(9).await.unwrap().unwrap();
         assert_eq!(get_hash_9, block_hash_9);
@@ -294,11 +315,10 @@ mod tests {
         let changes_8 = IndexedHeader::new(8, block_8);
         let changes_9 = IndexedHeader::new(9, block_9);
         let changes_10 = IndexedHeader::new(10, block_10);
-        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
+        db.stage(BlockHeaderChanges::Connected(changes_8));
+        db.stage(BlockHeaderChanges::Connected(changes_9));
+        db.stage(BlockHeaderChanges::Connected(changes_10));
+        let w = db.write().await;
         assert!(w.is_ok());
         let get_height_10 = db.header_at(10).await.unwrap().unwrap();
         assert_eq!(block_10, get_height_10);
@@ -312,12 +332,11 @@ mod tests {
             IndexedHeader::new(11, block_11),
         ];
         let reorganized = vec![IndexedHeader::new(10, block_10)];
-        let w = db
-            .write(BlockHeaderChanges::Reorganized {
-                accepted,
-                reorganized,
-            })
-            .await;
+        db.stage(BlockHeaderChanges::Reorganized {
+            accepted,
+            reorganized,
+        });
+        let w = db.write().await;
         assert!(w.is_ok());
         let block_hash_11 = block_11.block_hash();
         let block_hash_10 = new_block_10.block_hash();
@@ -355,12 +374,10 @@ mod tests {
         let changes_8 = IndexedHeader::new(8, block_8);
         let changes_9 = IndexedHeader::new(9, block_9);
         let changes_10 = IndexedHeader::new(10, block_10);
-        let w = db.write(BlockHeaderChanges::Connected(changes_8)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_9)).await;
-        assert!(w.is_ok());
-        let w = db.write(BlockHeaderChanges::Connected(changes_10)).await;
-        assert!(w.is_ok());
+        db.stage(BlockHeaderChanges::Connected(changes_8));
+        db.stage(BlockHeaderChanges::Connected(changes_9));
+        db.stage(BlockHeaderChanges::Connected(changes_10));
+        let w = db.write().await;
         assert!(w.is_ok());
         let load = db.load(7..).await.unwrap();
         assert_eq!(map, load);
