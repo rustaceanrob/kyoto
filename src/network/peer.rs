@@ -15,6 +15,7 @@ use crate::{
     channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
     dialog::Dialog,
     messages::Warning,
+    Info,
 };
 
 use super::{
@@ -262,6 +263,7 @@ impl Peer {
                     if let Some(transaction) = self.tx_queue.remove(&wtxid) {
                         let msg = message_generator.broadcast_transaction(transaction)?;
                         self.write_bytes(writer, msg).await?;
+                        crate::info!(self.dialog, Info::TxGossiped(wtxid))
                     }
                 }
                 Ok(())
