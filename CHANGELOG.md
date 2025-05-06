@@ -5,6 +5,30 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.11.0
+
+## Added
+
+- Fetch the `Network` from the node builder
+- Configure the initial TCP connection timeout when trying new peers
+- Add BDK integration links to the `README`
+- Updated resource usage and profiling in `DETAILS.md`
+
+## Changed
+
+- Use `HeightExt` internally for bitcoin related math on `u32`
+- `anchor_checkpoint` is renamed to `after_checkpoint`
+- Drop the `FilterSyncPolicy` and associated configurations
+- Block header implementations now have separate "stage" and "write" steps
+- `TxSent` info message is now `TxGossiped`, and is sent after a transaction is requested from the remote node
+
+## Fixes
+
+- Migrate the live sync CI task to a weekly job
+- Remove `await` points when syncing `CFHeaders` and `CFilters`
+- Fetch the headers required to handle _both_ reorganizations and difficulty adjustments when the node starts
+- Drop dynamic dispatch in the `network` in favor of explicit `V1` and `V2` transport
+
 ## 0.10.0
 
 ## Added
