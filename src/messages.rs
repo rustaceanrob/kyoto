@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Txid};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Txid, Wtxid};
 
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
@@ -22,17 +22,19 @@ pub enum Info {
     ConnectionsMet,
     /// The progress of the node during the block filter download process.
     Progress(Progress),
-    /// A transaction was sent to one or more connected peers.
-    /// This does not guarentee the transaction will be relayed or accepted by the peers,
-    /// only that the message was sent over the wire.
-    TxSent(Txid),
+    /// A transaction was sent to a peer. The `wtxid` was advertised to the
+    /// peer, and the peer responded with `getdata`. The transaction was then serialized and sent
+    /// over the wire. This is a strong indication the transaction will propagate, but not
+    /// guaranteed. You may receive duplicate messages for a given `wtxid` given your broadcast
+    /// policy.
+    TxGossiped(Wtxid),
 }
 
 impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Info::StateChange(s) => write!(f, "{s}"),
-            Info::TxSent(txid) => write!(f, "Transaction sent: {txid}"),
+            Info::TxGossiped(txid) => write!(f, "Transaction gossiped: {txid}"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
             Info::Progress(p) => {
                 let progress_percent = p.percentage_complete();
@@ -114,7 +116,7 @@ impl Progress {
     }
 }
 
-/// An attempt to broadcast a tranasction failed.
+/// An attempt to broadcast a transaction failed.
 #[derive(Debug, Clone, Copy)]
 pub struct RejectPayload {
     /// An enumeration of the reason for the transaction failure. If none is provided, the message could not be sent over the wire.
@@ -237,14 +239,14 @@ pub enum Warning {
     },
     /// A database failed to persist some data.
     FailedPersistence {
-        /// Additional context for the persistance failure.
+        /// Additional context for the persistence failure.
         warning: String,
     },
     /// The peer sent us a potential fork.
     EvaluatingFork,
     /// The peer database has no values.
     EmptyPeerDatabase,
-    /// An unexpected error occured processing a peer-to-peer message.
+    /// An unexpected error occurred processing a peer-to-peer message.
     UnexpectedSyncError {
         /// Additional context as to why block syncing failed.
         warning: String,

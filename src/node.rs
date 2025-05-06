@@ -375,9 +375,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             .await
                     }
                 };
-                if did_broadcast {
-                    crate::info!(self.dialog, Info::TxSent(txid));
-                } else {
+                if !did_broadcast {
                     self.dialog.send_warning(Warning::TransactionRejected {
                         payload: RejectPayload::from_txid(txid),
                     });
