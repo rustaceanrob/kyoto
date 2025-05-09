@@ -17,9 +17,10 @@ use tokio::{
 use crate::{
     broadcaster::BroadcastQueue,
     channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage},
+    db::PersistedPeer,
     dialog::Dialog,
     messages::Warning,
-    Info,
+    Info, PeerStore,
 };
 
 use super::{
@@ -33,19 +34,20 @@ use super::{
 const MESSAGE_TIMEOUT: u64 = 2;
 const HANDSHAKE_TIMEOUT: u64 = 4;
 
-pub(crate) struct Peer {
+pub(crate) struct Peer<P: PeerStore + 'static> {
     nonce: PeerId,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
     services: ServiceFlags,
     dialog: Arc<Dialog>,
+    db: Arc<Mutex<P>>,
     timeout_config: PeerTimeoutConfig,
     message_state: MessageState,
     tx_queue: Arc<Mutex<BroadcastQueue>>,
 }
 
-impl Peer {
+impl<P: PeerStore + 'static> Peer<P> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         nonce: PeerId,
@@ -54,6 +56,7 @@ impl Peer {
         main_thread_recv: Receiver<MainThreadMessage>,
         services: ServiceFlags,
         dialog: Arc<Dialog>,
+        db: Arc<Mutex<P>>,
         timeout_config: PeerTimeoutConfig,
         tx_queue: Arc<Mutex<BroadcastQueue>>,
     ) -> Self {
@@ -64,6 +67,7 @@ impl Peer {
             network,
             services,
             dialog,
+            db,
             timeout_config,
             message_state: MessageState::new(timeout_config.response_timeout),
             tx_queue,
@@ -205,19 +209,50 @@ impl Peer {
                 match self.message_state.addr_state.gossip_stage {
                     AddrGossipStages::NotReceived => {
                         self.message_state.addr_state.received(addrs.len());
+                        let db = Arc::clone(&self.db);
+                        let dialog = Arc::clone(&self.dialog);
+                        tokio::task::spawn(async move {
+                            let mut db = db.lock().await;
+                            for peer in addrs {
+                                if let Err(e) = db
+                                    .update(PersistedPeer::gossiped(
+                                        peer.addr,
+                                        peer.port,
+                                        peer.services,
+                                    ))
+                                    .await
+                                {
+                                    dialog.send_warning(Warning::FailedPersistence {
+                                        warning: format!(
+                                            "Encountered an error adding a gossiped peer: {e}"
+                                        ),
+                                    });
+                                }
+                            }
+                        });
                         self.message_state.addr_state.first_gossip();
                     }
                     AddrGossipStages::RandomGossip => {
                         self.message_state.addr_state.received(addrs.len());
+                        let mut db = self.db.lock().await;
+                        for peer in addrs {
+                            if let Err(e) = db
+                                .update(PersistedPeer::gossiped(
+                                    peer.addr,
+                                    peer.port,
+                                    peer.services,
+                                ))
+                                .await
+                            {
+                                self.dialog.send_warning(Warning::FailedPersistence {
+                                    warning: format!(
+                                        "Encountered an error adding a gossiped peer: {e}"
+                                    ),
+                                });
+                            }
+                        }
                     }
                 }
-                self.main_thread_sender
-                    .send(PeerThreadMessage {
-                        nonce: self.nonce,
-                        message: PeerMessage::Addr(addrs),
-                    })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
             ReaderMessage::Headers(headers) => {

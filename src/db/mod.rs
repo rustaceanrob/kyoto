@@ -43,6 +43,15 @@ impl PersistedPeer {
             status,
         }
     }
+
+    pub(crate) fn gossiped(addr: AddrV2, port: u16, services: ServiceFlags) -> Self {
+        Self {
+            addr,
+            port,
+            services,
+            status: PeerStatus::Gossiped,
+        }
+    }
 }
 
 impl From<PersistedPeer> for (AddrV2, u16) {

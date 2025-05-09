@@ -61,7 +61,6 @@ pub(crate) struct PeerThreadMessage {
 #[derive(Debug)]
 pub(crate) enum PeerMessage {
     Version(VersionMessage),
-    Addr(Vec<CombinedAddr>),
     Headers(Vec<Header>),
     FilterHeaders(CFHeaders),
     Filter(CFilter),
