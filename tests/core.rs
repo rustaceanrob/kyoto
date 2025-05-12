@@ -27,7 +27,8 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     conf.args.push("--rest=1");
     conf.args.push("--server=1");
     conf.args.push("--listen=1");
-    conf.tmpdir = Some(tempfile::TempDir::new().unwrap().into_path());
+    let tempdir = tempfile::TempDir::new()?;
+    conf.tmpdir = Some(tempdir.path().to_owned());
     if with_v2_transport {
         conf.args.push("--v2transport=1")
     } else {
@@ -119,7 +120,7 @@ async fn print_logs(mut log_rx: Receiver<String>, mut warn_rx: UnboundedReceiver
 async fn live_reorg() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -169,7 +170,7 @@ async fn live_reorg() {
 async fn live_reorg_additional_sync() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -223,7 +224,7 @@ async fn live_reorg_additional_sync() {
 async fn various_client_methods() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine a lot of blocks
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 500, 15).await;
@@ -257,7 +258,7 @@ async fn various_client_methods() {
 async fn stop_reorg_resync() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks.
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -338,7 +339,7 @@ async fn stop_reorg_resync() {
 async fn stop_reorg_two_resync() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks.
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 1).await;
@@ -419,7 +420,7 @@ async fn stop_reorg_two_resync() {
 async fn stop_reorg_start_on_orphan() {
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 17, 3).await;
     let best = best_hash(rpc);
@@ -532,7 +533,7 @@ async fn stop_reorg_start_on_orphan() {
 
 #[tokio::test]
 async fn signet_syncs() {
-    let tempdir = tempfile::TempDir::new().unwrap().into_path();
+    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
         .unwrap()
         .require_network(bitcoin::Network::Signet)

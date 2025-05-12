@@ -50,6 +50,18 @@ pub(crate) enum PeerMessage {
     Filter(CFilter),
     Block(Block),
     NewBlocks(Vec<BlockHash>),
+    FeeFilter(FeeRate),
+}
+
+#[derive(Debug)]
+pub(crate) enum ReaderMessage {
+    Version(VersionMessage),
+    Addr(Vec<CombinedAddr>),
+    Headers(Vec<Header>),
+    FilterHeaders(CFHeaders),
+    Filter(CFilter),
+    Block(Block),
+    NewBlocks(Vec<BlockHash>),
     Reject(RejectPayload),
     Disconnect,
     Verack,

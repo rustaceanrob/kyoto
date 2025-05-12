@@ -6,7 +6,7 @@ use bitcoin::{FeeRate, Txid};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::Sender;
 
-use crate::channel_messages::{CombinedAddr, PeerMessage};
+use crate::channel_messages::{CombinedAddr, ReaderMessage};
 use crate::messages::RejectPayload;
 
 use super::error::PeerReadError;
@@ -22,11 +22,11 @@ const MAX_HEADERS: usize = 2_000;
 
 pub(crate) struct Reader<R: AsyncReadExt + Send + Sync + Unpin> {
     parser: MessageParser<R>,
-    tx: Sender<PeerMessage>,
+    tx: Sender<ReaderMessage>,
 }
 
 impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
-    pub fn new(parser: MessageParser<R>, tx: Sender<PeerMessage>) -> Self {
+    pub fn new(parser: MessageParser<R>, tx: Sender<ReaderMessage>) -> Self {
         Self { parser, tx }
     }
 
@@ -46,14 +46,14 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
         }
     }
 
-    fn parse_message(&self, message: NetworkMessage) -> Option<PeerMessage> {
+    fn parse_message(&self, message: NetworkMessage) -> Option<ReaderMessage> {
         // Supported messages are protocol version 70013 and below
         match message {
-            NetworkMessage::Version(version) => Some(PeerMessage::Version(version)),
-            NetworkMessage::Verack => Some(PeerMessage::Verack),
+            NetworkMessage::Version(version) => Some(ReaderMessage::Version(version)),
+            NetworkMessage::Verack => Some(ReaderMessage::Verack),
             NetworkMessage::Addr(addresses) => {
                 if addresses.len() > MAX_ADDR {
-                    return Some(PeerMessage::Disconnect);
+                    return Some(ReaderMessage::Disconnect);
                 }
                 let addresses: Vec<CombinedAddr> = addresses
                     .iter()
@@ -76,11 +76,11 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
                 if addresses.is_empty() {
                     return None;
                 }
-                Some(PeerMessage::Addr(addresses))
+                Some(ReaderMessage::Addr(addresses))
             }
             NetworkMessage::Inv(inventory) => {
                 if inventory.len() > MAX_INV {
-                    return Some(PeerMessage::Disconnect);
+                    return Some(ReaderMessage::Disconnect);
                 }
                 let mut hashes = Vec::new();
                 for i in inventory {
@@ -92,7 +92,7 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
                     }
                 }
                 if !hashes.is_empty() {
-                    Some(PeerMessage::NewBlocks(hashes))
+                    Some(ReaderMessage::NewBlocks(hashes))
                 } else {
                     None
                 }
@@ -105,34 +105,34 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
                         _ => continue,
                     }
                 }
-                Some(PeerMessage::TxRequests(requests))
+                Some(ReaderMessage::TxRequests(requests))
             }
             NetworkMessage::NotFound(_) => None,
             NetworkMessage::GetBlocks(_) => None,
             NetworkMessage::GetHeaders(_) => None,
             NetworkMessage::MemPool => None,
             NetworkMessage::Tx(_) => None,
-            NetworkMessage::Block(block) => Some(PeerMessage::Block(block)),
+            NetworkMessage::Block(block) => Some(ReaderMessage::Block(block)),
             NetworkMessage::Headers(headers) => {
                 if headers.len() > MAX_HEADERS {
-                    return Some(PeerMessage::Disconnect);
+                    return Some(ReaderMessage::Disconnect);
                 }
-                Some(PeerMessage::Headers(headers))
+                Some(ReaderMessage::Headers(headers))
             }
             // 70012
             NetworkMessage::SendHeaders => None,
             NetworkMessage::GetAddr => None,
-            NetworkMessage::Ping(nonce) => Some(PeerMessage::Ping(nonce)),
-            NetworkMessage::Pong(nonce) => Some(PeerMessage::Pong(nonce)),
+            NetworkMessage::Ping(nonce) => Some(ReaderMessage::Ping(nonce)),
+            NetworkMessage::Pong(nonce) => Some(ReaderMessage::Pong(nonce)),
             NetworkMessage::MerkleBlock(_) => None,
             // Bloom Filters are enabled by 70011
             NetworkMessage::FilterLoad(_) => None,
             NetworkMessage::FilterAdd(_) => None,
             NetworkMessage::FilterClear => None,
             NetworkMessage::GetCFilters(_) => None,
-            NetworkMessage::CFilter(filter) => Some(PeerMessage::Filter(filter)),
+            NetworkMessage::CFilter(filter) => Some(ReaderMessage::Filter(filter)),
             NetworkMessage::GetCFHeaders(_) => None,
-            NetworkMessage::CFHeaders(cf_headers) => Some(PeerMessage::FilterHeaders(cf_headers)),
+            NetworkMessage::CFHeaders(cf_headers) => Some(ReaderMessage::FilterHeaders(cf_headers)),
             NetworkMessage::GetCFCheckpt(_) => None,
             NetworkMessage::CFCheckpt(_) => None,
             // Compact Block Relay is enabled with 70014
@@ -143,7 +143,7 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
                 let txid = Txid::from(rejection.hash);
-                Some(PeerMessage::Reject(RejectPayload {
+                Some(ReaderMessage::Reject(RejectPayload {
                     reason: Some(rejection.ccode),
                     txid,
                 }))
@@ -151,18 +151,18 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
             // 70013
             NetworkMessage::FeeFilter(i) => {
                 if i < 0 {
-                    Some(PeerMessage::Disconnect)
+                    Some(ReaderMessage::Disconnect)
                 } else {
                     // Safe cast because i64::MAX < u64::MAX
                     let fee_rate = FeeRate::from_sat_per_kwu(i as u64 / 4);
-                    Some(PeerMessage::FeeFilter(fee_rate))
+                    Some(ReaderMessage::FeeFilter(fee_rate))
                 }
             }
             // 70016
             NetworkMessage::WtxidRelay => None,
             NetworkMessage::AddrV2(addresses) => {
                 if addresses.len() > MAX_ADDR {
-                    return Some(PeerMessage::Disconnect);
+                    return Some(ReaderMessage::Disconnect);
                 }
                 let addresses: Vec<CombinedAddr> = addresses
                     .into_iter()
@@ -180,11 +180,11 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
                 if addresses.is_empty() {
                     return None;
                 }
-                Some(PeerMessage::Addr(addresses))
+                Some(ReaderMessage::Addr(addresses))
             }
             NetworkMessage::SendAddrV2 => None,
             #[allow(unused)]
-            NetworkMessage::Unknown { command, payload } => Some(PeerMessage::Disconnect),
+            NetworkMessage::Unknown { command, payload } => Some(ReaderMessage::Disconnect),
         }
     }
 }
