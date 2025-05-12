@@ -227,15 +227,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                         None => continue,
                                     }
                                 }
-                                PeerMessage::Reject(payload) => {
-                                    self.dialog
-                                        .send_warning(Warning::TransactionRejected { payload });
-                                }
                                 PeerMessage::FeeFilter(feerate) => {
                                     let mut peer_map = self.peer_map.lock().await;
                                     peer_map.set_broadcast_min(peer_thread.nonce, feerate);
                                 }
-                                _ => continue,
                             }
                         },
                         _ => continue,

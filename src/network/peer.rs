@@ -12,7 +12,7 @@ use tokio::{
 };
 
 use crate::{
-    channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage},
+    channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage},
     dialog::Dialog,
     messages::Warning,
     Info,
@@ -174,7 +174,7 @@ impl Peer {
 
     async fn handle_peer_message<W>(
         &mut self,
-        message: PeerMessage,
+        message: ReaderMessage,
         writer: &mut W,
         message_generator: &mut MessageGenerator,
     ) -> Result<(), PeerError>
@@ -182,7 +182,7 @@ impl Peer {
         W: AsyncWrite + Send + Unpin,
     {
         match message {
-            PeerMessage::Version(version) => {
+            ReaderMessage::Version(version) => {
                 self.message_counter.got_version();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -193,7 +193,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Addr(addrs) => {
+            ReaderMessage::Addr(addrs) => {
                 self.message_counter.got_addrs(addrs.len());
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -204,7 +204,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Headers(headers) => {
+            ReaderMessage::Headers(headers) => {
                 self.message_counter.got_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -215,7 +215,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::FilterHeaders(cf_headers) => {
+            ReaderMessage::FilterHeaders(cf_headers) => {
                 self.message_counter.got_filter_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -226,7 +226,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Filter(filter) => {
+            ReaderMessage::Filter(filter) => {
                 self.message_counter.got_filter();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -237,7 +237,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Block(block) => {
+            ReaderMessage::Block(block) => {
                 self.message_counter.got_block();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
@@ -248,7 +248,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::NewBlocks(block_hashes) => {
+            ReaderMessage::NewBlocks(block_hashes) => {
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -258,7 +258,7 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::TxRequests(requests) => {
+            ReaderMessage::TxRequests(requests) => {
                 for wtxid in requests {
                     if let Some(transaction) = self.tx_queue.remove(&wtxid) {
                         let msg = message_generator.broadcast_transaction(transaction)?;
@@ -268,17 +268,17 @@ impl Peer {
                 }
                 Ok(())
             }
-            PeerMessage::Verack => {
+            ReaderMessage::Verack => {
                 self.message_counter.got_verack();
                 Ok(())
             }
-            PeerMessage::Ping(nonce) => {
+            ReaderMessage::Ping(nonce) => {
                 let message = message_generator.pong(nonce)?;
                 self.write_bytes(writer, message).await?;
                 Ok(())
             }
-            PeerMessage::Pong(_) => Ok(()),
-            PeerMessage::FeeFilter(fee) => {
+            ReaderMessage::Pong(_) => Ok(()),
+            ReaderMessage::FeeFilter(fee) => {
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -288,27 +288,13 @@ impl Peer {
                     .map_err(|_| PeerError::ThreadChannel)?;
                 Ok(())
             }
-            PeerMessage::Reject(payload) => {
+            ReaderMessage::Reject(payload) => {
                 self.message_counter.got_reject();
-                self.main_thread_sender
-                    .send(PeerThreadMessage {
-                        nonce: self.nonce,
-                        message: PeerMessage::Reject(payload),
-                    })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                self.dialog
+                    .send_warning(Warning::TransactionRejected { payload });
                 Ok(())
             }
-            PeerMessage::Disconnect => {
-                self.main_thread_sender
-                    .send(PeerThreadMessage {
-                        nonce: self.nonce,
-                        message,
-                    })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
-                Err(PeerError::DisconnectCommand)
-            }
+            ReaderMessage::Disconnect => Err(PeerError::DisconnectCommand),
         }
     }
 
