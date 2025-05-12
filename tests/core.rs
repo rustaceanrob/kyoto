@@ -6,12 +6,22 @@ use std::{
     time::Duration,
 };
 
-use bitcoin::{address::NetworkChecked, ScriptBuf};
+use bitcoin::{
+    absolute,
+    address::NetworkChecked,
+    key::{
+        rand::{rngs::StdRng, SeedableRng},
+        Keypair, Secp256k1, TapTweak,
+    },
+    secp256k1::SecretKey,
+    sighash::{Prevouts, SighashCache},
+    Amount, KnownHrp, OutPoint, ScriptBuf, Sequence, TapSighashType, TxIn, TxOut, Witness,
+};
 use corepc_node::serde_json;
 use corepc_node::{anyhow, exe_path};
 use kyoto::{
-    chain::checkpoints::HeaderCheckpoint, client::Client, node::Node, BlockHash, Event, LogLevel,
-    ServiceFlags, SqliteHeaderDb, SqlitePeerDb, TrustedPeer, Warning,
+    chain::checkpoints::HeaderCheckpoint, client::Client, node::Node, Address, BlockHash, Event,
+    Info, LogLevel, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, Transaction, TrustedPeer, Warning,
 };
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -529,6 +539,133 @@ async fn stop_reorg_start_on_orphan() {
     sync_assert(&best, &mut channel).await;
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
+}
+
+#[tokio::test]
+async fn tx_can_broadcast() {
+    let amount_to_us = Amount::from_sat(100_000);
+    let amount_to_op_return = Amount::from_sat(50_000);
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
+    // Build a random address to send to. The Regtest wallet should not own this
+    let mut rng = StdRng::seed_from_u64(10001);
+    let secret = SecretKey::new(&mut rng);
+    let secp = Secp256k1::new();
+    let keypair = Keypair::from_secret_key(&secp, &secret);
+    let (internal_key, _) = keypair.x_only_public_key();
+    let send_to_this_address = Address::p2tr(&secp, internal_key, None, KnownHrp::Regtest);
+    // Mine some blocks and send to this address
+    println!("Mining blocks to an internal address...");
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 110, 10).await;
+    let tx_info = rpc
+        .send_to_address(&send_to_this_address, amount_to_us)
+        .unwrap();
+    // Find the vout that the address owns
+    let txid = tx_info.txid().unwrap();
+    println!("Sent to {send_to_this_address}");
+    let tx_details = rpc.get_transaction(txid).unwrap().details;
+    let (vout, amt) = tx_details
+        .iter()
+        .find(|detail| detail.address.eq(&send_to_this_address.to_string()))
+        .map(|detail| (detail.vout, detail.amount))
+        .unwrap();
+    println!("{amt} Bitcoin locked at {vout} vout in {txid}");
+    // Build a transaction that Regtest does not know about
+    let bytes = b"Am I spam?";
+    let op_return = ScriptBuf::new_op_return(bytes);
+    let txout = TxOut {
+        script_pubkey: op_return.clone(),
+        value: amount_to_op_return,
+    };
+    let outpoint = OutPoint { txid, vout };
+    let txin = TxIn {
+        previous_output: outpoint,
+        script_sig: ScriptBuf::default(),
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        witness: Witness::default(),
+    };
+    let mut unsigned_tx = Transaction {
+        version: bitcoin::transaction::Version::TWO,
+        lock_time: absolute::LockTime::ZERO,
+        input: vec![txin],
+        output: vec![txout],
+    };
+    // Sign the transaction, taken from: https://github.com/rust-bitcoin/rust-bitcoin/blob/master/bitcoin/examples/sign-tx-taproot.rs
+    let input_index = 0;
+    let sighash_type = TapSighashType::Default;
+    let prevout = TxOut {
+        script_pubkey: send_to_this_address.script_pubkey(),
+        value: Amount::from_btc(amt.abs()).unwrap(),
+    };
+    let prevouts = vec![prevout];
+    let prevouts = Prevouts::All(&prevouts);
+    let mut sighasher = SighashCache::new(&mut unsigned_tx);
+    let sighash = sighasher
+        .taproot_key_spend_signature_hash(input_index, &prevouts, sighash_type)
+        .unwrap();
+    let tweaked: bitcoin::key::TweakedKeypair = keypair.tap_tweak(&secp, None);
+    let msg = bitcoin::secp256k1::Message::from(sighash);
+    let signature = secp.sign_schnorr(&msg, &tweaked.to_inner());
+    let signature = bitcoin::taproot::Signature {
+        signature,
+        sighash_type,
+    };
+    *sighasher.witness_mut(input_index).unwrap() = Witness::p2tr_key_spend(&signature);
+    let tx = sighasher.into_transaction().to_owned();
+    println!("Signed transaction");
+    let mut set = HashSet::new();
+    set.insert(op_return);
+    // Build a node to broadcast the transaction
+    let (node, client) = new_node(set, socket_addr, tempdir.clone(), None);
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        mut log_rx,
+        mut info_rx,
+        mut warn_rx,
+        mut event_rx,
+    } = client;
+    tokio::time::timeout(tokio::time::Duration::from_secs(60), async move {
+        loop {
+            tokio::select! {
+                log = log_rx.recv() => {
+                    if let Some(log) = log {
+                        println!("{log}")
+                    }
+                }
+                info = info_rx.recv() => {
+                    if let Some(info) = info {
+                        match info {
+                            Info::TxGossiped(_) => { break; },
+                            Info::StateChange(u) => {
+                                if let kyoto::NodeState::HeadersSynced = u {
+                                    println!("Broadcasting transaction");
+                                    requester.broadcast_random(tx.clone()).unwrap();
+                                }
+                            },
+                            _ => println!("{info}"),
+                        }
+                    }
+                }
+                event = event_rx.recv() => { drop(event); }
+                warn = warn_rx.recv() => {
+                    if let Some(warn) = warn {
+                        match warn {
+                            Warning::TransactionRejected { payload: _ } => {
+                                panic!("Transaction should be valid");
+                            }
+                            _ => println!("{warn}")
+                        }
+                    }
+
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
