@@ -607,7 +607,7 @@ async fn tx_can_broadcast() {
         .unwrap();
     let tweaked: bitcoin::key::TweakedKeypair = keypair.tap_tweak(&secp, None);
     let msg = bitcoin::secp256k1::Message::from(sighash);
-    let signature = secp.sign_schnorr(&msg, &tweaked.to_inner());
+    let signature = secp.sign_schnorr(&msg, &tweaked.to_keypair());
     let signature = bitcoin::taproot::Signature {
         signature,
         sighash_type,
