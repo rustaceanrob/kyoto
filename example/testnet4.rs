@@ -1,9 +1,9 @@
 //! Usual sync on Testnet.
 
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
-use kyoto::{Address, Client, Event, Info, Network, PeerStoreSizeConfig, TrustedPeer};
+use kyoto::{Address, Client, Event, Info, Network};
 use std::collections::HashSet;
-use std::{net::Ipv4Addr, str::FromStr};
+use std::str::FromStr;
 
 const NETWORK: Network = Network::Testnet4;
 const RECOVERY_HEIGHT: u32 = 0;
@@ -23,20 +23,14 @@ async fn main() {
         .into();
     let mut addresses = HashSet::new();
     addresses.insert(address);
-    // Add preferred peers to connect to
-    let peer = TrustedPeer::from_ip(Ipv4Addr::new(18, 189, 156, 102));
     // Create a new node builder
     let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
-        // Add the peers
-        .add_peer(peer)
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
         // Only scan blocks strictly after a checkpoint
         .after_checkpoint(checkpoint)
-        // Store a limited number of peers
-        .peer_db_size(PeerStoreSizeConfig::Limit(256))
         // The number of connections we would like to maintain
         .required_peers(1)
         // Create the node and client
