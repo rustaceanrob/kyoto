@@ -24,7 +24,7 @@ use super::{
     outbound_messages::{MessageGenerator, Transport},
     parsers::MessageParser,
     reader::Reader,
-    PeerId, PeerTimeoutConfig,
+    MessageState, PeerId, PeerTimeoutConfig,
 };
 
 const MESSAGE_TIMEOUT: u64 = 2;
@@ -39,6 +39,7 @@ pub(crate) struct Peer {
     services: ServiceFlags,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
+    message_state: MessageState,
     tx_queue: HashMap<Wtxid, Transaction>,
 }
 
@@ -62,6 +63,7 @@ impl Peer {
             services,
             dialog,
             timeout_config,
+            message_state: MessageState::default(),
             tx_queue: HashMap::new(),
         }
     }
@@ -103,7 +105,7 @@ impl Peer {
 
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(&mut writer, message).await?;
-        self.message_counter.sent_version();
+        self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move {
             peer_reader
                 .read_from_remote()
@@ -112,6 +114,15 @@ impl Peer {
         });
         loop {
             if read_handle.is_finished() {
+                return Ok(());
+            }
+            if !self.message_state.version_handshake.is_complete()
+                && self
+                    .message_state
+                    .version_handshake
+                    .is_unresponsive(self.timeout_config.response_timeout)
+            {
+                self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
             if self.message_counter.unsolicited() {
@@ -183,7 +194,9 @@ impl Peer {
     {
         match message {
             ReaderMessage::Version(version) => {
-                self.message_counter.got_version();
+                if self.message_state.version_handshake.is_complete() {
+                    return Err(PeerError::DisconnectCommand);
+                }
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -269,7 +282,10 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Verack => {
-                self.message_counter.got_verack();
+                if self.message_state.version_handshake.is_complete() {
+                    return Err(PeerError::DisconnectCommand);
+                }
+                self.message_state.finish_version_handshake();
                 Ok(())
             }
             ReaderMessage::Ping(nonce) => {

@@ -162,6 +162,54 @@ impl ConnectionType {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct MessageState {
+    version_handshake: VersionHandshakeState,
+}
+
+impl MessageState {
+    fn start_version_handshake(&mut self) {
+        self.version_handshake = self.version_handshake.start();
+    }
+
+    fn finish_version_handshake(&mut self) {
+        self.version_handshake = self.version_handshake.finish();
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum VersionHandshakeState {
+    #[default]
+    NotStarted,
+    Started {
+        at: tokio::time::Instant,
+    },
+    Completed,
+}
+
+impl VersionHandshakeState {
+    fn start(self) -> Self {
+        Self::Started {
+            at: tokio::time::Instant::now(),
+        }
+    }
+
+    fn finish(self) -> Self {
+        Self::Completed
+    }
+
+    fn is_complete(&self) -> bool {
+        matches!(self, Self::Completed)
+    }
+
+    fn is_unresponsive(&self, timeout: Duration) -> bool {
+        match self {
+            Self::Started { at } => at.elapsed() > timeout,
+            _ => false,
+        }
+    }
+}
+
 pub(crate) struct V1Header {
     magic: Magic,
     _command: CommandString,
@@ -188,15 +236,33 @@ impl Decodable for V1Header {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
+    use std::{net::Ipv4Addr, time::Duration};
 
     use bitcoin::p2p::address::AddrV2;
 
-    use crate::prelude::Netgroup;
+    use crate::{network::MessageState, prelude::Netgroup};
 
     #[test]
     fn test_sixteen() {
         let peer = AddrV2::Ipv4(Ipv4Addr::new(95, 217, 198, 121));
         assert_eq!("95.217".to_string(), peer.netgroup());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_version_message_state() {
+        let timeout = Duration::from_secs(1);
+        let mut message_state = MessageState::default();
+        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        message_state.start_version_handshake();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(message_state.version_handshake.is_unresponsive(timeout));
+        let mut message_state = MessageState::default();
+        message_state.start_version_handshake();
+        message_state.finish_version_handshake();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        assert!(message_state.version_handshake.is_complete());
     }
 }
