@@ -9,8 +9,6 @@ const ADDR_HARD_LIMIT: i32 = 10_000;
 #[derive(Debug, Clone)]
 pub(crate) struct MessageCounter {
     timer: MessageTimer,
-    version: i8,
-    verack: i8,
     header: i32,
     filter_header: i32,
     filters: i64,
@@ -23,8 +21,6 @@ impl MessageCounter {
     pub(crate) fn new(timeout: Duration) -> Self {
         Self {
             timer: MessageTimer::new(timeout),
-            version: 1,
-            verack: 1,
             header: 0,
             filter_header: 0,
             filters: 0,
@@ -32,15 +28,6 @@ impl MessageCounter {
             block: 0,
             tx: 0,
         }
-    }
-
-    pub(crate) fn got_version(&mut self) {
-        self.version -= 1;
-    }
-
-    pub(crate) fn got_verack(&mut self) {
-        self.timer.untrack();
-        self.verack -= 1;
     }
 
     pub(crate) fn got_header(&mut self) {
@@ -68,10 +55,6 @@ impl MessageCounter {
 
     pub(crate) fn got_reject(&mut self) {
         self.tx -= 1;
-    }
-
-    pub(crate) fn sent_version(&mut self) {
-        self.timer.track();
     }
 
     pub(crate) fn sent_header(&mut self) {
@@ -102,10 +85,8 @@ impl MessageCounter {
     }
 
     pub(crate) fn unsolicited(&self) -> bool {
-        self.version < 0
-            || self.header < 0
+        self.header < 0
             || self.filters < 0
-            || self.verack < 0
             || self.filter_header < 0
             || self.addrs < 0
             || self.block < 0
@@ -156,8 +137,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    #[ignore = "time wasting"]
+    #[tokio::test(start_paused = true)]
     async fn test_timer_works() {
         let mut timer = MessageTimer::new(Duration::from_secs(3));
         assert!(!timer.unresponsive());
@@ -176,11 +156,6 @@ mod tests {
     #[test]
     fn test_counter_works() {
         let mut counter = MessageCounter::new(Duration::from_secs(3));
-        counter.sent_version();
-        counter.got_version();
-        assert!(counter.timer.tracked_time.is_some());
-        counter.got_verack();
-        assert!(counter.timer.tracked_time.is_none());
         counter.sent_header();
         assert!(counter.timer.tracked_time.is_some());
         counter.got_header();
@@ -200,7 +175,5 @@ mod tests {
         assert!(counter.timer.tracked_time.is_none());
         counter.got_addrs(1);
         assert!(!counter.unsolicited());
-        counter.got_verack();
-        assert!(counter.unsolicited());
     }
 }

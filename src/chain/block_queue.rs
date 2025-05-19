@@ -179,7 +179,7 @@ mod test {
         assert_eq!(queue.pop(), None);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_laggy_peer() {
         use std::time::Duration;
         let hash_1 =
