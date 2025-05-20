@@ -229,10 +229,12 @@ impl<H: HeaderStore> Chain<H> {
                     }
                 },
                 AcceptHeaderChanges::Reorganization {
-                    accepted,
-                    disconnected,
+                    mut accepted,
+                    mut disconnected,
                 } => {
                     crate::log!(self.dialog, "Valid reorganization found");
+                    accepted.sort();
+                    disconnected.sort();
                     reorg_occured = true;
                     let removed_hashes: Vec<BlockHash> = disconnected
                         .iter()
@@ -240,11 +242,13 @@ impl<H: HeaderStore> Chain<H> {
                         .collect();
                     self.block_queue.remove(&removed_hashes);
                     db.stage(BlockHeaderChanges::Reorganized {
-                        accepted,
+                        accepted: accepted.clone(),
                         reorganized: disconnected.clone(),
                     });
-                    let disconnected_event =
-                        Event::BlocksDisconnected(disconnected.into_iter().rev().collect());
+                    let disconnected_event = Event::BlocksDisconnected {
+                        accepted,
+                        disconnected,
+                    };
                     self.dialog.send_event(disconnected_event);
                 }
                 AcceptHeaderChanges::Rejected(rejected_header) => match rejected_header {
