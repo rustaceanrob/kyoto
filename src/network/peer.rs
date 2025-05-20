@@ -19,7 +19,6 @@ use crate::{
 };
 
 use super::{
-    counter::MessageCounter,
     error::PeerError,
     outbound_messages::{MessageGenerator, Transport},
     parsers::MessageParser,
@@ -35,7 +34,6 @@ pub(crate) struct Peer {
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
-    message_counter: MessageCounter,
     services: ServiceFlags,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
@@ -53,13 +51,11 @@ impl Peer {
         dialog: Arc<Dialog>,
         timeout_config: PeerTimeoutConfig,
     ) -> Self {
-        let message_counter = MessageCounter::new(timeout_config.response_timeout);
         Self {
             nonce,
             main_thread_sender,
             main_thread_recv,
             network,
-            message_counter,
             services,
             dialog,
             timeout_config,
@@ -126,14 +122,6 @@ impl Peer {
                 return Ok(());
             }
             if self.message_state.addr_state.over_limit() {
-                return Ok(());
-            }
-            if self.message_counter.unsolicited() {
-                self.dialog.send_warning(Warning::UnsolicitedMessage);
-                return Ok(());
-            }
-            if self.message_counter.unresponsive() {
-                self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
@@ -229,7 +217,6 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Headers(headers) => {
-                self.message_counter.got_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -240,7 +227,6 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::FilterHeaders(cf_headers) => {
-                self.message_counter.got_filter_header();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -251,7 +237,6 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Filter(filter) => {
-                self.message_counter.got_filter();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -262,7 +247,6 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Block(block) => {
-                self.message_counter.got_block();
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -318,6 +302,7 @@ impl Peer {
             }
             ReaderMessage::Reject(payload) => {
                 if self.message_state.unknown_rejection(payload.wtxid) {
+                    self.dialog.send_warning(Warning::UnsolicitedMessage);
                     return Err(PeerError::DisconnectCommand);
                 }
                 self.dialog
@@ -351,22 +336,18 @@ impl Peer {
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetHeaders(config) => {
-                self.message_counter.sent_header();
                 let message = message_generator.headers(config.locators, config.stop_hash)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilterHeaders(config) => {
-                self.message_counter.sent_filter_header();
                 let message = message_generator.cf_headers(config)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilters(config) => {
-                self.message_counter.sent_filters();
                 let message = message_generator.filters(config)?;
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetBlock(message) => {
-                self.message_counter.sent_block();
                 let message = message_generator.block(message)?;
                 self.write_bytes(writer, message).await?;
             }

@@ -15,7 +15,6 @@ use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
 
-pub(crate) mod counter;
 pub(crate) mod dns;
 pub(crate) mod error;
 pub(crate) mod outbound_messages;
