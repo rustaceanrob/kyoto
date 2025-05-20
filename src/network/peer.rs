@@ -276,6 +276,7 @@ impl Peer {
                     if let Some(transaction) = self.tx_queue.remove(&wtxid) {
                         let msg = message_generator.broadcast_transaction(transaction)?;
                         self.write_bytes(writer, msg).await?;
+                        self.message_state.sent_tx(wtxid);
                         crate::info!(self.dialog, Info::TxGossiped(wtxid))
                     }
                 }
@@ -305,7 +306,9 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Reject(payload) => {
-                self.message_counter.got_reject();
+                if self.message_state.unknown_rejection(payload.wtxid) {
+                    return Err(PeerError::DisconnectCommand);
+                }
                 self.dialog
                     .send_warning(Warning::TransactionRejected { payload });
                 Ok(())
@@ -358,7 +361,6 @@ impl Peer {
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::BroadcastTx(transaction) => {
-                self.message_counter.sent_tx();
                 let wtxid = transaction.compute_wtxid();
                 let message = message_generator.announce_transaction(wtxid)?;
                 self.tx_queue.insert(wtxid, transaction);
