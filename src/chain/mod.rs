@@ -29,12 +29,24 @@ use error::FilterError;
 type Height = u32;
 
 /// A block header with associated height.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexedHeader {
     /// The height in the blockchain for this header.
     pub height: u32,
     /// The block header.
     pub header: Header,
+}
+
+impl std::cmp::PartialOrd for IndexedHeader {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.height.cmp(&other.height))
+    }
+}
+
+impl std::cmp::Ord for IndexedHeader {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.height.cmp(&other.height)
+    }
 }
 
 impl IndexedHeader {

@@ -54,7 +54,12 @@ pub enum Event {
     /// The node is fully synced, having scanned the requested range.
     Synced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
-    BlocksDisconnected(Vec<IndexedHeader>),
+    BlocksDisconnected {
+        /// Blocks that were accepted to the chain of most work in ascending order by height.
+        accepted: Vec<IndexedHeader>,
+        /// Blocks that were disconnected from the chain of most work in ascending order by height.
+        disconnected: Vec<IndexedHeader>,
+    },
     /// A compact block filter with associated height and block hash.
     #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
