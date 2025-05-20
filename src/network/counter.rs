@@ -2,9 +2,6 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-// A peer cannot send 10,000 ADDRs in one connection.
-const ADDR_HARD_LIMIT: i32 = 10_000;
-
 // Very simple denial of service protection so a peer cannot spam us with unsolicited messages.
 #[derive(Debug, Clone)]
 pub(crate) struct MessageCounter {
@@ -12,7 +9,6 @@ pub(crate) struct MessageCounter {
     header: i32,
     filter_header: i32,
     filters: i64,
-    addrs: i32,
     block: i32,
 }
 
@@ -23,7 +19,6 @@ impl MessageCounter {
             header: 0,
             filter_header: 0,
             filters: 0,
-            addrs: 0,
             block: 0,
         }
     }
@@ -40,10 +35,6 @@ impl MessageCounter {
     pub(crate) fn got_filter(&mut self) {
         self.timer.untrack();
         self.filters -= 1;
-    }
-
-    pub(crate) fn got_addrs(&mut self, num_addrs: usize) {
-        self.addrs -= num_addrs as i32;
     }
 
     pub(crate) fn got_block(&mut self) {
@@ -65,21 +56,13 @@ impl MessageCounter {
         self.filters += 1000;
     }
 
-    pub(crate) fn sent_addrs(&mut self) {
-        self.addrs += ADDR_HARD_LIMIT;
-    }
-
     pub(crate) fn sent_block(&mut self) {
         self.timer.track();
         self.block += 1;
     }
 
     pub(crate) fn unsolicited(&self) -> bool {
-        self.header < 0
-            || self.filters < 0
-            || self.filter_header < 0
-            || self.addrs < 0
-            || self.block < 0
+        self.header < 0 || self.filters < 0 || self.filter_header < 0 || self.block < 0
     }
 
     pub(crate) fn unresponsive(&self) -> bool {
@@ -149,7 +132,6 @@ mod tests {
         assert!(counter.timer.tracked_time.is_some());
         counter.got_header();
         assert!(counter.timer.tracked_time.is_none());
-        counter.sent_addrs();
         counter.sent_filter_header();
         assert!(counter.timer.tracked_time.is_some());
         counter.got_filter_header();
@@ -162,7 +144,5 @@ mod tests {
         assert!(counter.timer.tracked_time.is_some());
         counter.got_block();
         assert!(counter.timer.tracked_time.is_none());
-        counter.got_addrs(1);
-        assert!(!counter.unsolicited());
     }
 }
