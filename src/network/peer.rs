@@ -298,6 +298,11 @@ impl Peer {
                     return Err(PeerError::DisconnectCommand);
                 }
                 self.message_state.finish_version_handshake();
+                let pending_txs = self.tx_queue.keys().copied().collect::<Vec<_>>();
+                for wtxid in pending_txs {
+                    let msg = message_generator.announce_transaction(wtxid)?;
+                    self.write_bytes(writer, msg).await?;
+                }
                 Ok(())
             }
             ReaderMessage::Ping(nonce) => {
@@ -372,9 +377,11 @@ impl Peer {
             }
             MainThreadMessage::BroadcastTx(transaction) => {
                 let wtxid = transaction.compute_wtxid();
-                let message = message_generator.announce_transaction(wtxid)?;
+                if self.message_state.version_handshake.is_complete() {
+                    let message = message_generator.announce_transaction(wtxid)?;
+                    self.write_bytes(writer, message).await?;
+                }
                 self.tx_queue.insert(wtxid, transaction);
-                self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::Verack => {
                 let message = message_generator.verack()?;

@@ -639,11 +639,9 @@ async fn tx_can_broadcast() {
                     if let Some(info) = info {
                         match info {
                             Info::TxGossiped(_) => { break; },
-                            Info::StateChange(u) => {
-                                if let kyoto::NodeState::HeadersSynced = u {
-                                    println!("Broadcasting transaction");
-                                    requester.broadcast_random(tx.clone()).unwrap();
-                                }
+                            Info::ConnectionsMet => {
+                                println!("Broadcasting transaction");
+                                requester.broadcast_random(tx.clone()).unwrap();
                             },
                             _ => println!("{info}"),
                         }
