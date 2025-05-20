@@ -24,7 +24,7 @@ use super::{
     outbound_messages::{MessageGenerator, Transport},
     parsers::MessageParser,
     reader::Reader,
-    MessageState, PeerId, PeerTimeoutConfig,
+    AddrGossipStages, MessageState, PeerId, PeerTimeoutConfig,
 };
 
 const MESSAGE_TIMEOUT: u64 = 2;
@@ -125,6 +125,9 @@ impl Peer {
                 self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
+            if self.message_state.addr_state.over_limit() {
+                return Ok(());
+            }
             if self.message_counter.unsolicited() {
                 self.dialog.send_warning(Warning::UnsolicitedMessage);
                 return Ok(());
@@ -207,7 +210,15 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Addr(addrs) => {
-                self.message_counter.got_addrs(addrs.len());
+                match self.message_state.addr_state.gossip_stage {
+                    AddrGossipStages::NotReceived => {
+                        self.message_state.addr_state.received(addrs.len());
+                        self.message_state.addr_state.first_gossip();
+                    }
+                    AddrGossipStages::RandomGossip => {
+                        self.message_state.addr_state.received(addrs.len());
+                    }
+                }
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -328,7 +339,6 @@ impl Peer {
     {
         match request {
             MainThreadMessage::GetAddr => {
-                self.message_counter.sent_addrs();
                 let message = message_generator.addr()?;
                 self.write_bytes(writer, message).await?;
             }

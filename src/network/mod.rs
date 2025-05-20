@@ -35,6 +35,9 @@ const MESSAGE_TIMEOUT_SECS: u64 = 5;
 const TWO_HOUR: u64 = 60 * 60 * 2;
 const TCP_CONNECTION_TIMEOUT: u64 = 2;
 
+// A peer cannot send 10,000 ADDRs in one connection.
+const ADDR_HARD_LIMIT: usize = 10_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
 
@@ -167,6 +170,7 @@ impl ConnectionType {
 #[derive(Debug, Clone, Default)]
 struct MessageState {
     version_handshake: VersionHandshakeState,
+    addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
 }
 
@@ -221,6 +225,37 @@ impl VersionHandshakeState {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct AddrGossipState {
+    num_advertised: usize,
+    gossip_stage: AddrGossipStages,
+}
+
+impl AddrGossipState {
+    fn received(&mut self, num_addrs: usize) {
+        self.num_advertised += num_addrs;
+    }
+
+    fn first_gossip(&mut self) {
+        self.gossip_stage = AddrGossipStages::RandomGossip;
+    }
+
+    fn over_limit(&self) -> bool {
+        self.num_advertised > ADDR_HARD_LIMIT
+    }
+}
+
+// Network address gossip occurs in multiple stages. First, we will send a `getaddr` message to
+// inform the peer that we want to know about nodes they are aware of. Oftentimes this will result
+// in a message containing 250-300 potential peers. Thereafter, the remote node will randomly send
+// 1-5 potential peers throughout the duration of the connection.
+#[derive(Debug, Clone, Copy, Default)]
+enum AddrGossipStages {
+    #[default]
+    NotReceived,
+    RandomGossip,
+}
+
 pub(crate) struct V1Header {
     magic: Magic,
     _command: CommandString,
@@ -251,7 +286,10 @@ mod tests {
 
     use bitcoin::{consensus::deserialize, p2p::address::AddrV2, Transaction};
 
-    use crate::{network::MessageState, prelude::Netgroup};
+    use crate::{
+        network::{AddrGossipStages, MessageState},
+        prelude::Netgroup,
+    };
 
     #[test]
     fn test_sixteen() {
@@ -285,5 +323,23 @@ mod tests {
         message_state.sent_tx(wtxid);
         assert!(!message_state.unknown_rejection(wtxid));
         assert!(message_state.unknown_rejection(wtxid));
+    }
+
+    #[test]
+    fn test_addr_gossip_state() {
+        let mut message_state = MessageState::default();
+        assert!(matches!(
+            message_state.addr_state.gossip_stage,
+            AddrGossipStages::NotReceived
+        ));
+        message_state.addr_state.received(100);
+        message_state.addr_state.first_gossip();
+        assert!(matches!(
+            message_state.addr_state.gossip_stage,
+            AddrGossipStages::RandomGossip
+        ));
+        assert!(!message_state.addr_state.over_limit());
+        message_state.addr_state.received(10_000);
+        assert!(message_state.addr_state.over_limit());
     }
 }
