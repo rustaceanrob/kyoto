@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 #[cfg(feature = "filter-control")]
 use bitcoin::BlockHash;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Txid, Wtxid};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Wtxid};
 
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
@@ -127,12 +127,15 @@ pub struct RejectPayload {
     /// An enumeration of the reason for the transaction failure. If none is provided, the message could not be sent over the wire.
     pub reason: Option<RejectReason>,
     /// The transaction that was rejected or failed to broadcast.
-    pub txid: Txid,
+    pub wtxid: Wtxid,
 }
 
 impl RejectPayload {
-    pub(crate) fn from_txid(txid: Txid) -> Self {
-        Self { reason: None, txid }
+    pub(crate) fn from_wtxid(wtxid: Wtxid) -> Self {
+        Self {
+            reason: None,
+            wtxid,
+        }
     }
 }
 
@@ -289,7 +292,7 @@ impl core::fmt::Display for Warning {
                 )
             }
             Warning::TransactionRejected { payload } => {
-                write!(f, "A transaction got rejected: TXID {}", payload.txid)
+                write!(f, "A transaction got rejected: WTXID {}", payload.wtxid)
             }
             Warning::FailedPersistence { warning } => {
                 write!(f, "A database failed to persist some data: {warning}")

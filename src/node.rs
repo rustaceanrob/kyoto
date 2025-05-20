@@ -352,7 +352,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut peer_map = self.peer_map.lock().await;
         if peer_map.live().ge(&self.required_peers) {
             for transaction in broadcaster.queue() {
-                let txid = transaction.tx.compute_txid();
+                let wtxid = transaction.tx.compute_wtxid();
                 let did_broadcast = match transaction.broadcast_policy {
                     TxBroadcastPolicy::AllPeers => {
                         crate::log!(
@@ -372,7 +372,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 };
                 if !did_broadcast {
                     self.dialog.send_warning(Warning::TransactionRejected {
-                        payload: RejectPayload::from_txid(txid),
+                        payload: RejectPayload::from_wtxid(wtxid),
                     });
                 }
             }

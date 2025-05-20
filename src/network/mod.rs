@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
@@ -7,6 +8,7 @@ use bitcoin::{
     consensus::Decodable,
     io::Read,
     p2p::{address::AddrV2, message::CommandString, Magic},
+    Wtxid,
 };
 use socks::create_socks5;
 use tokio::{net::TcpStream, time::Instant};
@@ -165,6 +167,7 @@ impl ConnectionType {
 #[derive(Debug, Clone, Default)]
 struct MessageState {
     version_handshake: VersionHandshakeState,
+    sent_txs: HashSet<Wtxid>,
 }
 
 impl MessageState {
@@ -174,6 +177,14 @@ impl MessageState {
 
     fn finish_version_handshake(&mut self) {
         self.version_handshake = self.version_handshake.finish();
+    }
+
+    fn sent_tx(&mut self, wtxid: Wtxid) {
+        self.sent_txs.insert(wtxid);
+    }
+
+    fn unknown_rejection(&mut self, wtxid: Wtxid) -> bool {
+        !self.sent_txs.remove(&wtxid)
     }
 }
 
@@ -238,7 +249,7 @@ impl Decodable for V1Header {
 mod tests {
     use std::{net::Ipv4Addr, time::Duration};
 
-    use bitcoin::p2p::address::AddrV2;
+    use bitcoin::{consensus::deserialize, p2p::address::AddrV2, Transaction};
 
     use crate::{network::MessageState, prelude::Netgroup};
 
@@ -264,5 +275,15 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
         assert!(!message_state.version_handshake.is_unresponsive(timeout));
         assert!(message_state.version_handshake.is_complete());
+    }
+
+    #[test]
+    fn test_tx_reject_state() {
+        let transaction: Transaction = deserialize(&hex::decode("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000").unwrap()).unwrap();
+        let wtxid = transaction.compute_wtxid();
+        let mut message_state = MessageState::default();
+        message_state.sent_tx(wtxid);
+        assert!(!message_state.unknown_rejection(wtxid));
+        assert!(message_state.unknown_rejection(wtxid));
     }
 }

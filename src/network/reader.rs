@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags};
-use bitcoin::{FeeRate, Txid};
+use bitcoin::{FeeRate, Wtxid};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::Sender;
 
@@ -139,10 +139,10 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
             NetworkMessage::BlockTxn(_) => None,
             NetworkMessage::Alert(_) => None,
             NetworkMessage::Reject(rejection) => {
-                let txid = Txid::from(rejection.hash);
+                let wtxid = Wtxid::from(rejection.hash);
                 Some(ReaderMessage::Reject(RejectPayload {
                     reason: Some(rejection.ccode),
-                    txid,
+                    wtxid,
                 }))
             }
             // 70013
