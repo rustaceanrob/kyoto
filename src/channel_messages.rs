@@ -6,7 +6,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, FeeRate, Transaction, Wtxid,
+    Block, BlockHash, FeeRate, Wtxid,
 };
 
 use crate::{messages::RejectPayload, network::PeerId};
@@ -21,7 +21,7 @@ pub(crate) enum MainThreadMessage {
     GetFilters(GetCFilters),
     GetBlock(GetBlockConfig),
     Disconnect,
-    BroadcastTx(Transaction),
+    BroadcastPending,
     Verack,
 }
 

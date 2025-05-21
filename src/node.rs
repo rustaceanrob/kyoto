@@ -28,11 +28,10 @@ use crate::{
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    NodeState, RejectPayload, TxBroadcastPolicy,
+    NodeState, TxBroadcast, TxBroadcastPolicy,
 };
 
 use super::{
-    broadcaster::Broadcaster,
     channel_messages::{
         CombinedAddr, GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage,
         PeerThreadMessage,
@@ -55,7 +54,6 @@ pub struct Node<H: HeaderStore, P: PeerStore> {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain<H>>>,
     peer_map: Arc<Mutex<PeerMap<P>>>,
-    tx_broadcaster: Arc<Mutex<Broadcaster>>,
     required_peers: PeerRequirement,
     dialog: Arc<Dialog>,
     client_recv: Arc<Mutex<UnboundedReceiver<ClientMessage>>>,
@@ -107,8 +105,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             Arc::clone(&height_monitor),
             dns_resolver,
         )));
-        // Set up the transaction broadcaster
-        let tx_broadcaster = Arc::new(Mutex::new(Broadcaster::new()));
         // Prepare the header checkpoints for the chain source
         let mut checkpoints = HeaderCheckpoints::new(&network);
         let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
@@ -130,7 +126,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 state,
                 chain,
                 peer_map,
-                tx_broadcaster,
                 required_peers: required_peers.into(),
                 dialog,
                 client_recv: Arc::new(Mutex::new(crx)),
@@ -165,8 +160,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             self.dispatch().await?;
             // If there are blocks we need in the queue, we should request them of a random peer
             self.get_blocks().await;
-            // If we have a transaction to broadcast and we are connected to peers, we should broadcast them
-            self.broadcast_transactions().await;
             // Either handle a message from a remote peer or from our client
             select! {
                 peer = tokio::time::timeout(Duration::from_secs(LOOP_TIMEOUT), peer_recv.recv()) => {
@@ -240,7 +233,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     if let Some(message) = message {
                         match message {
                             ClientMessage::Shutdown => return Ok(()),
-                            ClientMessage::Broadcast(transaction) => self.tx_broadcaster.lock().await.add(transaction),
+                            ClientMessage::Broadcast(transaction) => {
+                                self.broadcast_transaction(transaction).await;
+                            },
                             ClientMessage::AddScript(script) =>  self.add_script(script).await,
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan().await {
@@ -344,39 +339,28 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Broadcast transactions according to the configured policy
-    async fn broadcast_transactions(&self) {
-        let mut broadcaster = self.tx_broadcaster.lock().await;
-        if broadcaster.is_empty() {
-            return;
-        }
+    async fn broadcast_transaction(&self, broadcast: TxBroadcast) {
         let mut peer_map = self.peer_map.lock().await;
-        if peer_map.live().ge(&self.required_peers) {
-            for transaction in broadcaster.queue() {
-                let wtxid = transaction.tx.compute_wtxid();
-                let did_broadcast = match transaction.broadcast_policy {
-                    TxBroadcastPolicy::AllPeers => {
-                        crate::log!(
-                            self.dialog,
-                            format!("Sending transaction to {} connected peers", peer_map.live())
-                        );
-                        peer_map
-                            .broadcast(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await
-                    }
-                    TxBroadcastPolicy::RandomPeer => {
-                        crate::log!(self.dialog, "Sending transaction to a random peer");
-                        peer_map
-                            .send_random(MainThreadMessage::BroadcastTx(transaction.tx))
-                            .await
-                    }
-                };
-                if !did_broadcast {
-                    self.dialog.send_warning(Warning::TransactionRejected {
-                        payload: RejectPayload::from_wtxid(wtxid),
-                    });
-                }
+        let mut queue = peer_map.tx_queue.lock().await;
+        queue.add_to_queue(broadcast.tx);
+        drop(queue);
+        match broadcast.broadcast_policy {
+            TxBroadcastPolicy::AllPeers => {
+                crate::log!(
+                    self.dialog,
+                    format!("Sending transaction to {} connected peers", peer_map.live())
+                );
+                peer_map
+                    .broadcast(MainThreadMessage::BroadcastPending)
+                    .await
             }
-        }
+            TxBroadcastPolicy::RandomPeer => {
+                crate::log!(self.dialog, "Sending transaction to a random peer");
+                peer_map
+                    .send_random(MainThreadMessage::BroadcastPending)
+                    .await
+            }
+        };
     }
 
     // Try to continue with the syncing process

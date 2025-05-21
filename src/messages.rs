@@ -135,15 +135,6 @@ pub struct RejectPayload {
     pub wtxid: Wtxid,
 }
 
-impl RejectPayload {
-    pub(crate) fn from_wtxid(wtxid: Wtxid) -> Self {
-        Self {
-            reason: None,
-            wtxid,
-        }
-    }
-}
-
 /// Commands to issue a node.
 #[derive(Debug)]
 pub(crate) enum ClientMessage {
