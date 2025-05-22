@@ -1,5 +1,6 @@
 use bitcoin::{
     block::Header,
+    hashes::Hash,
     p2p::{
         address::AddrV2,
         message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
@@ -8,6 +9,7 @@ use bitcoin::{
     },
     Block, BlockHash, FeeRate, Wtxid,
 };
+use tokio::time::Instant;
 
 use crate::{messages::RejectPayload, network::PeerId};
 
@@ -23,6 +25,21 @@ pub(crate) enum MainThreadMessage {
     Disconnect,
     BroadcastPending,
     Verack,
+}
+
+impl MainThreadMessage {
+    pub(crate) fn time_sensitive_message_start(&self) -> Option<(TimeSensitiveId, Instant)> {
+        let now = Instant::now();
+        match self {
+            MainThreadMessage::GetHeaders(_) => Some((TimeSensitiveId::HEADER_MSG, now)),
+            MainThreadMessage::GetFilterHeaders(_) => Some((TimeSensitiveId::CF_HEADER_MSG, now)),
+            MainThreadMessage::GetBlock(conf) => {
+                let id = conf.locator.to_raw_hash().to_byte_array();
+                Some((TimeSensitiveId::from_slice(id), now))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +89,20 @@ pub(crate) enum ReaderMessage {
     TxRequests(Vec<Wtxid>),
 }
 
+impl ReaderMessage {
+    pub(crate) fn time_sensitive_message_received(&self) -> Option<TimeSensitiveId> {
+        match self {
+            ReaderMessage::Headers(_) => Some(TimeSensitiveId::HEADER_MSG),
+            ReaderMessage::FilterHeaders(_) => Some(TimeSensitiveId::CF_HEADER_MSG),
+            ReaderMessage::Block(b) => {
+                let hash = *b.block_hash().to_raw_hash().as_byte_array();
+                Some(TimeSensitiveId::from_slice(hash))
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CombinedAddr {
     pub addr: AddrV2,
@@ -90,5 +121,18 @@ impl CombinedAddr {
 
     pub(crate) fn services(&mut self, services: ServiceFlags) {
         self.services = services
+    }
+}
+
+#[derive(Debug, Clone, Copy, std::hash::Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct TimeSensitiveId([u8; 32]);
+
+impl TimeSensitiveId {
+    pub(crate) const HEADER_MSG: Self = Self([1; 32]);
+
+    pub(crate) const CF_HEADER_MSG: Self = Self([2; 32]);
+
+    pub(crate) fn from_slice(slice: [u8; 32]) -> Self {
+        Self(slice)
     }
 }

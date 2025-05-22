@@ -130,6 +130,12 @@ impl Peer {
             if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
+            if self
+                .message_state
+                .unresponsive(self.timeout_config.response_timeout)
+            {
+                return Ok(());
+            }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
                 crate::log!(self.dialog, format!(
                     "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
@@ -189,6 +195,9 @@ impl Peer {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        if let Some(msg_id) = message.time_sensitive_message_received() {
+            self.message_state.timed_message_state.remove(&msg_id);
+        }
         match message {
             ReaderMessage::Version(version) => {
                 if self.message_state.version_handshake.is_complete() {
@@ -331,6 +340,10 @@ impl Peer {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        let time_sensitive = request.time_sensitive_message_start();
+        if let Some((msg_id, time)) = time_sensitive {
+            self.message_state.timed_message_state.insert(msg_id, time);
+        }
         match request {
             MainThreadMessage::GetAddr => {
                 let message = message_generator.addr()?;

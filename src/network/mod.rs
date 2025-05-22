@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
@@ -14,6 +14,8 @@ use socks::create_socks5;
 use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
+
+use crate::channel_messages::TimeSensitiveId;
 
 pub(crate) mod dns;
 pub(crate) mod error;
@@ -171,6 +173,7 @@ struct MessageState {
     version_handshake: VersionHandshakeState,
     addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
+    timed_message_state: HashMap<TimeSensitiveId, Instant>,
 }
 
 impl MessageState {
@@ -188,6 +191,12 @@ impl MessageState {
 
     fn unknown_rejection(&mut self, wtxid: Wtxid) -> bool {
         !self.sent_txs.remove(&wtxid)
+    }
+
+    fn unresponsive(&self, conf_timeout: Duration) -> bool {
+        self.timed_message_state
+            .values()
+            .any(|time| time.elapsed() > conf_timeout)
     }
 }
 
