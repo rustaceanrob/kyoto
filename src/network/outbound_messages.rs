@@ -103,8 +103,11 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
-    pub(crate) fn announce_transaction(&mut self, wtxid: Wtxid) -> Result<Vec<u8>, PeerError> {
-        let msg = NetworkMessage::Inv(vec![Inventory::WTx(wtxid)]);
+    pub(crate) fn announce_transactions(
+        &mut self,
+        wtxids: Vec<Wtxid>,
+    ) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Inv(wtxids.into_iter().map(Inventory::WTx).collect());
         self.serialize(msg)
     }
 

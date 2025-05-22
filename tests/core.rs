@@ -642,6 +642,7 @@ async fn tx_can_broadcast() {
         mut warn_rx,
         mut event_rx,
     } = client;
+    requester.broadcast_random(tx).unwrap();
     tokio::time::timeout(tokio::time::Duration::from_secs(60), async move {
         loop {
             tokio::select! {
@@ -654,12 +655,6 @@ async fn tx_can_broadcast() {
                     if let Some(info) = info {
                         match info {
                             Info::TxGossiped(_) => { break; },
-                            Info::StateChange(u) => {
-                                if let kyoto::NodeState::HeadersSynced = u {
-                                    println!("Broadcasting transaction");
-                                    requester.broadcast_random(tx.clone()).unwrap();
-                                }
-                            },
                             _ => println!("{info}"),
                         }
                     }

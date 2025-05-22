@@ -1,17 +1,21 @@
 extern crate tokio;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
-use bitcoin::{p2p::ServiceFlags, Network, Transaction, Wtxid};
+use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
     select,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
     time::Instant,
 };
 
 use crate::{
+    broadcaster::BroadcastQueue,
     channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage},
     dialog::Dialog,
     messages::Warning,
@@ -38,10 +42,11 @@ pub(crate) struct Peer {
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
     message_state: MessageState,
-    tx_queue: HashMap<Wtxid, Transaction>,
+    tx_queue: Arc<Mutex<BroadcastQueue>>,
 }
 
 impl Peer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         nonce: PeerId,
         network: Network,
@@ -50,6 +55,7 @@ impl Peer {
         services: ServiceFlags,
         dialog: Arc<Dialog>,
         timeout_config: PeerTimeoutConfig,
+        tx_queue: Arc<Mutex<BroadcastQueue>>,
     ) -> Self {
         Self {
             nonce,
@@ -60,7 +66,7 @@ impl Peer {
             dialog,
             timeout_config,
             message_state: MessageState::default(),
-            tx_queue: HashMap::new(),
+            tx_queue,
         }
     }
 
@@ -267,11 +273,14 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::TxRequests(requests) => {
+                let mut tx_queue = self.tx_queue.lock().await;
                 for wtxid in requests {
-                    if let Some(transaction) = self.tx_queue.remove(&wtxid) {
+                    let transaction = tx_queue.fetch_tx(wtxid);
+                    if let Some(transaction) = transaction {
                         let msg = message_generator.broadcast_transaction(transaction)?;
                         self.write_bytes(writer, msg).await?;
                         self.message_state.sent_tx(wtxid);
+                        tx_queue.successful(wtxid);
                         crate::info!(self.dialog, Info::TxGossiped(wtxid))
                     }
                 }
@@ -351,22 +360,39 @@ impl Peer {
                 let message = message_generator.block(message)?;
                 self.write_bytes(writer, message).await?;
             }
-            MainThreadMessage::BroadcastTx(transaction) => {
-                let wtxid = transaction.compute_wtxid();
-                let message = message_generator.announce_transaction(wtxid)?;
-                self.tx_queue.insert(wtxid, transaction);
-                self.write_bytes(writer, message).await?;
+            MainThreadMessage::BroadcastPending => {
+                // The peer will drop these on the floor if the handshake is not complete
+                if !self.message_state.version_handshake.is_complete() {
+                    return Ok(());
+                };
+                let wtxids = {
+                    let queue = self.tx_queue.lock().await;
+                    queue.pending_wtxid()
+                };
+                if !wtxids.is_empty() {
+                    let message = message_generator.announce_transactions(wtxids)?;
+                    self.write_bytes(writer, message).await?;
+                }
             }
             MainThreadMessage::Verack => {
                 let message = message_generator.verack()?;
                 self.write_bytes(writer, message).await?;
+                // Take any pending announcements and share them now that the handshake is over
+                let wtxids = {
+                    let queue = self.tx_queue.lock().await;
+                    queue.pending_wtxid()
+                };
+                if !wtxids.is_empty() {
+                    let message = message_generator.announce_transactions(wtxids)?;
+                    self.write_bytes(writer, message).await?;
+                }
             }
             MainThreadMessage::Disconnect => return Err(PeerError::DisconnectCommand),
         }
         Ok(())
     }
 
-    async fn write_bytes<W>(&mut self, writer: &mut W, message: Vec<u8>) -> Result<(), PeerError>
+    async fn write_bytes<W>(&self, writer: &mut W, message: Vec<u8>) -> Result<(), PeerError>
     where
         W: AsyncWrite + Send + Unpin,
     {

@@ -20,6 +20,7 @@ use tokio::{
 };
 
 use crate::{
+    broadcaster::BroadcastQueue,
     chain::HeightMonitor,
     channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
@@ -52,6 +53,7 @@ pub(crate) struct ManagedPeer {
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
 pub(crate) struct PeerMap<P: PeerStore> {
+    pub(crate) tx_queue: Arc<Mutex<BroadcastQueue>>,
     current_id: PeerId,
     heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
@@ -83,6 +85,7 @@ impl<P: PeerStore> PeerMap<P> {
         dns_resolver: DnsResolver,
     ) -> Self {
         Self {
+            tx_queue: Arc::new(Mutex::new(BroadcastQueue::new())),
             current_id: PeerId(0),
             heights: height_monitor,
             network,
@@ -163,6 +166,7 @@ impl<P: PeerStore> PeerMap<P> {
             loaded_peer.services,
             Arc::clone(&self.dialog),
             self.timeout_config,
+            Arc::clone(&self.tx_queue),
         );
         if !self.connector.can_connect(&loaded_peer.addr) {
             return Err(PeerError::UnreachableSocketAddr);
