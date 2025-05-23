@@ -80,6 +80,7 @@ pub mod db;
 
 mod network;
 mod prelude;
+pub(crate) use prelude::impl_sourceless_error;
 
 mod broadcaster;
 /// Convenient way to build a compact filters node.

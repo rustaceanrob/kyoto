@@ -29,13 +29,14 @@ pub(crate) enum MainThreadMessage {
 
 impl MainThreadMessage {
     pub(crate) fn time_sensitive_message_start(&self) -> Option<(TimeSensitiveId, Instant)> {
-        let now = Instant::now();
         match self {
-            MainThreadMessage::GetHeaders(_) => Some((TimeSensitiveId::HEADER_MSG, now)),
-            MainThreadMessage::GetFilterHeaders(_) => Some((TimeSensitiveId::CF_HEADER_MSG, now)),
+            MainThreadMessage::GetHeaders(_) => Some((TimeSensitiveId::HEADER_MSG, Instant::now())),
+            MainThreadMessage::GetFilterHeaders(_) => {
+                Some((TimeSensitiveId::CF_HEADER_MSG, Instant::now()))
+            }
             MainThreadMessage::GetBlock(conf) => {
                 let id = conf.locator.to_raw_hash().to_byte_array();
-                Some((TimeSensitiveId::from_slice(id), now))
+                Some((TimeSensitiveId::from_slice(id), Instant::now()))
             }
             _ => None,
         }

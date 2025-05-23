@@ -9,8 +9,6 @@ pub const MEDIAN_TIME_PAST: usize = 11;
 
 pub(crate) type FutureResult<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
 
-#[macro_export]
-/// Implement `std::error::Error` for an error with no sources.
 macro_rules! impl_sourceless_error {
     ($e:ident) => {
         impl std::error::Error for $e {
@@ -20,6 +18,8 @@ macro_rules! impl_sourceless_error {
         }
     };
 }
+
+pub(crate) use impl_sourceless_error;
 
 pub trait Median<T> {
     fn median(&mut self) -> T;
