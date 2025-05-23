@@ -65,7 +65,7 @@ impl Peer {
             services,
             dialog,
             timeout_config,
-            message_state: MessageState::default(),
+            message_state: MessageState::new(timeout_config.response_timeout),
             tx_queue,
         }
     }
@@ -118,16 +118,11 @@ impl Peer {
             if read_handle.is_finished() {
                 return Ok(());
             }
-            if !self.message_state.version_handshake.is_complete()
-                && self
-                    .message_state
-                    .version_handshake
-                    .is_unresponsive(self.timeout_config.response_timeout)
-            {
-                self.dialog.send_warning(Warning::PeerTimedOut);
+            if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
-            if self.message_state.addr_state.over_limit() {
+            if self.message_state.unresponsive() {
+                self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
@@ -189,6 +184,9 @@ impl Peer {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        if let Some(msg_id) = message.time_sensitive_message_received() {
+            self.message_state.timed_message_state.remove(&msg_id);
+        }
         match message {
             ReaderMessage::Version(version) => {
                 if self.message_state.version_handshake.is_complete() {
@@ -331,6 +329,10 @@ impl Peer {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        let time_sensitive = request.time_sensitive_message_start();
+        if let Some((msg_id, time)) = time_sensitive {
+            self.message_state.timed_message_state.insert(msg_id, time);
+        }
         match request {
             MainThreadMessage::GetAddr => {
                 let message = message_generator.addr()?;
