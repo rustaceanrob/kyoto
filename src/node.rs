@@ -33,8 +33,7 @@ use crate::{
 
 use super::{
     channel_messages::{
-        CombinedAddr, GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage,
-        PeerThreadMessage,
+        GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
     },
     client::Client,
     config::NodeConfig,
@@ -50,7 +49,7 @@ type PeerRequirement = usize;
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
-pub struct Node<H: HeaderStore, P: PeerStore> {
+pub struct Node<H: HeaderStore, P: PeerStore + 'static> {
     state: Arc<RwLock<NodeState>>,
     chain: Arc<Mutex<Chain<H>>>,
     peer_map: Arc<Mutex<PeerMap<P>>>,
@@ -177,7 +176,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.send_message(peer_thread.nonce, response).await;
                                     crate::log!(self.dialog, format!("[{}]: version", peer_thread.nonce));
                                 }
-                                PeerMessage::Addr(addresses) => self.handle_new_addrs(addresses).await,
                                 PeerMessage::Headers(headers) => {
                                     last_block.reset();
                                     crate::log!(self.dialog, format!("[{}]: headers", peer_thread.nonce));
@@ -504,16 +502,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             stop_hash: None,
         };
         Ok(MainThreadMessage::GetHeaders(next_headers))
-    }
-
-    // Handle new addresses gossiped over the p2p network
-    async fn handle_new_addrs(&self, new_peers: Vec<CombinedAddr>) {
-        crate::log!(
-            self.dialog,
-            format!("Adding {} new peers to the peer database", new_peers.len())
-        );
-        let mut peer_map = self.peer_map.lock().await;
-        peer_map.add_gossiped_peers(new_peers).await;
     }
 
     // We always send headers to our peers, so our next message depends on our state
