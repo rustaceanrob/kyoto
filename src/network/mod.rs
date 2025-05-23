@@ -168,8 +168,9 @@ impl ConnectionType {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct MessageState {
+    general_timeout: Duration,
     version_handshake: VersionHandshakeState,
     addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
@@ -177,6 +178,16 @@ struct MessageState {
 }
 
 impl MessageState {
+    fn new(general_timeout: Duration) -> Self {
+        Self {
+            general_timeout,
+            version_handshake: Default::default(),
+            addr_state: Default::default(),
+            sent_txs: Default::default(),
+            timed_message_state: Default::default(),
+        }
+    }
+
     fn start_version_handshake(&mut self) {
         self.version_handshake = self.version_handshake.start();
     }
@@ -193,10 +204,11 @@ impl MessageState {
         !self.sent_txs.remove(&wtxid)
     }
 
-    fn unresponsive(&self, conf_timeout: Duration) -> bool {
+    fn unresponsive(&self) -> bool {
         self.timed_message_state
             .values()
-            .any(|time| time.elapsed() > conf_timeout)
+            .any(|time| time.elapsed() > self.general_timeout)
+            || self.version_handshake.is_unresponsive(self.general_timeout)
     }
 }
 
@@ -308,18 +320,18 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_version_message_state() {
         let timeout = Duration::from_secs(1);
-        let mut message_state = MessageState::default();
-        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        let mut message_state = MessageState::new(timeout);
+        assert!(!message_state.unresponsive());
         tokio::time::sleep(Duration::from_secs(2)).await;
-        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        assert!(!message_state.unresponsive());
         message_state.start_version_handshake();
         tokio::time::sleep(Duration::from_secs(2)).await;
-        assert!(message_state.version_handshake.is_unresponsive(timeout));
-        let mut message_state = MessageState::default();
+        assert!(message_state.unresponsive());
+        let mut message_state = MessageState::new(timeout);
         message_state.start_version_handshake();
         message_state.finish_version_handshake();
         tokio::time::sleep(Duration::from_secs(2)).await;
-        assert!(!message_state.version_handshake.is_unresponsive(timeout));
+        assert!(!message_state.unresponsive());
         assert!(message_state.version_handshake.is_complete());
     }
 
@@ -327,7 +339,7 @@ mod tests {
     fn test_tx_reject_state() {
         let transaction: Transaction = deserialize(&hex::decode("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000").unwrap()).unwrap();
         let wtxid = transaction.compute_wtxid();
-        let mut message_state = MessageState::default();
+        let mut message_state = MessageState::new(Duration::from_secs(2));
         message_state.sent_tx(wtxid);
         assert!(!message_state.unknown_rejection(wtxid));
         assert!(message_state.unknown_rejection(wtxid));
@@ -335,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_addr_gossip_state() {
-        let mut message_state = MessageState::default();
+        let mut message_state = MessageState::new(Duration::from_secs(2));
         assert!(matches!(
             message_state.addr_state.gossip_stage,
             AddrGossipStages::NotReceived

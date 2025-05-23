@@ -65,7 +65,7 @@ impl Peer {
             services,
             dialog,
             timeout_config,
-            message_state: MessageState::default(),
+            message_state: MessageState::new(timeout_config.response_timeout),
             tx_queue,
         }
     }
@@ -118,22 +118,11 @@ impl Peer {
             if read_handle.is_finished() {
                 return Ok(());
             }
-            if !self.message_state.version_handshake.is_complete()
-                && self
-                    .message_state
-                    .version_handshake
-                    .is_unresponsive(self.timeout_config.response_timeout)
-            {
-                self.dialog.send_warning(Warning::PeerTimedOut);
-                return Ok(());
-            }
             if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
-            if self
-                .message_state
-                .unresponsive(self.timeout_config.response_timeout)
-            {
+            if self.message_state.unresponsive() {
+                self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
