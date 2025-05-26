@@ -18,6 +18,8 @@ use super::error::{FetchBlockError, FetchHeaderError};
 pub enum Info {
     /// The current state of the node in the syncing process.
     StateChange(NodeState),
+    /// The node was able to successfully complete a version handshake.
+    SuccessfulHandshake,
     /// The node is connected to all required peers.
     ConnectionsMet,
     /// The progress of the node during the block filter download process.
@@ -34,6 +36,7 @@ impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Info::StateChange(s) => write!(f, "{s}"),
+            Info::SuccessfulHandshake => write!(f, "Successful version handshake with a peer"),
             Info::TxGossiped(txid) => write!(f, "Transaction gossiped: {txid}"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
             Info::Progress(p) => {
