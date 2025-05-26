@@ -414,6 +414,7 @@ impl<P: PeerStore + 'static> Peer<P> {
             MainThreadMessage::Verack => {
                 let message = message_generator.verack()?;
                 self.write_bytes(writer, message).await?;
+                crate::info!(self.dialog, Info::SuccessfulHandshake);
                 // Take any pending announcements and share them now that the handshake is over
                 let wtxids = {
                     let queue = self.tx_queue.lock().await;
