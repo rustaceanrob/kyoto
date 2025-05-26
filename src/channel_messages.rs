@@ -34,6 +34,9 @@ impl MainThreadMessage {
             MainThreadMessage::GetFilterHeaders(_) => {
                 Some((TimeSensitiveId::CF_HEADER_MSG, Instant::now()))
             }
+            MainThreadMessage::GetFilters(_) => {
+                Some((TimeSensitiveId::C_FILTER_MSG, Instant::now()))
+            }
             MainThreadMessage::GetBlock(conf) => {
                 let id = conf.locator.to_raw_hash().to_byte_array();
                 Some((TimeSensitiveId::from_slice(id), Instant::now()))
@@ -94,6 +97,7 @@ impl ReaderMessage {
         match self {
             ReaderMessage::Headers(_) => Some(TimeSensitiveId::HEADER_MSG),
             ReaderMessage::FilterHeaders(_) => Some(TimeSensitiveId::CF_HEADER_MSG),
+            ReaderMessage::Filter(_) => Some(TimeSensitiveId::C_FILTER_MSG),
             ReaderMessage::Block(b) => {
                 let hash = *b.block_hash().to_raw_hash().as_byte_array();
                 Some(TimeSensitiveId::from_slice(hash))
@@ -131,6 +135,8 @@ impl TimeSensitiveId {
     pub(crate) const HEADER_MSG: Self = Self([1; 32]);
 
     pub(crate) const CF_HEADER_MSG: Self = Self([2; 32]);
+
+    pub(crate) const C_FILTER_MSG: Self = Self([3; 32]);
 
     pub(crate) fn from_slice(slice: [u8; 32]) -> Self {
         Self(slice)
