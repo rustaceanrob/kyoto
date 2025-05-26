@@ -61,6 +61,10 @@ name = "testnet"
 path = "example/testnet4.rs"
 
 [[example]]
+name = "bitcoin"
+path = "example/bitcoin.rs"
+
+[[example]]
 name = "rescan"
 path = "example/rescan.rs"
 

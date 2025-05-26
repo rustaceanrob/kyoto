@@ -47,7 +47,7 @@ _test-msrv:
   cargo install cargo-msrv@0.18.4
   cargo msrv verify --all-features
 
-# Run the example: signet or testnet.
+# Run the example: signet, testnet, or bitcoin.
 example name="signet":
   cargo run --example {{name}} --release
 
