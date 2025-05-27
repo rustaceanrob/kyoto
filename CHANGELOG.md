@@ -5,6 +5,29 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.0
+
+## Added
+
+- Add an explicit transaction broadcasting test
+- Add `bitcoin` example
+
+## Changed
+
+- Added `Info::SuccessfulHandshake` message when versions/veracks are exchanged with a peer
+- Update `bitcoin` to `0.32.6`
+- Add `test-utils` dependency from `tokio` to simulate passage of time
+- `testnet4` uses DNS seeds for peers
+- `impl_sourceless_error` is private
+
+## Fixes
+
+- Introduce the `ReaderMessage`
+- Show the actual percentage for `Progress`
+- Introduce `MessageState` for state management within `Peer`
+- Using `MessageState`, gossiped peers are initially added on a separate `tokio::task`
+- Introduce `BroadcastQueue` for higher transaction broadcast reliability
+
 ## 0.11.0
 
 ## Added
