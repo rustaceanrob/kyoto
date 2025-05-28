@@ -55,6 +55,18 @@ impl IndexedHeader {
     }
 }
 
+impl IndexedHeader {
+    /// The block hash associated with this header.
+    pub fn block_hash(&self) -> BlockHash {
+        self.header.block_hash()
+    }
+
+    /// The previous block hash.
+    pub fn prev_blockhash(&self) -> BlockHash {
+        self.header.prev_blockhash
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct FilterCommitment {
     pub header: FilterHeader,
