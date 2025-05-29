@@ -121,7 +121,7 @@ impl MessageGenerator {
 }
 
 fn serialize_network_message(message: NetworkMessage) -> Result<Vec<u8>, PeerError> {
-    bip324::serde::serialize(message).map_err(|_| PeerError::MessageSerialization)
+    bip324::serde::serialize(message).map_err(From::from)
 }
 
 fn encrypt_plaintext(
@@ -130,7 +130,7 @@ fn encrypt_plaintext(
 ) -> Result<Vec<u8>, PeerError> {
     encryptor
         .encrypt_packet(&plaintext, None, PacketType::Genuine)
-        .map_err(|_| PeerError::MessageEncryption)
+        .map_err(From::from)
 }
 
 fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {

@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 use crate::channel_messages::{CombinedAddr, ReaderMessage};
 use crate::messages::RejectPayload;
 
-use super::error::PeerReadError;
+use super::error::ReaderError;
 use super::parsers::MessageParser;
 
 // From Bitcoin Core PR #29575
@@ -27,16 +27,12 @@ impl<R: AsyncReadExt + Send + Sync + Unpin> Reader<R> {
         Self { parser, tx }
     }
 
-    pub(crate) async fn read_from_remote(&mut self) -> Result<(), PeerReadError> {
+    pub(crate) async fn read_from_remote(&mut self) -> Result<(), ReaderError> {
         loop {
             if let Some(message) = self.parser.read_message().await? {
                 let cleaned_message = self.parse_message(message);
                 match cleaned_message {
-                    Some(message) => self
-                        .tx
-                        .send(message)
-                        .await
-                        .map_err(|_| PeerReadError::MpscChannel)?,
+                    Some(message) => self.tx.send(message).await?,
                     None => continue,
                 }
             }

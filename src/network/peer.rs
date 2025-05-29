@@ -112,12 +112,7 @@ impl<P: PeerStore + 'static> Peer<P> {
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
-        let read_handle = tokio::spawn(async move {
-            peer_reader
-                .read_from_remote()
-                .await
-                .map_err(|_| PeerError::Reader)
-        });
+        let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
         loop {
             if read_handle.is_finished() {
                 return Ok(());
@@ -201,8 +196,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::Version(version),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::Addr(addrs) => {
@@ -261,8 +255,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::Headers(headers),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::FilterHeaders(cf_headers) => {
@@ -271,8 +264,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::FilterHeaders(cf_headers),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::Filter(filter) => {
@@ -281,8 +273,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::Filter(filter),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::Block(block) => {
@@ -291,8 +282,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::Block(block),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::NewBlocks(block_hashes) => {
@@ -301,8 +291,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::NewBlocks(block_hashes),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::TxRequests(requests) => {
@@ -338,8 +327,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         nonce: self.nonce,
                         message: PeerMessage::FeeFilter(fee),
                     })
-                    .await
-                    .map_err(|_| PeerError::ThreadChannel)?;
+                    .await?;
                 Ok(())
             }
             ReaderMessage::Reject(payload) => {
@@ -434,11 +422,8 @@ impl<P: PeerStore + 'static> Peer<P> {
     where
         W: AsyncWrite + Send + Unpin,
     {
-        writer
-            .write_all(&message)
-            .await
-            .map_err(|_| PeerError::BufferWrite)?;
-        writer.flush().await.map_err(|_| PeerError::BufferWrite)?;
+        writer.write_all(&message).await?;
+        writer.flush().await?;
         Ok(())
     }
 
@@ -464,10 +449,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                 Ok((reader.decoder(), writer.encoder()))
             }
             Err(e) => {
-                crate::log!(
-                    self.dialog,
-                    format!("V2 handshake failed with description {e}")
-                );
+                crate::log!(self.dialog, format!("V2 handshake failed {e}"));
                 Err(PeerError::HandshakeFailed)
             }
         }
