@@ -14,4 +14,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v3
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: just test sync
+      - run: just example mainnet
+        timeout-minutes: 60
