@@ -150,23 +150,12 @@ impl DNSQuery {
     }
 
     async fn lookup(&self, dns_resolver: SocketAddr) -> Result<Vec<IpAddr>, DNSQueryError> {
-        let sock = UdpSocket::bind(LOCAL_HOST)
-            .await
-            .map_err(|_| DNSQueryError::ConnectionDenied)?;
-        sock.connect(dns_resolver)
-            .await
-            .map_err(|_| DNSQueryError::Udp)?;
-        sock.send(&self.message)
-            .await
-            .map_err(|_| DNSQueryError::Udp)?;
-        sock.send(&self.message)
-            .await
-            .map_err(|_| DNSQueryError::Udp)?;
+        let sock = UdpSocket::bind(LOCAL_HOST).await?;
+        sock.connect(dns_resolver).await?;
+        sock.send(&self.message).await?;
+        sock.send(&self.message).await?;
         let mut response_buf = [0u8; 512];
-        let (amt, _src) = sock
-            .recv_from(&mut response_buf)
-            .await
-            .map_err(|_| DNSQueryError::Udp)?;
+        let (amt, _src) = sock.recv_from(&mut response_buf).await?;
         if amt < HEADER_BYTES {
             return Err(DNSQueryError::MalformedHeader);
         }
@@ -177,73 +166,47 @@ impl DNSQuery {
     fn parse_message(&self, mut response: &[u8]) -> Result<Vec<IpAddr>, DNSQueryError> {
         let mut ips = Vec::with_capacity(10);
         let mut buf: [u8; 2] = [0, 0];
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 2 bytes
+        response.read_exact(&mut buf)?; // Read 2 bytes
         if self.message_id != buf {
-            return Err(DNSQueryError::MessageID);
+            return Err(DNSQueryError::MessageId);
         }
         // Read flags and ignore
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 4 bytes
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 6 bytes
+        response.read_exact(&mut buf)?; // Read 4 bytes
+        response.read_exact(&mut buf)?; // Read 6 bytes
         let _qdcount = u16::from_be_bytes(buf);
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 8 bytes
+        response.read_exact(&mut buf)?; // Read 8 bytes
         let ancount = u16::from_be_bytes(buf);
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 10 bytes
+        response.read_exact(&mut buf)?; // Read 10 bytes
         let _nscount = u16::from_be_bytes(buf);
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?; // Read 12 bytes
+        response.read_exact(&mut buf)?; // Read 12 bytes
         let _arcount = u16::from_be_bytes(buf);
         // The question should be repeated back to us
         let mut buf: Vec<u8> = vec![0; self.question.len()];
-        response
-            .read_exact(&mut buf)
-            .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+        response.read_exact(&mut buf)?;
         if self.question != buf {
             return Err(DNSQueryError::Question);
         }
         for _ in 0..ancount {
             let mut buf: [u8; 2] = [0, 0];
             // Read the compressed NAME field of the record and ignore
-            response
-                .read_exact(&mut buf)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut buf)?;
             // Read the TYPE
-            response
-                .read_exact(&mut buf)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut buf)?;
             let atype = u16::from_be_bytes(buf);
             // Read the CLASS
-            response
-                .read_exact(&mut buf)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut buf)?;
             let aclass = u16::from_be_bytes(buf);
             let mut buf: [u8; 4] = [0, 0, 0, 0];
             // Read the TTL
-            response
-                .read_exact(&mut buf)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut buf)?;
             let _ttl = u32::from_be_bytes(buf);
             let mut buf: [u8; 2] = [0, 0];
             // Read the RDLENGTH
-            response
-                .read_exact(&mut buf)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut buf)?;
             let rdlength = u16::from_be_bytes(buf);
             // Read RDATA
             let mut rdata: Vec<u8> = vec![0; rdlength as usize];
-            response
-                .read_exact(&mut rdata)
-                .map_err(|_| DNSQueryError::UnexpectedEOF)?;
+            response.read_exact(&mut rdata)?;
             if atype == A_RECORD && aclass == A_CLASS && rdlength == EXPECTED_RDATA_LEN {
                 ips.push(IpAddr::V4(Ipv4Addr::new(
                     rdata[0], rdata[1], rdata[2], rdata[3],

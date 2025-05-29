@@ -1,40 +1,74 @@
 use crate::impl_sourceless_error;
 
+use bip324::serde;
+use bitcoin::consensus::encode;
+use tokio::io;
+use tokio::sync::mpsc;
+
 #[derive(Debug)]
-pub(crate) enum PeerReadError {
-    ReadBuffer,
-    Deserialization,
-    DecryptionFailed,
-    TooManyMessages,
-    MpscChannel,
+pub(crate) enum ReaderError {
+    Io(io::Error),
+    InvalidDeserialization,
+    DecryptionFailed(bip324::Error),
+    MessageTooLarge,
+    ChannelClosed,
 }
 
-impl core::fmt::Display for PeerReadError {
+impl core::fmt::Display for ReaderError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            PeerReadError::ReadBuffer => write!(f, "reading bytes off the stream failed."),
-            PeerReadError::Deserialization => {
+            ReaderError::Io(err) => write!(f, "reading bytes off the stream failed: {err}"),
+            ReaderError::InvalidDeserialization => {
                 write!(f, "the message could not be properly deserialized.")
             }
-            PeerReadError::TooManyMessages => write!(f, "DOS protection."),
-            PeerReadError::MpscChannel => write!(f, "sending over the channel failed."),
-            PeerReadError::DecryptionFailed => write!(f, "decrypting a message failed."),
+            ReaderError::MessageTooLarge => write!(f, "OOM protection."),
+            ReaderError::ChannelClosed => write!(f, "sending over the channel failed."),
+            ReaderError::DecryptionFailed(err) => write!(f, "decrypting a message failed: {err}"),
         }
     }
 }
 
-impl_sourceless_error!(PeerReadError);
+impl_sourceless_error!(ReaderError);
+
+impl<T> From<mpsc::error::SendError<T>> for ReaderError {
+    fn from(_value: mpsc::error::SendError<T>) -> Self {
+        Self::ChannelClosed
+    }
+}
+
+impl From<io::Error> for ReaderError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<encode::Error> for ReaderError {
+    fn from(_value: encode::Error) -> Self {
+        Self::InvalidDeserialization
+    }
+}
+
+impl From<serde::Error> for ReaderError {
+    fn from(_value: serde::Error) -> Self {
+        Self::InvalidDeserialization
+    }
+}
+
+impl From<bip324::Error> for ReaderError {
+    fn from(value: bip324::Error) -> Self {
+        Self::DecryptionFailed(value)
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum PeerError {
     ConnectionFailed,
-    MessageEncryption,
-    MessageSerialization,
+    Encryption(bip324::Error),
+    Serialization(serde::Error),
     HandshakeFailed,
-    BufferWrite,
-    ThreadChannel,
+    Io(io::Error),
+    ChannelClosed,
     DisconnectCommand,
-    Reader,
     UnreachableSocketAddr,
     Socks5(Socks5Error),
 }
@@ -45,26 +79,25 @@ impl core::fmt::Display for PeerError {
             PeerError::ConnectionFailed => {
                 write!(f, "the peer's TCP port was closed or we could not connect.")
             }
-            PeerError::BufferWrite => write!(f, "a message could not be written to the peer."),
-            PeerError::ThreadChannel => write!(
+            PeerError::Io(err) => write!(f, "a message could not be written to the peer: {err}"),
+            PeerError::ChannelClosed => write!(
                 f,
                 "experienced an error sending a message over the channel."
             ),
             PeerError::DisconnectCommand => {
                 write!(f, "the main thread advised this peer to disconnect.")
             }
-            PeerError::Reader => write!(f, "the reading thread encountered an error."),
             PeerError::UnreachableSocketAddr => {
                 write!(f, "cannot make use of provided p2p address.")
             }
-            PeerError::MessageSerialization => {
-                write!(f, "serializing a message into bytes failed.")
+            PeerError::Serialization(err) => {
+                write!(f, "serializing a message into bytes failed: {err}")
             }
             PeerError::HandshakeFailed => {
                 write!(f, "an attempted V2 transport handshake failed.")
             }
-            PeerError::MessageEncryption => {
-                write!(f, "encrypting a serialized message failed.")
+            PeerError::Encryption(err) => {
+                write!(f, "encrypting a serialized message failed: {err}")
             }
             PeerError::Socks5(err) => {
                 write!(f, "could not connect via Socks5 proxy: {err}")
@@ -75,13 +108,37 @@ impl core::fmt::Display for PeerError {
 
 impl_sourceless_error!(PeerError);
 
-#[derive(Debug, Clone)]
+impl From<io::Error> for PeerError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl<T> From<mpsc::error::SendError<T>> for PeerError {
+    fn from(_value: mpsc::error::SendError<T>) -> Self {
+        Self::ChannelClosed
+    }
+}
+
+impl From<bip324::Error> for PeerError {
+    fn from(value: bip324::Error) -> Self {
+        Self::Encryption(value)
+    }
+}
+
+impl From<serde::Error> for PeerError {
+    fn from(value: serde::Error) -> Self {
+        Self::Serialization(value)
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum Socks5Error {
     WrongVersion,
     AuthRequired,
     ConnectionTimeout,
     ConnectionFailed,
-    IO,
+    Io(io::Error),
 }
 
 impl core::fmt::Display for Socks5Error {
@@ -94,10 +151,7 @@ impl core::fmt::Display for Socks5Error {
                 f,
                 "the server could not connect to the requested destination."
             ),
-            Socks5Error::IO => write!(
-                f,
-                "reading or writing to the TCP stream failed unexpectedly."
-            ),
+            Socks5Error::Io(err) => write!(f, "socks5 io failed unexpectedly: {err}"),
         }
     }
 }
@@ -105,34 +159,39 @@ impl core::fmt::Display for Socks5Error {
 impl_sourceless_error!(Socks5Error);
 
 impl From<std::io::Error> for Socks5Error {
-    fn from(_value: std::io::Error) -> Self {
-        Socks5Error::IO
+    fn from(value: std::io::Error) -> Self {
+        Socks5Error::Io(value)
     }
 }
 
 #[derive(Debug)]
 pub(crate) enum DNSQueryError {
-    MessageID,
+    MessageId,
     Question,
-    ConnectionDenied,
-    Udp,
     MalformedHeader,
-    UnexpectedEOF,
+    Io(io::Error),
 }
 
 impl core::fmt::Display for DNSQueryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DNSQueryError::ConnectionDenied => write!(f, "the UDP connection failed."),
             DNSQueryError::MalformedHeader => write!(f, "the DNS response header was too short."),
-            DNSQueryError::UnexpectedEOF => {
-                write!(f, "the end of the response was reached before we expected.")
+            DNSQueryError::Io(err) => {
+                write!(
+                    f,
+                    "the end of the response was reached before we expected: {err}"
+                )
             }
-            DNSQueryError::Udp => write!(f, "reading or writing from the UDP connection failed."),
-            DNSQueryError::MessageID => write!(f, "mismatch of message ID."),
+            DNSQueryError::MessageId => write!(f, "mismatch of message ID."),
             DNSQueryError::Question => write!(f, "the question of the message does not match."),
         }
     }
 }
 
 impl_sourceless_error!(DNSQueryError);
+
+impl From<io::Error> for DNSQueryError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
