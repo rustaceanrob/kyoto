@@ -1,8 +1,7 @@
 use std::{
     collections::HashSet,
-    net::{IpAddr, Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, SocketAddrV4},
     path::PathBuf,
-    str::FromStr,
     time::Duration,
 };
 
@@ -21,7 +20,7 @@ use corepc_node::serde_json;
 use corepc_node::{anyhow, exe_path};
 use kyoto::{
     chain::checkpoints::HeaderCheckpoint, client::Client, node::Node, Address, BlockHash, Event,
-    Info, LogLevel, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, Transaction, TrustedPeer, Warning,
+    Info, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, Transaction, TrustedPeer, Warning,
 };
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -676,51 +675,4 @@ async fn tx_can_broadcast() {
     })
     .await
     .unwrap();
-}
-
-#[tokio::test]
-async fn signet_syncs() {
-    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
-    let address = bitcoin::Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
-        .unwrap()
-        .require_network(bitcoin::Network::Signet)
-        .unwrap()
-        .into();
-    let mut set = HashSet::new();
-    set.insert(address);
-    let host = (IpAddr::from(Ipv4Addr::new(136, 41, 161, 69)), None);
-    let builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Signet);
-    let (node, client) = builder
-        .add_peer(host)
-        .add_scripts(set)
-        .data_dir(tempdir)
-        .log_level(LogLevel::Info)
-        .build()
-        .unwrap();
-    tokio::task::spawn(async move { node.run().await });
-    async fn print_and_sync(mut client: Client) {
-        loop {
-            tokio::select! {
-                event = client.event_rx.recv() => {
-                    if let Some(Event::Synced(update)) = event {
-                        println!("Synced chain up to block {}", update.tip().height);
-                        println!("Chain tip: {}", update.tip().hash);
-                        break;
-                    }
-                }
-                log = client.info_rx.recv() => {
-                    if let Some(log) = log {
-                        println!("{log}");
-                    }
-                }
-                warn = client.warn_rx.recv() => {
-                    if let Some(warn) = warn {
-                        println!("{warn}")
-                    }
-                }
-            }
-        }
-    }
-    let timeout = tokio::time::timeout(Duration::from_secs(180), print_and_sync(client)).await;
-    assert!(timeout.is_ok());
 }

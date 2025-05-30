@@ -23,11 +23,11 @@ _test-unit:
 
 # Run integration tests, excluding the network sync.
 _test-integration: 
-  cargo test --tests -- --test-threads 1 --nocapture --skip signet_syncs
+  cargo test --tests -- --test-threads 1 --nocapture
 
-# Run the network sync integration test.
+# Run the network sync example.
 _test-sync: 
-  cargo test signet_syncs -- --nocapture
+  cargo run --example bitcoin --release
 
 # Test feature flag matrix compatability.
 _test-features:
