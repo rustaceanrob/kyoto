@@ -43,7 +43,7 @@ use super::{
 };
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
-const LOOP_TIMEOUT: u64 = 1;
+const LOOP_TIMEOUT: Duration = Duration::from_secs(1);
 
 type PeerRequirement = usize;
 
@@ -161,7 +161,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             self.get_blocks().await;
             // Either handle a message from a remote peer or from our client
             select! {
-                peer = tokio::time::timeout(Duration::from_secs(LOOP_TIMEOUT), peer_recv.recv()) => {
+                peer = tokio::time::timeout(LOOP_TIMEOUT, peer_recv.recv()) => {
                     match peer {
                         Ok(Some(peer_thread)) => {
                             match peer_thread.message {

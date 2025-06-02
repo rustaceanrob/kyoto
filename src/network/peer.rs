@@ -31,8 +31,8 @@ use super::{
     AddrGossipStages, MessageState, PeerId, PeerTimeoutConfig,
 };
 
-const MESSAGE_TIMEOUT: u64 = 2;
-const HANDSHAKE_TIMEOUT: u64 = 4;
+const MESSAGE_TIMEOUT: Duration = Duration::from_secs(2);
+const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer<P: PeerStore + 'static> {
     nonce: PeerId,
@@ -81,7 +81,7 @@ impl<P: PeerStore + 'static> Peer<P> {
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
         let (mut outbound_messages, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
             let handshake_result = tokio::time::timeout(
-                Duration::from_secs(HANDSHAKE_TIMEOUT),
+                V2_HANDSHAKE_TIMEOUT,
                 self.try_handshake(&mut writer, &mut reader),
             )
             .await
@@ -133,7 +133,7 @@ impl<P: PeerStore + 'static> Peer<P> {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(Duration::from_secs(MESSAGE_TIMEOUT), rx.recv()) => {
+                peer_message = tokio::time::timeout(MESSAGE_TIMEOUT, rx.recv()) => {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {

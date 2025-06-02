@@ -30,11 +30,11 @@ pub const PROTOCOL_VERSION: u32 = 70016;
 pub const KYOTO_VERSION: &str = "0.12.1";
 pub const RUST_BITCOIN_VERSION: &str = "0.32.6";
 
-const THIRTY_MINS: u64 = 60 * 30;
-const MESSAGE_TIMEOUT_SECS: u64 = 5;
-//                    sec  min  hour
-const TWO_HOUR: u64 = 60 * 60 * 2;
-const TCP_CONNECTION_TIMEOUT: u64 = 2;
+const THIRTY_MINS: Duration = Duration::from_secs(60 * 30);
+const MESSAGE_TIMEOUT_SECS: Duration = Duration::from_secs(5);
+//                                            sec  min  hour
+const TWO_HOUR: Duration = Duration::from_secs(60 * 60 * 2);
+const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 
 // A peer cannot send 10,000 ADDRs in one connection.
 const ADDR_HARD_LIMIT: usize = 10_000;
@@ -89,9 +89,9 @@ impl PeerTimeoutConfig {
 impl Default for PeerTimeoutConfig {
     fn default() -> Self {
         Self {
-            response_timeout: Duration::from_secs(MESSAGE_TIMEOUT_SECS),
-            max_connection_time: Duration::from_secs(TWO_HOUR),
-            handshake_timeout: Duration::from_secs(TCP_CONNECTION_TIMEOUT),
+            response_timeout: MESSAGE_TIMEOUT_SECS,
+            max_connection_time: TWO_HOUR,
+            handshake_timeout: TCP_CONNECTION_TIMEOUT,
         }
     }
 }
@@ -111,7 +111,7 @@ impl LastBlockMonitor {
 
     pub(crate) fn stale(&self) -> bool {
         if let Some(time) = self.last_block {
-            return Instant::now().duration_since(time) > Duration::from_secs(THIRTY_MINS);
+            return Instant::now().duration_since(time) > THIRTY_MINS;
         }
         false
     }

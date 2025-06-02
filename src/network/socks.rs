@@ -13,7 +13,7 @@ use tokio::{
 
 use super::error::Socks5Error;
 
-const CONNECTION_TIMEOUT: u64 = 2;
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 const VERSION: u8 = 5;
 const NOAUTH: u8 = 0;
 const METHODS: u8 = 1;
@@ -29,12 +29,9 @@ pub(crate) async fn create_socks5(
     port: u16,
 ) -> Result<TcpStream, Socks5Error> {
     // Connect to the proxy, likely a local Tor daemon.
-    let timeout = tokio::time::timeout(
-        Duration::from_secs(CONNECTION_TIMEOUT),
-        TcpStream::connect(proxy),
-    )
-    .await
-    .map_err(|_| Socks5Error::ConnectionTimeout)?;
+    let timeout = tokio::time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(proxy))
+        .await
+        .map_err(|_| Socks5Error::ConnectionTimeout)?;
     // Format the destination IP address and port according to the Socks5 spec
     let dest_ip_bytes = match ip_addr {
         IpAddr::V4(ipv4) => ipv4.octets().to_vec(),
@@ -75,12 +72,12 @@ pub(crate) async fn create_socks5(
     // Read off the destination of our request
     match buf[3] {
         ADDR_TYPE_IPV4 => {
-            // Read the IPv4 address and additonal two bytes for the port
+            // Read the IPv4 address and additional two bytes for the port
             let mut buf = [0_u8; 6];
             tcp_stream.read_exact(&mut buf).await?;
         }
         ADDR_TYPE_IPV6 => {
-            // Read the IPv6 address and additonal two bytes for the port
+            // Read the IPv6 address and additional two bytes for the port
             let mut buf = [0_u8; 18];
             tcp_stream.read_exact(&mut buf).await?;
         }
