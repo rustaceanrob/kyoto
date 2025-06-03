@@ -14,6 +14,16 @@ Any bug may cost users real money. That being said, contributions are welcome.
 
 All communication happens on GitHub, in the form of issues, pull requests, milestones, etc.
 
+## Useful Prerequisites
+
+This is a description of the background knowledge that is useful for Kyoto development. There are no requirements to contribute, and this information is meant as a guide to be an effective contributor.
+
+Kyoto relies on the `tokio` asynchronous runtime and adopts many of the tools from the framework. Namely, developers should feel comfortable with [channels](https://tokio.rs/tokio/tutorial/channels) and concurrent access of shared resources behind an `Arc<Mutex<T>>`. Furthermore, Kyoto communicates with the peer-to-peer network via TCP connections. General knowledge of how TCP, Socks5, DNS, and other internet protocols is not essential but certainly helpful. Following the `tokio` [tutorial](https://tokio.rs/tokio/tutorial) is a good place to start.
+
+Performance is central to developing a Bitcoin light client. Having a strong grasp of how implementation choices impact the use and access of memory is very valuable. This includes how memory can be exploited by adversaries.
+
+Of course, a Bitcoin light client involves many domain-specific topics. If the Bitcoin protocol is unfamiliar, [Mastering Bitcoin](https://github.com/bitcoinbook/bitcoinbook) and [Learn me a Bitcoin](https://learnmeabitcoin.com/) are good resources to start. For this implementation in particular, background knowledge on [BIP157](https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki) and [BIP158](https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki) is incredibly useful to understand the node's internal state-machine, scope, and expected behavior.
+
 ## Contribution Workflow
 
 The codebase is maintained using the "contributor workflow" where everyone
