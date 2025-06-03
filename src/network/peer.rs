@@ -31,7 +31,7 @@ use super::{
     AddrGossipStages, MessageState, PeerId, PeerTimeoutConfig,
 };
 
-const MESSAGE_TIMEOUT: Duration = Duration::from_secs(2);
+const LOOP_TIMEOUT: Duration = Duration::from_secs(2);
 const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer<P: PeerStore + 'static> {
@@ -133,7 +133,7 @@ impl<P: PeerStore + 'static> Peer<P> {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(MESSAGE_TIMEOUT, rx.recv()) => {
+                peer_message = tokio::time::timeout(LOOP_TIMEOUT, rx.recv()) => {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {

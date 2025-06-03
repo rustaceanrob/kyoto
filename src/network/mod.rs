@@ -7,6 +7,7 @@ use std::{
 use bitcoin::{
     consensus::Decodable,
     io::Read,
+    key::rand,
     p2p::{address::AddrV2, message::CommandString, Magic},
     Wtxid,
 };
@@ -35,6 +36,8 @@ const MESSAGE_TIMEOUT_SECS: Duration = Duration::from_secs(5);
 //                                            sec  min  hour
 const TWO_HOUR: Duration = Duration::from_secs(60 * 60 * 2);
 const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
+// Ping the peer if we have not exchanged messages for two minutes
+const SEND_PING: Duration = Duration::from_secs(60 * 2);
 
 // A peer cannot send 10,000 ADDRs in one connection.
 const ADDR_HARD_LIMIT: usize = 10_000;
@@ -175,6 +178,7 @@ struct MessageState {
     addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
     timed_message_state: HashMap<TimeSensitiveId, Instant>,
+    ping_state: PingState,
 }
 
 impl MessageState {
@@ -185,6 +189,7 @@ impl MessageState {
             addr_state: Default::default(),
             sent_txs: Default::default(),
             timed_message_state: Default::default(),
+            ping_state: PingState::default(),
         }
     }
 
@@ -276,6 +281,64 @@ enum AddrGossipStages {
     RandomGossip,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PingState {
+    WaitingFor { nonce: u64 },
+    LastMessageReceied { then: Instant },
+}
+
+impl PingState {
+    fn send_ping(&mut self) -> Option<u64> {
+        match self {
+            Self::WaitingFor { nonce: _ } => None,
+            Self::LastMessageReceied { then } => {
+                if Instant::now().duration_since(*then) > SEND_PING {
+                    let nonce = rand::random();
+                    *self = Self::WaitingFor { nonce };
+                    Some(nonce)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn check_pong(&mut self, pong: u64) -> bool {
+        match self {
+            Self::WaitingFor { nonce } => {
+                if pong.eq(&*nonce) {
+                    *self = Self::LastMessageReceied {
+                        then: Instant::now(),
+                    };
+                    true
+                } else {
+                    false
+                }
+            }
+            Self::LastMessageReceied { then: _ } => false,
+        }
+    }
+
+    fn update_last_message(&mut self) {
+        match self {
+            Self::WaitingFor { nonce: _ } => (),
+            Self::LastMessageReceied { then: _ } => {
+                *self = Self::LastMessageReceied {
+                    then: Instant::now(),
+                }
+            }
+        }
+    }
+}
+
+impl Default for PingState {
+    fn default() -> Self {
+        Self::LastMessageReceied {
+            then: Instant::now(),
+        }
+    }
+}
+
 pub(crate) struct V1Header {
     magic: Magic,
     _command: CommandString,
@@ -307,7 +370,7 @@ mod tests {
     use bitcoin::{consensus::deserialize, p2p::address::AddrV2, Transaction};
 
     use crate::{
-        network::{AddrGossipStages, MessageState},
+        network::{AddrGossipStages, MessageState, PingState},
         prelude::Netgroup,
     };
 
@@ -361,5 +424,42 @@ mod tests {
         assert!(!message_state.addr_state.over_limit());
         message_state.addr_state.received(10_000);
         assert!(message_state.addr_state.over_limit());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_ping_state() {
+        // Detect we need a ping
+        let mut ping_state = PingState::default();
+        assert!(ping_state.send_ping().is_none());
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert!(ping_state.send_ping().is_none());
+        tokio::time::sleep(Duration::from_secs(70)).await;
+        assert!(ping_state.send_ping().is_some());
+        // Do not spam
+        assert!(ping_state.send_ping().is_none());
+        // We match pings and update the state correctly
+        let mut ping_state = PingState::default();
+        tokio::time::sleep(Duration::from_secs(60 * 3)).await;
+        let ping = ping_state.send_ping().unwrap();
+        tokio::time::sleep(Duration::from_secs(60 * 3)).await;
+        assert!(ping_state.check_pong(ping));
+        assert!(!ping_state.check_pong(ping));
+        assert!(ping_state.send_ping().is_none());
+        tokio::time::sleep(Duration::from_secs(60 * 3)).await;
+        assert!(ping_state.send_ping().is_some());
+        // Receiving a message without a `Pong` does not update the state
+        let mut ping_state = PingState::default();
+        tokio::time::sleep(Duration::from_secs(60 * 3)).await;
+        let ping = ping_state.send_ping().unwrap();
+        ping_state.update_last_message();
+        assert!(ping_state.check_pong(ping));
+        // Time updates properly
+        let mut ping_state = PingState::default();
+        assert!(ping_state.send_ping().is_none());
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert!(ping_state.send_ping().is_none());
+        ping_state.update_last_message();
+        tokio::time::sleep(Duration::from_secs(70)).await;
+        assert!(ping_state.send_ping().is_none());
     }
 }
