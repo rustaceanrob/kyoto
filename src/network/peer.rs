@@ -16,7 +16,9 @@ use tokio::{
 
 use crate::{
     broadcaster::BroadcastQueue,
-    channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage},
+    channel_messages::{
+        MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage, TimeSensitiveId,
+    },
     db::PersistedPeer,
     dialog::Dialog,
     messages::Warning,
@@ -120,6 +122,14 @@ impl<P: PeerStore + 'static> Peer<P> {
             if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
+            if let Some(nonce) = self.message_state.ping_state.send_ping() {
+                let msg = outbound_messages.ping(nonce)?;
+                self.write_bytes(&mut writer, msg).await?;
+                let msg_id = TimeSensitiveId::PING;
+                self.message_state
+                    .timed_message_state
+                    .insert(msg_id, Instant::now());
+            }
             if self.message_state.unresponsive() {
                 self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
@@ -183,6 +193,7 @@ impl<P: PeerStore + 'static> Peer<P> {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        self.message_state.ping_state.update_last_message();
         if let Some(msg_id) = message.time_sensitive_message_received() {
             self.message_state.timed_message_state.remove(&msg_id);
         }
@@ -320,7 +331,13 @@ impl<P: PeerStore + 'static> Peer<P> {
                 self.write_bytes(writer, message).await?;
                 Ok(())
             }
-            ReaderMessage::Pong(_) => Ok(()),
+            ReaderMessage::Pong(nonce) => {
+                if self.message_state.ping_state.check_pong(nonce) {
+                    Ok(())
+                } else {
+                    Err(PeerError::DisconnectCommand)
+                }
+            }
             ReaderMessage::FeeFilter(fee) => {
                 self.main_thread_sender
                     .send(PeerThreadMessage {

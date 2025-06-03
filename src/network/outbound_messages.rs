@@ -98,6 +98,11 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
+    pub(crate) fn ping(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::Ping(nonce);
+        self.serialize(msg)
+    }
+
     pub(crate) fn pong(&mut self, nonce: u64) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::Pong(nonce);
         self.serialize(msg)
