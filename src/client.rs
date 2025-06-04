@@ -207,7 +207,7 @@ impl Requester {
     /// Fetch the [`FeeRate`] for a given [`BlockHash`]. This function can be quite expensive, and
     /// should only be utilized on systems with excess computing capabilities.
     pub async fn fetch_fees(&self, block_hash: BlockHash) -> Result<Vec<FeeRate>, FetchBlockError> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<FeeRate>, FetchBlockError>>();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<FeeRate>>();
         let message = FeeRequest {
             oneshot: tx,
             hash: block_hash,
@@ -215,7 +215,7 @@ impl Requester {
         self.ntx
             .send(ClientMessage::FetchFees(message))
             .map_err(|_| FetchBlockError::SendError)?;
-        rx.await.map_err(|_| FetchBlockError::RecvError)?
+        rx.await.map_err(|_| FetchBlockError::RecvError)
     }
 
     /// Starting after the configured checkpoint, look for block inclusions with newly added scripts.

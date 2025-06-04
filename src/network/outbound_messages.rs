@@ -124,7 +124,10 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
-    pub(crate) fn fetch_txs(&mut self, txids: impl IntoIterator<Item = Txid>) -> Result<Vec<u8>, PeerError> {
+    pub(crate) fn fetch_txs(
+        &mut self,
+        txids: impl IntoIterator<Item = Txid>,
+    ) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::GetData(txids.into_iter().map(Inventory::Transaction).collect());
         self.serialize(msg)
     }

@@ -226,7 +226,7 @@ impl BlockRequest {
 
 #[derive(Debug)]
 pub(crate) struct FeeRequest {
-    pub(crate) oneshot: oneshot::Sender<Result<Vec<FeeRate>, FetchBlockError>>,
+    pub(crate) oneshot: oneshot::Sender<Vec<FeeRate>>,
     pub(crate) hash: BlockHash,
 }
 

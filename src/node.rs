@@ -28,6 +28,8 @@ use crate::{
     },
     db::traits::{HeaderStore, PeerStore},
     error::{FetchBlockError, FetchHeaderError},
+    estimates::get_fees_for_block,
+    messages::FeeRequest,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
@@ -263,7 +265,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     queue.add(request);
                                 }
                             },
-                            ClientMessage::FetchFees(_request) => {}
+                            ClientMessage::FetchFees(request) => {
+                                self.fetch_fees(request).await;
+                            }
                             ClientMessage::SetDuration(duration) => {
                                 let mut peer_map = self.peer_map.lock().await;
                                 peer_map.set_duration(duration);
@@ -669,6 +673,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         self.dialog.send_warning(Warning::ChannelDropped);
                     };
                 }
+                BlockRecipient::FeeEstimator(sender) => {
+                    let send_err = sender.send(block).is_err();
+                    if send_err {
+                        self.dialog.send_warning(Warning::ChannelDropped);
+                    };
+                }
                 BlockRecipient::Event => {
                     self.dialog
                         .send_event(Event::Block(IndexedBlock::new(height, block)));
@@ -754,6 +764,27 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn add_script(&self, script: ScriptBuf) {
         let mut chain = self.chain.lock().await;
         chain.put_script(script);
+    }
+
+    async fn fetch_fees(&self, request: FeeRequest) {
+        let chain = self.chain.lock().await;
+        let mut queue = self.block_queue.lock().await;
+        let height_opt = chain.header_chain.height_of_hash(request.hash);
+        if height_opt.is_none() {
+            drop(request);
+        } else {
+            crate::log!(
+                self.dialog,
+                format!("Adding block {} to queue", request.hash)
+            );
+            let (tx, rx) = tokio::sync::oneshot::channel::<Block>();
+            let peer_map = Arc::clone(&self.peer_map);
+            let dialog = Arc::clone(&self.dialog);
+            tokio::task::spawn(async move {
+                get_fees_for_block(peer_map, rx, request.oneshot, dialog).await
+            });
+            queue.add((request.hash, tx));
+        }
     }
 
     // Clear the filter hash cache and redownload the filters.

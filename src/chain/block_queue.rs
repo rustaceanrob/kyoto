@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use bitcoin::BlockHash;
+use bitcoin::{Block, BlockHash};
 use tokio::{sync::oneshot, time::Instant};
 
 use crate::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
@@ -110,6 +110,13 @@ impl Request {
             recipient: BlockRecipient::Client(block_request.oneshot),
         }
     }
+
+    pub(crate) fn from_fee_request(hash: BlockHash, oneshot: oneshot::Sender<Block>) -> Self {
+        Self {
+            hash,
+            recipient: BlockRecipient::FeeEstimator(oneshot),
+        }
+    }
 }
 
 impl From<BlockHash> for Request {
@@ -124,10 +131,17 @@ impl From<BlockRequest> for Request {
     }
 }
 
+impl From<(BlockHash, oneshot::Sender<Block>)> for Request {
+    fn from(value: (BlockHash, oneshot::Sender<Block>)) -> Self {
+        Request::from_fee_request(value.0, value.1)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum BlockRecipient {
     Client(oneshot::Sender<Result<IndexedBlock, FetchBlockError>>),
     Event,
+    FeeEstimator(oneshot::Sender<Block>),
 }
 
 #[derive(Debug)]
