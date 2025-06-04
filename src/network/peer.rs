@@ -16,7 +16,9 @@ use tokio::{
 
 use crate::{
     broadcaster::BroadcastQueue,
-    channel_messages::{MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage},
+    channel_messages::{
+        MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage, TimeSensitiveId,
+    },
     db::PersistedPeer,
     dialog::Dialog,
     messages::Warning,
@@ -31,7 +33,7 @@ use super::{
     AddrGossipStages, MessageState, PeerId, PeerTimeoutConfig,
 };
 
-const MESSAGE_TIMEOUT: Duration = Duration::from_secs(2);
+const LOOP_TIMEOUT: Duration = Duration::from_secs(2);
 const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer<P: PeerStore + 'static> {
@@ -120,6 +122,14 @@ impl<P: PeerStore + 'static> Peer<P> {
             if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
+            if let Some(nonce) = self.message_state.ping_state.send_ping() {
+                let msg = outbound_messages.ping(nonce)?;
+                self.write_bytes(&mut writer, msg).await?;
+                let msg_id = TimeSensitiveId::PING;
+                self.message_state
+                    .timed_message_state
+                    .insert(msg_id, Instant::now());
+            }
             if self.message_state.unresponsive() {
                 self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
@@ -133,7 +143,7 @@ impl<P: PeerStore + 'static> Peer<P> {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(MESSAGE_TIMEOUT, rx.recv()) => {
+                peer_message = tokio::time::timeout(LOOP_TIMEOUT, rx.recv()) => {
                     if let Ok(peer_message) = peer_message {
                         match peer_message {
                             Some(message) => {
@@ -183,6 +193,7 @@ impl<P: PeerStore + 'static> Peer<P> {
     where
         W: AsyncWrite + Send + Unpin,
     {
+        self.message_state.ping_state.update_last_message();
         if let Some(msg_id) = message.time_sensitive_message_received() {
             self.message_state.timed_message_state.remove(&msg_id);
         }
@@ -320,7 +331,13 @@ impl<P: PeerStore + 'static> Peer<P> {
                 self.write_bytes(writer, message).await?;
                 Ok(())
             }
-            ReaderMessage::Pong(_) => Ok(()),
+            ReaderMessage::Pong(nonce) => {
+                if self.message_state.ping_state.check_pong(nonce) {
+                    Ok(())
+                } else {
+                    Err(PeerError::DisconnectCommand)
+                }
+            }
             ReaderMessage::FeeFilter(fee) => {
                 self.main_thread_sender
                     .send(PeerThreadMessage {
