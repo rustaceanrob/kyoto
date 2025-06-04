@@ -263,6 +263,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     queue.add(request);
                                 }
                             },
+                            ClientMessage::FetchFees(_request) => {}
                             ClientMessage::SetDuration(duration) => {
                                 let mut peer_map = self.peer_map.lock().await;
                                 peer_map.set_duration(duration);

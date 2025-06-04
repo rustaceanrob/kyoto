@@ -162,6 +162,8 @@ pub(crate) enum ClientMessage {
     Rescan,
     /// Explicitly request a block from the node.
     GetBlock(BlockRequest),
+    /// Fetch the fee rates for the given block hash.
+    FetchFees(FeeRequest),
     /// Set a new connection timeout.
     SetDuration(Duration),
     /// Add another known peer to connect to.
@@ -220,6 +222,12 @@ impl BlockRequest {
     ) -> Self {
         Self { oneshot, hash }
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct FeeRequest {
+    pub(crate) oneshot: oneshot::Sender<Result<Vec<FeeRate>, FetchBlockError>>,
+    pub(crate) hash: BlockHash,
 }
 
 /// Warnings a node may issue while running.
