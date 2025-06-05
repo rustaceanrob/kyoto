@@ -23,7 +23,7 @@ use crate::{
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::{CFilterSyncError, HeaderSyncError},
-        CFHeaderChanges, HeightMonitor,
+        CFHeaderChanges, FilterCheck, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
@@ -565,10 +565,18 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter) {
             Ok(potential_message) => {
-                if potential_message.is_some() {
+                let FilterCheck {
+                    needs_request: _,
+                    was_last_in_batch,
+                } = potential_message;
+                if was_last_in_batch {
                     chain.send_chain_update().await;
+                    if !chain.is_filters_synced() {
+                        let next_filters = chain.next_filter_message();
+                        return Some(MainThreadMessage::GetFilters(next_filters));
+                    }
                 }
-                potential_message.map(MainThreadMessage::GetFilters)
+                None
             }
             Err(e) => {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {

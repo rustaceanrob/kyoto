@@ -142,6 +142,13 @@ pub(crate) enum CFHeaderChanges {
     Conflict,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FilterCheck {
+    pub(crate) needs_request: Option<BlockHash>,
+    // This filter was for the `stop_hash`
+    pub(crate) was_last_in_batch: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Filter {
     filter_hash: FilterHash,
