@@ -32,9 +32,7 @@ use crate::{
 };
 
 use super::{
-    channel_messages::{
-        GetBlockConfig, GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage,
-    },
+    channel_messages::{GetHeaderConfig, MainThreadMessage, PeerMessage, PeerThreadMessage},
     client::Client,
     config::NodeConfig,
     dialog::Dialog,
@@ -614,9 +612,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             return match next_block_hash {
                 Some(block_hash) => {
                     crate::log!(self.dialog, format!("Next block in queue: {}", block_hash));
-                    Some(MainThreadMessage::GetBlock(GetBlockConfig {
-                        locator: block_hash,
-                    }))
+                    Some(MainThreadMessage::GetBlock(block_hash))
                 }
                 None => None,
             };
