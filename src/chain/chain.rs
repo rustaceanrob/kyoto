@@ -18,8 +18,8 @@ use super::{
     checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
     error::{BlockScanError, CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
-    CFHeaderChanges, Filter, FilterHeaderRequest, FilterRequest, FilterRequestState, HeightExt,
-    HeightMonitor, PeerId,
+    CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
+    HeightExt, HeightMonitor, PeerId,
 };
 #[cfg(feature = "filter-control")]
 use crate::error::FetchBlockError;
@@ -433,10 +433,9 @@ impl<H: HeaderStore> Chain<H> {
     pub(crate) fn sync_filter(
         &mut self,
         filter_message: CFilter,
-    ) -> Result<Option<GetCFilters>, CFilterSyncError> {
-        if self.is_filters_synced() {
-            return Ok(None);
-        }
+    ) -> Result<FilterCheck, CFilterSyncError> {
+        #[allow(unused_mut)]
+        let mut needs_request = None;
         let filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self
             .header_chain
@@ -475,6 +474,7 @@ impl<H: HeaderStore> Chain<H> {
                 .contains_any(self.scripts.iter())
                 .map_err(CFilterSyncError::Filter)?
         {
+            needs_request = Some(filter_message.block_hash);
             // Add to the block queue
             self.block_queue.add(filter_message.block_hash);
         }
@@ -485,15 +485,11 @@ impl<H: HeaderStore> Chain<H> {
             .last_filter_request
             .ok_or(CFilterSyncError::UnrequestedStophash)?
             .stop_hash;
-        if filter_message.block_hash.eq(&stop_hash) {
-            if !self.is_filters_synced() {
-                Ok(Some(self.next_filter_message()))
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
-        }
+        let was_last_in_batch = filter_message.block_hash.eq(&stop_hash);
+        Ok(FilterCheck {
+            needs_request,
+            was_last_in_batch,
+        })
     }
 
     // Next filter message, if there is one
