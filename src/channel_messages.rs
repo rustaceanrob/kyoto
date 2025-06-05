@@ -21,7 +21,7 @@ pub(crate) enum MainThreadMessage {
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
-    GetBlock(GetBlockConfig),
+    GetBlock(BlockHash),
     Disconnect,
     BroadcastPending,
     Verack,
@@ -37,8 +37,8 @@ impl MainThreadMessage {
             MainThreadMessage::GetFilters(_) => {
                 Some((TimeSensitiveId::C_FILTER_MSG, Instant::now()))
             }
-            MainThreadMessage::GetBlock(conf) => {
-                let id = conf.locator.to_raw_hash().to_byte_array();
+            MainThreadMessage::GetBlock(hash) => {
+                let id = hash.to_raw_hash().to_byte_array();
                 Some((TimeSensitiveId::from_slice(id), Instant::now()))
             }
             _ => None,
@@ -50,11 +50,6 @@ impl MainThreadMessage {
 pub struct GetHeaderConfig {
     pub locators: Vec<BlockHash>,
     pub stop_hash: Option<BlockHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GetBlockConfig {
-    pub locator: BlockHash,
 }
 
 pub(crate) struct PeerThreadMessage {
