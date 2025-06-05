@@ -114,7 +114,7 @@ impl LastBlockMonitor {
 
     pub(crate) fn stale(&self) -> bool {
         if let Some(time) = self.last_block {
-            return Instant::now().duration_since(time) > THIRTY_MINS;
+            return time.elapsed() > THIRTY_MINS;
         }
         false
     }
@@ -292,7 +292,7 @@ impl PingState {
         match self {
             Self::WaitingFor { nonce: _ } => None,
             Self::LastMessageReceied { then } => {
-                if Instant::now().duration_since(*then) > SEND_PING {
+                if then.elapsed() > SEND_PING {
                     let nonce = rand::random();
                     *self = Self::WaitingFor { nonce };
                     Some(nonce)
@@ -370,7 +370,7 @@ mod tests {
     use bitcoin::{consensus::deserialize, p2p::address::AddrV2, Transaction};
 
     use crate::{
-        network::{AddrGossipStages, MessageState, PingState},
+        network::{AddrGossipStages, LastBlockMonitor, MessageState, PingState},
         prelude::Netgroup,
     };
 
@@ -461,5 +461,22 @@ mod tests {
         ping_state.update_last_message();
         tokio::time::sleep(Duration::from_secs(70)).await;
         assert!(ping_state.send_ping().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_block_detected_stale() {
+        let mut last_block = LastBlockMonitor::new();
+        tokio::time::sleep(Duration::from_secs(60 * 40)).await;
+        // No blocks received yet.
+        assert!(!last_block.stale());
+        last_block.reset();
+        tokio::time::sleep(Duration::from_secs(60 * 20)).await;
+        // Has not been thirty minutes
+        assert!(!last_block.stale());
+        // Should get a block by now
+        tokio::time::sleep(Duration::from_secs(60 * 20)).await;
+        assert!(last_block.stale());
+        last_block.reset();
+        assert!(!last_block.stale());
     }
 }
