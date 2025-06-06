@@ -511,7 +511,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut chain = self.chain.lock().await;
         match chain.sync_chain(headers).await {
             Ok(changes) => match changes {
-                HeaderChainChanges::Extended(height) => (),
+                HeaderChainChanges::Extended(height) => {
+                    crate::info!(self.dialog, Info::NewChainHeight(height));
+                }
                 HeaderChainChanges::Reorg { height, hashes } => {
                     for hash in hashes {
                         crate::log!(self.dialog, format!("{hash} was reorganized"));
@@ -523,6 +525,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         self.dialog,
                         format!("Candidate fork {} -> {}", tip.height, tip.block_hash())
                     );
+                    crate::info!(self.dialog, Info::NewFork { tip });
                 }
                 HeaderChainChanges::Duplicate => (),
             },
