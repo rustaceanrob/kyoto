@@ -2,7 +2,7 @@
 //! expected sync time on your machine and in your region.
 
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
-use kyoto::{Client, Event, Network, ScriptBuf};
+use kyoto::{Client, Event, LogLevel, Network, ScriptBuf};
 use std::collections::HashSet;
 use tokio::time::Instant;
 
@@ -31,6 +31,8 @@ async fn main() {
         .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(2)
+        // Set the log level to omit debug strings
+        .log_level(LogLevel::Info)
         // Create the node and client
         .build()
         .unwrap();
