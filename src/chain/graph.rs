@@ -488,14 +488,14 @@ impl BlockTree {
         self.canonical_hashes.len()
     }
 
-    pub(crate) fn iter_data(&self) -> BlockNodeIterator {
+    pub(crate) fn iter_data(&self) -> BlockNodeIterator<'_> {
         BlockNodeIterator {
             block_tree: self,
             current: self.active_tip.hash,
         }
     }
 
-    pub(crate) fn iter_headers(&self) -> BlockHeaderIterator {
+    pub(crate) fn iter_headers(&self) -> BlockHeaderIterator<'_> {
         BlockHeaderIterator {
             block_tree: self,
             current: self.active_tip.hash,

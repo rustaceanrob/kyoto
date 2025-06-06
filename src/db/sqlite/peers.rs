@@ -131,15 +131,15 @@ impl SqlitePeerDb {
 
 impl PeerStore for SqlitePeerDb {
     type Error = SqlPeerStoreError;
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error> {
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<'_, (), Self::Error> {
         Box::pin(self.update(peer))
     }
 
-    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
+    fn random(&mut self) -> FutureResult<'_, PersistedPeer, Self::Error> {
         Box::pin(self.random())
     }
 
-    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
+    fn num_unbanned(&mut self) -> FutureResult<'_, u32, Self::Error> {
         Box::pin(self.num_unbanned())
     }
 }
