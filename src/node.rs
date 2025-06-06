@@ -23,7 +23,7 @@ use crate::{
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::{CFilterSyncError, HeaderSyncError},
-        CFHeaderChanges, FilterCheck, HeightMonitor,
+        CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
     error::FetchHeaderError,
@@ -509,8 +509,24 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         headers: Vec<Header>,
     ) -> Option<MainThreadMessage> {
         let mut chain = self.chain.lock().await;
-        if let Err(e) = chain.sync_chain(headers).await {
-            match e {
+        match chain.sync_chain(headers).await {
+            Ok(changes) => match changes {
+                HeaderChainChanges::Extended(height) => (),
+                HeaderChainChanges::Reorg { height, hashes } => {
+                    for hash in hashes {
+                        crate::log!(self.dialog, format!("{hash} was reorganized"));
+                    }
+                    crate::log!(self.dialog, format!("New chain height {height}"));
+                }
+                HeaderChainChanges::ForkAdded { tip } => {
+                    crate::log!(
+                        self.dialog,
+                        format!("Candidate fork {} -> {}", tip.height, tip.block_hash())
+                    );
+                }
+                HeaderChainChanges::Duplicate => (),
+            },
+            Err(e) => match e {
                 HeaderSyncError::EmptyMessage => {
                     if !chain.is_synced().await {
                         return Some(MainThreadMessage::Disconnect);
@@ -525,7 +541,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     lock.ban(peer_id).await;
                     return Some(MainThreadMessage::Disconnect);
                 }
-            }
+            },
         }
         self.next_stateful_message(chain.deref_mut()).await
     }

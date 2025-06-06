@@ -67,6 +67,14 @@ impl IndexedHeader {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HeaderChainChanges {
+    Extended(u32),
+    Reorg { height: u32, hashes: Vec<BlockHash> },
+    ForkAdded { tip: IndexedHeader },
+    Duplicate,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct FilterCommitment {
     pub header: FilterHeader,
