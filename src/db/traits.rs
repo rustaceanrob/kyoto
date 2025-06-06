@@ -22,7 +22,7 @@ pub trait HeaderStore: Debug + Send + Sync {
     fn stage(&mut self, changes: BlockHeaderChanges);
 
     /// Commit the changes by writing them to disk.
-    fn write(&mut self) -> FutureResult<(), Self::Error>;
+    fn write(&mut self) -> FutureResult<'_, (), Self::Error>;
 
     /// Return the height of a block hash in the database, if it exists.
     fn height_of<'a>(
@@ -31,10 +31,10 @@ pub trait HeaderStore: Debug + Send + Sync {
     ) -> FutureResult<'a, Option<u32>, Self::Error>;
 
     /// Return the hash at the height in the database, if it exists.
-    fn hash_at(&mut self, height: u32) -> FutureResult<Option<BlockHash>, Self::Error>;
+    fn hash_at(&mut self, height: u32) -> FutureResult<'_, Option<BlockHash>, Self::Error>;
 
     /// Return the header at the height in the database, if it exists.
-    fn header_at(&mut self, height: u32) -> FutureResult<Option<Header>, Self::Error>;
+    fn header_at(&mut self, height: u32) -> FutureResult<'_, Option<Header>, Self::Error>;
 }
 
 /// Methods that define a list of peers on the Bitcoin P2P network.
@@ -42,13 +42,13 @@ pub trait PeerStore: Debug + Send + Sync {
     /// Errors that may occur within a [`PeerStore`].
     type Error: Debug + Display;
     /// Add a peer to the database, defining if it should be replaced or not.
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<(), Self::Error>;
+    fn update(&mut self, peer: PersistedPeer) -> FutureResult<'_, (), Self::Error>;
 
     /// Get any peer from the database, selected at random. If no peers exist, an error is thrown.
-    fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error>;
+    fn random(&mut self) -> FutureResult<'_, PersistedPeer, Self::Error>;
 
     /// The number of peers in the database that are not marked as banned.
-    fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error>;
+    fn num_unbanned(&mut self) -> FutureResult<'_, u32, Self::Error>;
 }
 
 #[cfg(test)]
@@ -73,21 +73,21 @@ mod test {
 
     impl PeerStore for () {
         type Error = UnitPeerStoreError;
-        fn update(&mut self, _peer: PersistedPeer) -> FutureResult<(), Self::Error> {
+        fn update(&mut self, _peer: PersistedPeer) -> FutureResult<'_, (), Self::Error> {
             async fn do_update() -> Result<(), UnitPeerStoreError> {
                 Ok(())
             }
             Box::pin(do_update())
         }
 
-        fn random(&mut self) -> FutureResult<PersistedPeer, Self::Error> {
+        fn random(&mut self) -> FutureResult<'_, PersistedPeer, Self::Error> {
             async fn do_random() -> Result<PersistedPeer, UnitPeerStoreError> {
                 Err(UnitPeerStoreError::NoPeers)
             }
             Box::pin(do_random())
         }
 
-        fn num_unbanned(&mut self) -> FutureResult<u32, Self::Error> {
+        fn num_unbanned(&mut self) -> FutureResult<'_, u32, Self::Error> {
             async fn do_num_unbanned() -> Result<u32, UnitPeerStoreError> {
                 Ok(0)
             }
@@ -109,7 +109,7 @@ mod test {
 
         fn stage(&mut self, _changes: BlockHeaderChanges) {}
 
-        fn write(&mut self) -> FutureResult<(), Self::Error> {
+        fn write(&mut self) -> FutureResult<'_, (), Self::Error> {
             async fn do_write() -> Result<(), Infallible> {
                 Ok(())
             }
@@ -126,14 +126,14 @@ mod test {
             Box::pin(do_height_of())
         }
 
-        fn hash_at(&mut self, _height: u32) -> FutureResult<Option<BlockHash>, Self::Error> {
+        fn hash_at(&mut self, _height: u32) -> FutureResult<'_, Option<BlockHash>, Self::Error> {
             async fn do_hast_at() -> Result<Option<BlockHash>, Infallible> {
                 Ok(None)
             }
             Box::pin(do_hast_at())
         }
 
-        fn header_at(&mut self, _height: u32) -> FutureResult<Option<Header>, Self::Error> {
+        fn header_at(&mut self, _height: u32) -> FutureResult<'_, Option<Header>, Self::Error> {
             async fn do_header_at() -> Result<Option<Header>, Infallible> {
                 Ok(None)
             }
