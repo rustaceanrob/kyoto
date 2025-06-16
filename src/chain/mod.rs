@@ -39,7 +39,7 @@ pub struct IndexedHeader {
 
 impl std::cmp::PartialOrd for IndexedHeader {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.height.cmp(&other.height))
+        Some(self.cmp(other))
     }
 }
 
