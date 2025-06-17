@@ -175,6 +175,7 @@ impl ConnectionType {
 struct MessageState {
     general_timeout: Duration,
     version_handshake: VersionHandshakeState,
+    verack: VerackState,
     addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
     timed_message_state: HashMap<TimeSensitiveId, Instant>,
@@ -186,6 +187,7 @@ impl MessageState {
         Self {
             general_timeout,
             version_handshake: Default::default(),
+            verack: Default::default(),
             addr_state: Default::default(),
             sent_txs: Default::default(),
             timed_message_state: Default::default(),
@@ -247,6 +249,26 @@ impl VersionHandshakeState {
             Self::Started { at } => at.elapsed() > timeout,
             _ => false,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct VerackState {
+    got_ack: bool,
+    sent_ack: bool,
+}
+
+impl VerackState {
+    fn got_ack(&mut self) {
+        self.got_ack = true
+    }
+
+    fn sent_ack(&mut self) {
+        self.sent_ack = true
+    }
+
+    fn both_acks(&self) -> bool {
+        self.got_ack && self.sent_ack
     }
 }
 
@@ -396,6 +418,17 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
         assert!(!message_state.unresponsive());
         assert!(message_state.version_handshake.is_complete());
+    }
+
+    #[test]
+    fn test_verack_state() {
+        let timeout = Duration::from_secs(1);
+        let mut messsage_state = MessageState::new(timeout);
+        messsage_state.version_handshake.start();
+        messsage_state.verack.got_ack();
+        assert!(!messsage_state.verack.both_acks());
+        messsage_state.verack.sent_ack();
+        assert!(messsage_state.verack.both_acks());
     }
 
     #[test]

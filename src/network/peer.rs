@@ -323,7 +323,15 @@ impl<P: PeerStore + 'static> Peer<P> {
                 if self.message_state.version_handshake.is_complete() {
                     return Err(PeerError::DisconnectCommand);
                 }
-                self.message_state.finish_version_handshake();
+                // Not expecting two acks
+                if self.message_state.verack.got_ack {
+                    return Err(PeerError::DisconnectCommand);
+                }
+                self.message_state.verack.got_ack();
+                if self.message_state.verack.both_acks() {
+                    crate::info!(self.dialog, Info::SuccessfulHandshake);
+                    self.message_state.finish_version_handshake();
+                }
                 Ok(())
             }
             ReaderMessage::Ping(nonce) => {
@@ -419,7 +427,11 @@ impl<P: PeerStore + 'static> Peer<P> {
             MainThreadMessage::Verack => {
                 let message = message_generator.verack()?;
                 self.write_bytes(writer, message).await?;
-                crate::info!(self.dialog, Info::SuccessfulHandshake);
+                self.message_state.verack.sent_ack();
+                if self.message_state.verack.both_acks() {
+                    crate::info!(self.dialog, Info::SuccessfulHandshake);
+                    self.message_state.finish_version_handshake();
+                }
                 // Take any pending announcements and share them now that the handshake is over
                 let wtxids = {
                     let queue = self.tx_queue.lock().await;
