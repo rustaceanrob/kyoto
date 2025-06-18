@@ -676,3 +676,50 @@ async fn tx_can_broadcast() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn blocks_are_fetched() {
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
+    let amount = Amount::from_sat(2140);
+    let mut scripts = HashSet::new();
+    let other = rpc.new_address().unwrap();
+    scripts.insert(other.script_pubkey().clone());
+    let (node, client) = new_node(scripts.clone(), socket_addr, tempdir, None);
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 110, 10).await;
+    // Create a list of important TXIDs
+    let mut relevant_txids = HashSet::new();
+    println!("Sending transactions to an address the light client knows");
+    for _ in 0..3 {
+        let send = rpc.send_to_address(&other, amount).unwrap();
+        relevant_txids.insert(send.txid().unwrap());
+        mine_blocks(rpc, &miner, 4, 2).await;
+    }
+    let Client {
+        requester: _,
+        log_rx,
+        info_rx: _,
+        warn_rx,
+        event_rx: mut channel,
+    } = client;
+    println!("Asserting all blocks were requested");
+    tokio::task::spawn(async move { node.run().await });
+    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    while let Some(event) = channel.recv().await {
+        match event {
+            Event::Block(indexed_block) => {
+                for tx in indexed_block.block.txdata {
+                    let txid = tx.compute_txid();
+                    relevant_txids.remove(&txid);
+                }
+            }
+            Event::Synced(_) => break,
+            _ => (),
+        }
+    }
+    // Assert the relevant TXIDs have been fetched by the end
+    assert!(relevant_txids.is_empty());
+    drop(handle);
+}
