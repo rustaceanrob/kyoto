@@ -324,6 +324,12 @@ impl BlockTree {
     }
 
     fn compute_next_work_required(&self, new_height: Height) -> Option<CompactTarget> {
+        // Do not audit the diffulty for `Testnet`. Auditing the difficulty properly for a testnet
+        // will result in convoluted logic. This is a critical code block for mainnet and should be
+        // as readable as possible
+        if self.network.params().allow_min_difficulty_blocks {
+            return None;
+        }
         let adjustment_period =
             Height::from_u64_checked(self.network.params().difficulty_adjustment_interval())?;
         let epoch_start = new_height.checked_sub(adjustment_period)?;
