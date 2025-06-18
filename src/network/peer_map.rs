@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
+    net::IpAddr,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -26,7 +27,12 @@ use crate::{
     db::{traits::PeerStore, PeerStatus, PersistedPeer},
     dialog::Dialog,
     error::PeerManagerError,
-    network::{dns::DnsResolver, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
+    network::{
+        dns::{bootstrap_dns, DnsResolver},
+        error::PeerError,
+        peer::Peer,
+        PeerId, PeerTimeoutConfig,
+    },
     prelude::{default_port_from_network, Median, Netgroup},
     PeerStoreSizeConfig, TrustedPeer, Warning,
 };
@@ -360,12 +366,9 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
-        use crate::network::dns::Dns;
-        use std::net::IpAddr;
         crate::log!(self.dialog, "Bootstrapping peers with DNS");
         let mut db_lock = self.db.lock().await;
-        let new_peers = Dns::new(self.network, self.dns_resolver)
-            .bootstrap()
+        let new_peers = bootstrap_dns(self.network, self.dns_resolver)
             .await
             .into_iter()
             .map(|ip| match ip {
