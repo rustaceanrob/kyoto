@@ -85,41 +85,27 @@ impl From<DnsResolver> for SocketAddr {
     }
 }
 
-pub(crate) struct Dns<'a> {
-    seeds: Vec<&'a str>,
-    dns_resolver: DnsResolver,
-}
-
-impl Dns<'_> {
-    pub fn new(network: Network, dns_resolver: DnsResolver) -> Self {
-        let seeds = match network {
-            Network::Bitcoin => MAINNET_SEEDS.to_vec(),
-            Network::Testnet => TESTNET_SEEDS.to_vec(),
-            Network::Signet => SIGNET_SEEDS.to_vec(),
-            Network::Regtest => Vec::with_capacity(0),
-            Network::Testnet4 => TESTNET4_SEEDS.to_vec(),
-            _ => unreachable!(),
-        };
-        Self {
-            seeds,
-            dns_resolver,
-        }
-    }
-
-    pub async fn bootstrap(&self) -> Vec<IpAddr> {
-        let mut ip_addrs: Vec<IpAddr> = vec![];
-        for host in &self.seeds {
-            for filter in SERVICE_BITS_PREFIX {
-                if let Ok(addrs) = DNSQuery::new(host, filter)
-                    .lookup(self.dns_resolver.into())
-                    .await
-                {
-                    ip_addrs.extend(addrs);
-                }
+pub(crate) async fn bootstrap_dns(network: Network, dns_resolver: DnsResolver) -> Vec<IpAddr> {
+    let seeds = match network {
+        Network::Bitcoin => MAINNET_SEEDS.to_vec(),
+        Network::Testnet => TESTNET_SEEDS.to_vec(),
+        Network::Signet => SIGNET_SEEDS.to_vec(),
+        Network::Regtest => Vec::with_capacity(0),
+        Network::Testnet4 => TESTNET4_SEEDS.to_vec(),
+        _ => unreachable!(),
+    };
+    let mut ip_addrs: Vec<IpAddr> = vec![];
+    for host in seeds {
+        for filter in SERVICE_BITS_PREFIX {
+            if let Ok(addrs) = DNSQuery::new(host, filter)
+                .lookup(dns_resolver.into())
+                .await
+            {
+                ip_addrs.extend(addrs);
             }
         }
-        ip_addrs
     }
+    ip_addrs
 }
 
 struct DNSQuery {
@@ -227,12 +213,7 @@ mod test {
     #[ignore = "dns works"]
     async fn dns_responds() {
         let socket_addr = "1.1.1.1:53".parse::<SocketAddr>().unwrap();
-        let addrs = Dns::new(
-            bitcoin::network::Network::Bitcoin,
-            DnsResolver { socket_addr },
-        )
-        .bootstrap()
-        .await;
+        let addrs = bootstrap_dns(Network::Bitcoin, DnsResolver { socket_addr }).await;
         assert!(addrs.len() > 1);
         let first = addrs.first().unwrap();
         println!("Example IP: {first:?}");
