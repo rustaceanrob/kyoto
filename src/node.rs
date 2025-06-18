@@ -152,6 +152,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 self.required_peers
             )
         );
+        {
+            let mut peer_map = self.peer_map.lock().await;
+            peer_map.bootstrap().await?;
+        }
         self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut peer_recv = self.peer_recv.lock().await;
