@@ -20,14 +20,14 @@ use tokio::{
 
 use crate::{
     chain::{
-        block_queue::BlockQueue,
+        block_queue::{BlockQueue, BlockRecipient, ProcessBlockResponse},
         chain::Chain,
         checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
         error::{CFilterSyncError, HeaderSyncError},
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
-    error::FetchHeaderError,
+    error::{FetchBlockError, FetchHeaderError},
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
@@ -40,9 +40,6 @@ use super::{
     error::NodeError,
     messages::{ClientMessage, Event, Info, SyncUpdate, Warning},
 };
-
-#[cfg(feature = "filter-control")]
-use crate::error::FetchBlockError;
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -244,7 +241,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.broadcast(response).await;
                                 }
                             },
-                            #[cfg(feature = "filter-control")]
                             ClientMessage::GetBlock(request) => {
                                 let mut state = self.state.write().await;
                                 if matches!(*state, NodeState::TransactionsSynced) {
@@ -644,9 +640,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let chain = self.chain.lock().await;
         let mut block_queue = self.block_queue.lock().await;
         let block_hash = block.block_hash();
-        if !block_queue.need(&block_hash) {
-            return None;
-        }
         let height = match chain.header_chain.height_of_hash(block_hash) {
             Some(height) => height,
             None => {
@@ -666,17 +659,34 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             lock.ban(peer_id).await;
             return Some(MainThreadMessage::Disconnect);
         }
-        let sender = block_queue.receive(&block_hash);
-        match sender {
-            Some(sender) => {
-                let send_result = sender.send(Ok(IndexedBlock::new(height, block)));
-                if send_result.is_err() {
-                    self.dialog.send_warning(Warning::ChannelDropped)
-                };
+        let process_block_response = block_queue.process_block(&block_hash);
+        match process_block_response {
+            ProcessBlockResponse::Accepted { block_recipient } => match block_recipient {
+                BlockRecipient::Client(sender) => {
+                    let send_err = sender.send(Ok(IndexedBlock::new(height, block))).is_err();
+                    if send_err {
+                        self.dialog.send_warning(Warning::ChannelDropped);
+                    };
+                }
+                BlockRecipient::Event => {
+                    self.dialog
+                        .send_event(Event::Block(IndexedBlock::new(height, block)));
+                }
+            },
+            ProcessBlockResponse::LateResponse => {
+                crate::log!(
+                    self.dialog,
+                    format!(
+                        "Peer {} responded late to a request for hash {}",
+                        peer_id, block_hash
+                    )
+                );
             }
-            None => {
-                self.dialog
-                    .send_event(Event::Block(IndexedBlock::new(height, block)));
+            ProcessBlockResponse::UnknownHash => {
+                crate::log!(
+                    self.dialog,
+                    format!("Peer {} responded with an irrelevant block", peer_id)
+                );
             }
         }
         None

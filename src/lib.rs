@@ -98,12 +98,6 @@ pub mod messages;
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
 
-/// Receive an [`IndexedBlock`] from a request.
-#[cfg(feature = "filter-control")]
-pub type BlockReceiver = tokio::sync::oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>;
-
-#[cfg(feature = "filter-control")]
-use crate::error::FetchBlockError;
 #[cfg(feature = "filter-control")]
 use chain::Filter;
 

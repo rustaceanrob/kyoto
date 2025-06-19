@@ -1,17 +1,15 @@
-#[cfg(feature = "filter-control")]
-use bitcoin::BlockHash;
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
-use bitcoin::{block::Header, FeeRate};
+use bitcoin::{block::Header, BlockHash, FeeRate};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 
 use crate::{Event, Info, TrustedPeer, TxBroadcast, Warning};
 
-#[cfg(feature = "filter-control")]
-use super::{error::FetchBlockError, messages::BlockRequest, BlockReceiver, IndexedBlock};
+use super::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
 use super::{
     error::{ClientError, FetchFeeRateError, FetchHeaderError},
     messages::{BatchHeaderRequest, ClientMessage, HeaderRequest},
@@ -178,7 +176,6 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    #[cfg(feature = "filter-control")]
     pub async fn get_block(&self, block_hash: BlockHash) -> Result<IndexedBlock, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
         let message = BlockRequest::new(tx, block_hash);
@@ -194,8 +191,10 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    #[cfg(feature = "filter-control")]
-    pub fn request_block(&self, block_hash: BlockHash) -> Result<BlockReceiver, FetchBlockError> {
+    pub fn request_block(
+        &self,
+        block_hash: BlockHash,
+    ) -> Result<oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
         let message = BlockRequest::new(tx, block_hash);
         self.ntx
@@ -243,8 +242,8 @@ impl Requester {
     }
 }
 
-impl<T> From<tokio::sync::mpsc::error::SendError<T>> for ClientError {
-    fn from(_: tokio::sync::mpsc::error::SendError<T>) -> Self {
+impl<T> From<mpsc::error::SendError<T>> for ClientError {
+    fn from(_: mpsc::error::SendError<T>) -> Self {
         ClientError::SendError
     }
 }

@@ -1,8 +1,9 @@
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 
-#[cfg(feature = "filter-control")]
-use bitcoin::BlockHash;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, FeeRate, ScriptBuf, Wtxid};
+use bitcoin::{
+    block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, ScriptBuf, Wtxid,
+};
+use tokio::sync::oneshot;
 
 #[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
@@ -160,7 +161,6 @@ pub(crate) enum ClientMessage {
     /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
     Rescan,
     /// Explicitly request a block from the node.
-    #[cfg(feature = "filter-control")]
     GetBlock(BlockRequest),
     /// Set a new connection timeout.
     SetDuration(Duration),
@@ -205,20 +205,19 @@ impl BatchHeaderRequest {
     }
 }
 
-pub(crate) type BlockSender = tokio::sync::oneshot::Sender<Result<IndexedBlock, FetchBlockError>>;
-
 pub(crate) type FeeRateSender = tokio::sync::oneshot::Sender<FeeRate>;
 
-#[cfg(feature = "filter-control")]
 #[derive(Debug)]
 pub(crate) struct BlockRequest {
-    pub(crate) oneshot: BlockSender,
+    pub(crate) oneshot: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
     pub(crate) hash: BlockHash,
 }
 
-#[cfg(feature = "filter-control")]
 impl BlockRequest {
-    pub(crate) fn new(oneshot: BlockSender, hash: BlockHash) -> Self {
+    pub(crate) fn new(
+        oneshot: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
+        hash: BlockHash,
+    ) -> Self {
         Self { oneshot, hash }
     }
 }
