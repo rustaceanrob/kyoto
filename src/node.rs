@@ -27,7 +27,7 @@ use crate::{
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     db::traits::{HeaderStore, PeerStore},
-    error::FetchHeaderError,
+    error::{FetchBlockError, FetchHeaderError},
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
@@ -40,9 +40,6 @@ use super::{
     error::NodeError,
     messages::{ClientMessage, Event, Info, SyncUpdate, Warning},
 };
-
-#[cfg(feature = "filter-control")]
-use crate::error::FetchBlockError;
 
 pub(crate) const WTXID_VERSION: u32 = 70016;
 const LOOP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -244,7 +241,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     self.broadcast(response).await;
                                 }
                             },
-                            #[cfg(feature = "filter-control")]
                             ClientMessage::GetBlock(request) => {
                                 let mut state = self.state.write().await;
                                 if matches!(*state, NodeState::TransactionsSynced) {

@@ -1,11 +1,9 @@
 use std::collections::VecDeque;
 
 use bitcoin::BlockHash;
-use tokio::time::Instant;
+use tokio::{sync::oneshot, time::Instant};
 
-#[cfg(feature = "filter-control")]
-use crate::messages::BlockRequest;
-use crate::messages::BlockSender;
+use crate::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
 
 const SPAM_LIMIT: u64 = 5;
 
@@ -66,7 +64,10 @@ impl BlockQueue {
             .map_or(false, |request| request.hash.eq(block))
     }
 
-    pub(crate) fn receive(&mut self, hash: &BlockHash) -> Option<BlockSender> {
+    pub(crate) fn receive(
+        &mut self,
+        hash: &BlockHash,
+    ) -> Option<oneshot::Sender<Result<IndexedBlock, FetchBlockError>>> {
         if let Some(request) = self.want.take() {
             if request.hash.eq(hash) {
                 self.want = None;
@@ -96,7 +97,7 @@ impl BlockQueue {
 #[derive(Debug)]
 pub(crate) struct Request {
     hash: BlockHash,
-    sender: Option<BlockSender>,
+    sender: Option<oneshot::Sender<Result<IndexedBlock, FetchBlockError>>>,
 }
 
 impl Request {
@@ -104,7 +105,6 @@ impl Request {
         Self { hash, sender: None }
     }
 
-    #[cfg(feature = "filter-control")]
     fn from_block_request(block_request: BlockRequest) -> Self {
         Self {
             hash: block_request.hash,
@@ -119,7 +119,6 @@ impl From<BlockHash> for Request {
     }
 }
 
-#[cfg(feature = "filter-control")]
 impl From<BlockRequest> for Request {
     fn from(value: BlockRequest) -> Self {
         Request::from_block_request(value)
