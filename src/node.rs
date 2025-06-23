@@ -242,11 +242,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                             },
                             ClientMessage::GetBlock(request) => {
-                                let mut state = self.state.write().await;
-                                if matches!(*state, NodeState::TransactionsSynced) {
-                                    *state = NodeState::FiltersSynced
-                                }
-                                drop(state);
                                 let chain = self.chain.lock().await;
                                 let mut queue = self.block_queue.lock().await;
                                 let height_opt = chain.header_chain.height_of_hash(request.hash);
@@ -697,7 +692,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let state = self.state.read().await;
         if matches!(
             *state,
-            NodeState::FilterHeadersSynced | NodeState::FiltersSynced
+            NodeState::FilterHeadersSynced
+                | NodeState::FiltersSynced
+                | NodeState::TransactionsSynced
         ) {
             let mut queue = self.block_queue.lock().await;
             let next_block_hash = queue.pop();
