@@ -58,9 +58,11 @@ async fn main() {
                             tracing::info!("Chain tip: {}",update.tip().hash);
                             // Request information from the node
                             let fee = requester.broadcast_min_feerate().await.unwrap();
-                            tracing::info!("Minimum transaction broadcast fee rate: {}", fee);
+                            tracing::info!("Minimum transaction broadcast fee rate: {:#}", fee);
                             let sync_time = now.elapsed().as_secs_f32();
                             tracing::info!("Total sync time: {sync_time} seconds");
+                            let avg_fee_rate = requester.average_fee_rate(update.tip().hash).await.unwrap();
+                            tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
                             break;
                         },
                         Event::Block(indexed_block) => {

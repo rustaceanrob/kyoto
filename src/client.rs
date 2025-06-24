@@ -1,12 +1,13 @@
 #[cfg(not(feature = "filter-control"))]
 use bitcoin::ScriptBuf;
-use bitcoin::Transaction;
 use bitcoin::{block::Header, BlockHash, FeeRate};
+use bitcoin::{Amount, Transaction};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
+use crate::chain::block_subsidy;
 use crate::{Event, Info, TrustedPeer, TxBroadcast, Warning};
 
 use super::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
@@ -201,6 +202,35 @@ impl Requester {
             .send(ClientMessage::GetBlock(message))
             .map_err(|_| FetchBlockError::SendError)?;
         Ok(rx)
+    }
+
+    /// Fetch the average fee rate for the given block hash.
+    ///
+    /// Computed by taking (`coinbase output amount` - `block subsidy`) / `block weight`. Note that
+    /// this value may provide skewed estimates, as averages are more effected by outliers than
+    /// medians. For a rudimentary estimation of the fee rate required to enter the next block,
+    /// this method may suffice.
+    pub async fn average_fee_rate(
+        &self,
+        block_hash: BlockHash,
+    ) -> Result<FeeRate, FetchBlockError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
+        let message = BlockRequest::new(tx, block_hash);
+        self.ntx
+            .send(ClientMessage::GetBlock(message))
+            .map_err(|_| FetchBlockError::SendError)?;
+        let indexed_block = rx.await.map_err(|_| FetchBlockError::RecvError)??;
+        let subsidy = block_subsidy(indexed_block.height);
+        let weight = indexed_block.block.weight();
+        let revenue = indexed_block
+            .block
+            .txdata
+            .first()
+            .map(|tx| tx.output.iter().map(|txout| txout.value).sum())
+            .unwrap_or(Amount::ZERO);
+        let block_fees = revenue.checked_sub(subsidy).unwrap_or(Amount::ZERO);
+        let fee_rate = block_fees.to_sat() / weight.to_kwu_floor();
+        Ok(FeeRate::from_sat_per_kwu(fee_rate))
     }
 
     /// Starting after the configured checkpoint, look for block inclusions with newly added scripts.

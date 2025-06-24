@@ -15,7 +15,9 @@ pub(crate) mod header_batch;
 
 use std::collections::HashMap;
 
+use bitcoin::constants::SUBSIDY_HALVING_INTERVAL;
 use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::Amount;
 use bitcoin::{
     bip158::BlockFilter, block::Header, params::Params, BlockHash, FilterHash, FilterHeader,
     ScriptBuf,
@@ -261,6 +263,17 @@ impl HeightExt for u32 {
     }
 }
 
+// Emulation of `GetBlockSubsidy` in Bitcoin Core: https://github.com/bitcoin/bitcoin/blob/master/src/validation.cpp#L1944
+pub(crate) fn block_subsidy(height: u32) -> Amount {
+    let halvings = height / SUBSIDY_HALVING_INTERVAL;
+    if halvings >= 64 {
+        return Amount::ZERO;
+    }
+    let base = Amount::ONE_BTC.to_sat() * 50;
+    let subsidy = base >> halvings;
+    Amount::from_sat(subsidy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +316,19 @@ mod tests {
         assert_eq!(height.last_epoch_start(Network::Bitcoin), 4032);
         let height = 4032;
         assert_eq!(height.last_epoch_start(Network::Bitcoin), 4032);
+    }
+
+    #[test]
+    fn test_subsidy_calculation() {
+        let first_subsidy = block_subsidy(2);
+        assert_eq!(first_subsidy, Amount::from_btc(50.0).unwrap());
+        let first_subsidy = block_subsidy(209_999);
+        assert_eq!(first_subsidy, Amount::from_btc(50.0).unwrap());
+        let second_subsidy = block_subsidy(210_000);
+        assert_eq!(second_subsidy, Amount::from_btc(25.0).unwrap());
+        let fourth_subsidy = block_subsidy(630_000);
+        assert_eq!(fourth_subsidy, Amount::from_btc(6.25).unwrap());
+        let now = block_subsidy(902_000);
+        assert_eq!(now, Amount::from_btc(3.125).unwrap());
     }
 }
