@@ -97,12 +97,15 @@ pub(crate) async fn bootstrap_dns(network: Network, dns_resolver: DnsResolver) -
     let mut ip_addrs: Vec<IpAddr> = vec![];
     for host in seeds {
         for filter in SERVICE_BITS_PREFIX {
-            if let Ok(addrs) = DnsQuery::new(host, filter)
+            if let Ok(addrs) = DnsQuery::new(host, Some(filter))
                 .lookup(dns_resolver.into())
                 .await
             {
                 ip_addrs.extend(addrs);
             }
+        }
+        if let Ok(addrs) = DnsQuery::new(host, None).lookup(dns_resolver.into()).await {
+            ip_addrs.extend(addrs);
         }
     }
     ip_addrs
@@ -115,7 +118,7 @@ pub(crate) struct DnsQuery {
 }
 
 impl DnsQuery {
-    pub(crate) fn new(seed: &str, service_bit_prefix: &str) -> Self {
+    pub(crate) fn new(seed: &str, service_bit_prefix: Option<&str>) -> Self {
         // Build a header
         let mut rng = thread_rng();
         let mut message_id = [0, 0];
@@ -141,7 +144,6 @@ impl DnsQuery {
     ) -> Result<Vec<IpAddr>, DNSQueryError> {
         let sock = UdpSocket::bind(LOCAL_HOST).await?;
         sock.connect(dns_resolver).await?;
-        sock.send(&self.message).await?;
         sock.send(&self.message).await?;
         let mut response_buf = [0u8; 512];
         let (amt, _src) = sock.recv_from(&mut response_buf).await?;

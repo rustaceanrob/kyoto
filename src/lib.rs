@@ -80,6 +80,8 @@ pub mod db;
 
 mod network;
 mod prelude;
+use network::dns::CBF_SERVICE_BIT_PREFIX;
+use network::dns::CBF_V2T_SERVICE_BIT_PREFIX;
 pub(crate) use prelude::impl_sourceless_error;
 
 mod broadcaster;
@@ -102,7 +104,6 @@ pub mod node;
 use chain::Filter;
 
 use network::dns::DnsQuery;
-use network::dns::CBF_V2T_SERVICE_BIT_PREFIX;
 use network::dns::DNS_RESOLVER_PORT;
 
 use std::net::{IpAddr, SocketAddr};
@@ -426,10 +427,9 @@ impl core::fmt::Display for NodeState {
 
 /// Query a Bitcoin DNS seeder using the configured resolver.
 ///
-/// This is **not** a generic DNS implementation. Host names are prefixed with a `x849` to filter
-/// for compact block filter nodes from the seeder. For example `dns.myseeder.com` will be queried
-/// as `x849.dns.myseeder.com`. Similar to [`lookup_host`](tokio::net::lookup_host), this has no
-/// guarantee to return any `IpAddr`.
+/// This is **not** a generic DNS implementation. It is specifically tailored to query and parse DNS for Bitcoin seeders.
+/// Iternally, three queries will be made with varying filters for the requested service flags.
+/// Similar to [`lookup_host`](tokio::net::lookup_host), this has no guarantee to return any `IpAddr`.
 ///
 /// # Example usage
 ///
@@ -446,10 +446,19 @@ impl core::fmt::Display for NodeState {
 /// }
 /// ```
 pub async fn lookup_host<S: AsRef<str>>(hostname: S, resolver: impl Into<IpAddr>) -> Vec<IpAddr> {
-    let dns_query = DnsQuery::new(hostname.as_ref(), CBF_V2T_SERVICE_BIT_PREFIX);
     let ip_addr = resolver.into();
     let socket_addr = SocketAddr::new(ip_addr, DNS_RESOLVER_PORT);
-    dns_query.lookup(socket_addr).await.unwrap_or(Vec::new())
+    let mut responses = Vec::new();
+    let dns_query = DnsQuery::new(hostname.as_ref(), None);
+    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
+    responses.extend(no_filter);
+    let dns_query = DnsQuery::new(hostname.as_ref(), Some(CBF_V2T_SERVICE_BIT_PREFIX));
+    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
+    responses.extend(no_filter);
+    let dns_query = DnsQuery::new(hostname.as_ref(), Some(CBF_SERVICE_BIT_PREFIX));
+    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
+    responses.extend(no_filter);
+    responses
 }
 
 macro_rules! log {
