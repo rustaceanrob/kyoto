@@ -95,10 +95,12 @@ pub(crate) fn default_port_from_network(network: &Network) -> u16 {
     }
 }
 
-pub(crate) fn encode_qname(domain: &str, filter: &str) -> Vec<u8> {
+pub(crate) fn encode_qname(domain: &str, filter: Option<&str>) -> Vec<u8> {
     let mut qname = Vec::new();
-    qname.push(filter.len() as u8);
-    qname.extend(filter.as_bytes());
+    if let Some(filter) = filter {
+        qname.push(filter.len() as u8);
+        qname.extend(filter.as_bytes());
+    }
     for label in domain.split('.') {
         qname.push(label.len() as u8);
         qname.extend(label.as_bytes());
