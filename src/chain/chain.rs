@@ -354,12 +354,14 @@ impl<H: HeaderStore> Chain<H> {
                 if pending.ne(&batch) {
                     self.request_state.pending_batch = None;
                     self.request_state.agreement_state.reset_agreements();
+                    self.request_state.last_filter_header_request = None;
                     Ok(CFHeaderChanges::Conflict)
                 } else {
                     self.request_state.agreement_state.got_agreement();
                     if self.request_state.agreement_state.enough_agree() {
                         self.request_state.agreement_state.reset_agreements();
                         self.push_cf_header_batch(batch, request.stop_hash);
+                        self.request_state.last_filter_header_request = None;
                         Ok(CFHeaderChanges::Extended)
                     } else {
                         self.request_state.pending_batch = Some((id, batch));
@@ -372,6 +374,7 @@ impl<H: HeaderStore> Chain<H> {
                 if self.request_state.agreement_state.enough_agree() {
                     self.request_state.agreement_state.reset_agreements();
                     self.push_cf_header_batch(batch, request.stop_hash);
+                    self.request_state.last_filter_header_request = None;
                     Ok(CFHeaderChanges::Extended)
                 } else {
                     self.request_state.pending_batch = Some((peer_id, batch));
@@ -433,6 +436,10 @@ impl<H: HeaderStore> Chain<H> {
     // Are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
         self.header_chain.filter_headers_synced()
+    }
+
+    pub(crate) fn has_open_cf_header_request(&self) -> bool {
+        self.request_state.last_filter_header_request.is_some()
     }
 
     // Handle a new filter
@@ -986,6 +993,7 @@ mod tests {
             .unwrap(),
             filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
         };
+        chain.next_cf_header_message();
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);

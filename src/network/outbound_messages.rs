@@ -56,6 +56,11 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
+    pub(crate) fn sendheaders(&mut self) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::SendHeaders;
+        self.serialize(msg)
+    }
+
     pub(crate) fn addr(&mut self) -> Result<Vec<u8>, PeerError> {
         let msg = NetworkMessage::GetAddr;
         self.serialize(msg)

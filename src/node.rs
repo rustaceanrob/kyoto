@@ -449,9 +449,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             };
             return Some(MainThreadMessage::GetHeaders(headers));
         } else if !chain.is_cf_headers_synced() {
-            return Some(MainThreadMessage::GetFilterHeaders(
-                chain.next_cf_header_message(),
-            ));
+            // We expect a future CF header message and should not make a new request
+            if chain.has_open_cf_header_request() {
+                return None;
+            } else {
+                return Some(MainThreadMessage::GetFilterHeaders(
+                    chain.next_cf_header_message(),
+                ));
+            }
         } else if !chain.is_filters_synced() {
             return Some(MainThreadMessage::GetFilters(chain.next_filter_message()));
         }
@@ -493,6 +498,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_map
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
+        // From the current state of `net_processing.cpp`, it doesn't really matter when we send
+        // this message.
+        peer_map
+            .send_message(nonce, MainThreadMessage::SendHeaders)
+            .await;
         // Now we may request peers if required
         if needs_peers {
             crate::log!(self.dialog, "Requesting new addresses");
@@ -519,6 +529,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         peer_id: PeerId,
         headers: Vec<Header>,
     ) -> Option<MainThreadMessage> {
+        let mut state = self.state.write().await;
+        *state = NodeState::Behind;
+        drop(state);
         let mut chain = self.chain.lock().await;
         match chain.sync_chain(headers).await {
             Ok(changes) => match changes {
@@ -672,7 +685,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 crate::log!(
                     self.dialog,
                     format!(
-                        "Peer {} responded late to a request for hash {}",
+                        "{} responded late to a request for hash {}",
                         peer_id, block_hash
                     )
                 );

@@ -394,6 +394,10 @@ impl<P: PeerStore + 'static> Peer<P> {
                 let message = message_generator.wtxid_relay()?;
                 self.write_bytes(writer, message).await?;
             }
+            MainThreadMessage::SendHeaders => {
+                let message = message_generator.sendheaders()?;
+                self.write_bytes(writer, message).await?;
+            }
             MainThreadMessage::GetHeaders(config) => {
                 let message = message_generator.headers(config.locators, config.stop_hash)?;
                 self.write_bytes(writer, message).await?;

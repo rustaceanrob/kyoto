@@ -22,6 +22,7 @@ pub(crate) enum MainThreadMessage {
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
     GetBlock(BlockHash),
+    SendHeaders,
     Disconnect,
     BroadcastPending,
     Verack,
