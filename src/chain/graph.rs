@@ -541,50 +541,72 @@ impl<'a> Iterator for BlockNodeIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::consensus::deserialize;
-
     use super::*;
+    use corepc_node::serde_json;
+    use std::fs::File;
     use std::str::FromStr;
+
+    #[derive(Debug, Clone)]
+    struct HexHeader(Header);
+    crate::prelude::impl_deserialize!(HexHeader, Header);
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct GraphScenario {
+        // Blocks that do not get reorged.
+        base: Vec<HexHeader>,
+        // Blocks that get reorged or become old
+        stale: Vec<HexHeader>,
+        // New competiting blocks
+        new: Vec<HexHeader>,
+    }
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct GraphTestFile {
+        scenarios: Vec<GraphScenario>,
+    }
+
+    fn get_graph_scenario(index: usize) -> GraphScenario {
+        let file = File::open("./tests/data/graph_scenarios.json").unwrap();
+        let graph_cases: GraphTestFile = serde_json::from_reader(&file).unwrap();
+        graph_cases.scenarios[index].clone()
+    }
 
     #[test]
     fn test_depth_one_reorg() {
-        let block_8: Header = deserialize(&hex::decode("0000002016fe292517eecbbd63227d126a6b1db30ebc5262c61f8f3a4a529206388fc262dfd043cef8454f71f30b5bbb9eb1a4c9aea87390f429721e435cf3f8aa6e2a9171375166ffff7f2000000000").unwrap()).unwrap();
-        let block_9: Header = deserialize(&hex::decode("000000205708a90197d93475975545816b2229401ccff7567cb23900f14f2bd46732c605fd8de19615a1d687e89db365503cdf58cb649b8e935a1d3518fa79b0d408704e71375166ffff7f2000000000").unwrap()).unwrap();
-        let block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093790c9f554a7780a6043a19619d2a4697364bb62abf6336c0568c31f1eedca3c3e171375166ffff7f2000000000").unwrap()).unwrap();
-        // let batch_1 = vec![block_8, block_9, block_10];
-        let new_block_10: Header = deserialize(&hex::decode("000000201d062f2162835787db536c55317e08df17c58078c7610328bdced198574093792151c0e9ce4e4c789ca98427d7740cc7acf30d2ca0c08baef266bf152289d814567e5e66ffff7f2001000000").unwrap()).unwrap();
-        let block_11: Header = deserialize(&hex::decode("00000020efcf8b12221fccc735b9b0b657ce15b31b9c50aff530ce96a5b4cfe02d8c0068496c1b8a89cf5dec22e46c35ea1035f80f5b666a1b3aa7f3d6f0880d0061adcc567e5e66ffff7f2001000000").unwrap()).unwrap();
-        // let fork = vec![new_block_10, block_11];
-
+        let GraphScenario { base, stale, new } = get_graph_scenario(0);
         let tip = Tip::from_checkpoint(
             7,
             BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
                 .unwrap(),
         );
         let mut chain = BlockTree::new(tip, Network::Regtest);
-        let accept_8 = chain.accept_header(block_8);
-        assert!(matches!(
-            accept_8,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_9 = chain.accept_header(block_9);
-        assert!(matches!(
-            accept_9,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_10 = chain.accept_header(block_10);
-        assert!(matches!(
-            accept_10,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
+        for header in &base {
+            let accept = chain.accept_header(header.0);
+            assert!(matches!(
+                accept,
+                AcceptHeaderChanges::Accepted { connected_at: _ }
+            ));
+        }
+        for header in &stale {
+            let accept = chain.accept_header(header.0);
+            assert!(matches!(
+                accept,
+                AcceptHeaderChanges::Accepted { connected_at: _ }
+            ));
+        }
+        // We just added 3 headers starting at height 7, so this should check out.
         assert_eq!(chain.height(), 10);
+        let mut new_header_iter = new.into_iter().map(|hex| hex.0);
+        let new_block_10 = new_header_iter.next().unwrap();
         let accept_new_10 = chain.accept_header(new_block_10);
         assert!(matches!(
             accept_new_10,
             AcceptHeaderChanges::ExtendedFork { connected_at: _ }
         ));
         assert_eq!(chain.height(), 10);
-        assert_eq!(chain.header_at_height(10), Some(block_10));
+        let old_block_10 = stale.first().unwrap().0;
+        assert_eq!(chain.header_at_height(10), Some(old_block_10));
+        let block_11 = new_header_iter.next().unwrap();
         let accept_11 = chain.accept_header(block_11);
         match accept_11 {
             AcceptHeaderChanges::Reorganization {
@@ -598,7 +620,7 @@ mod tests {
                         IndexedHeader::new(10, new_block_10)
                     ]
                 );
-                assert_eq!(block_10, disconnected.first().unwrap().header);
+                assert_eq!(old_block_10, disconnected.first().unwrap().header);
                 assert_eq!(10, disconnected.first().unwrap().height);
                 assert_eq!(1, disconnected.len())
             }
@@ -607,40 +629,32 @@ mod tests {
         assert_eq!(chain.header_at_height(12), None);
         assert_eq!(chain.header_at_height(11), Some(block_11));
         assert_eq!(chain.header_at_height(10), Some(new_block_10));
-        assert_eq!(chain.header_at_height(9), Some(block_9));
-        assert_eq!(chain.header_at_height(8), Some(block_8));
+        assert_eq!(chain.header_at_height(9), Some(base[1].0));
+        assert_eq!(chain.header_at_height(8), Some(base[0].0));
     }
 
     #[test]
     fn test_depth_two_reorg() {
-        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002052ff614fa461ff38b4a5c101d04fdcac2f34722e60bd43d12c8de0a394fe0c60444fb24b7e9885f60fed9927d27f23854ecfab29287163ef2b868d5d626f82ed97815e66ffff7f2002000000").unwrap()).unwrap();
-        let new_block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea349c6240c5d0521966771808950f796c9c04088bc9551a828b64f1cf06831705dfbc835e66ffff7f2000000000").unwrap()).unwrap();
-        let new_block_4: Header = deserialize(&hex::decode("00000020d2a1c6ba2be393f405fe2f4574565f9ee38ac68d264872fcd82b030970d0232ce882eb47c3dd138587120f1ad97dd0e73d1e30b79559ad516cb131f83dcb87e9bc835e66ffff7f2002000000").unwrap()).unwrap();
+        let GraphScenario { base, stale, new } = get_graph_scenario(1);
         let mut chain = BlockTree::from_genesis(Network::Regtest);
-        let accept_1 = chain.accept_header(block_1);
-        assert!(matches!(
-            accept_1,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_2 = chain.accept_header(block_2);
-        assert!(matches!(
-            accept_2,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_3 = chain.accept_header(block_3);
-        assert!(matches!(
-            accept_3,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_4 = chain.accept_header(block_4);
-        assert!(matches!(
-            accept_4,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
+        for header in &base {
+            let accept = chain.accept_header(header.0);
+            assert!(matches!(
+                accept,
+                AcceptHeaderChanges::Accepted { connected_at: _ }
+            ));
+        }
+        for header in &stale {
+            let accept = chain.accept_header(header.0);
+            assert!(matches!(
+                accept,
+                AcceptHeaderChanges::Accepted { connected_at: _ }
+            ));
+        }
+        // We started from genesis and add 4 blocks.
         assert_eq!(chain.height(), 4);
+        let mut new_header_iter = new.into_iter().map(|hex| hex.0);
+        let new_block_3 = new_header_iter.next().unwrap();
         // Create a new fork
         let accept_new_3 = chain.accept_header(new_block_3);
         assert!(matches!(
@@ -648,57 +662,55 @@ mod tests {
             AcceptHeaderChanges::ExtendedFork { connected_at: _ }
         ));
         assert_eq!(chain.height(), 4);
-        assert_eq!(chain.header_at_height(3), Some(block_3));
+        assert_eq!(chain.header_at_height(3), Some(stale[0].0));
         // Advertise the same fork
         let accept_new_3 = chain.accept_header(new_block_3);
         assert!(matches!(accept_new_3, AcceptHeaderChanges::Duplicate));
         assert_eq!(chain.height(), 4);
         // Extend the fork, but do not switch to it
+        let new_block_4 = new_header_iter.next().unwrap();
         let accept_new_4 = chain.accept_header(new_block_4);
         assert!(matches!(
             accept_new_4,
             AcceptHeaderChanges::ExtendedFork { connected_at: _ }
         ));
         assert_eq!(chain.height(), 4);
-        assert_eq!(chain.header_at_height(4), Some(block_4));
-        assert_eq!(chain.header_at_height(3), Some(block_3));
-        assert_eq!(chain.header_at_height(2), Some(block_2));
-        assert_eq!(chain.header_at_height(1), Some(block_1));
+        assert_eq!(chain.header_at_height(4), Some(stale[1].0));
+        assert_eq!(chain.header_at_height(3), Some(stale[0].0));
+        assert_eq!(chain.header_at_height(2), Some(base[1].0));
+        assert_eq!(chain.header_at_height(1), Some(base[0].0));
     }
 
     #[test]
     fn test_reorg_to_root() {
-        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb57241f855e66ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("00000020c81cedd6a989939936f31448e49d010a13c2e750acf02d3fa73c9c7ecfb9476e798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c420855e66ffff7f2000000000").unwrap()).unwrap();
-        // batch_1 = vec![block_1, block_2];
-        let new_block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb5724d5855e66ffff7f2004000000").unwrap()).unwrap();
-        let new_block_2: Header = deserialize(&hex::decode("00000020d1d80f53343a084bd0da6d6ab846f9fe4a133de051ea00e7cae16ed19f601065798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c4d6855e66ffff7f2000000000").unwrap()).unwrap();
-        // fork = vec![new_block_1, new_block_2];
-        let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("000000204877fed370af64c0a1f7a76f6944e1127aad965b1865f99ecfdf8fa72ae23377f51921d01ff1131bd589500a8ca142884297ceeb1aa762ad727249e9a23f2cb023865e66ffff7f2000000000").unwrap()).unwrap();
-        // batch_2 = vec![block_3, block_4];
+        let GraphScenario {
+            base: _,
+            stale,
+            new,
+        } = get_graph_scenario(2);
         let mut chain = BlockTree::from_genesis(Network::Regtest);
-        let accept_1 = chain.accept_header(block_1);
-        assert!(matches!(
-            accept_1,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
-        let accept_2 = chain.accept_header(block_2);
-        assert!(matches!(
-            accept_2,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
+        for header in &stale {
+            let accept = chain.accept_header(header.0);
+            assert!(matches!(
+                accept,
+                AcceptHeaderChanges::Accepted { connected_at: _ }
+            ));
+        }
         assert_eq!(chain.height(), 2);
+        let mut new_header_iter = new.into_iter().map(|hex| hex.0);
+        let new_block_1 = new_header_iter.next().unwrap();
         let fork_1 = chain.accept_header(new_block_1);
         assert!(matches!(
             fork_1,
             AcceptHeaderChanges::ExtendedFork { connected_at: _ }
         ));
+        let new_block_2 = new_header_iter.next().unwrap();
         let fork_2 = chain.accept_header(new_block_2);
         assert!(matches!(
             fork_2,
             AcceptHeaderChanges::ExtendedFork { connected_at: _ }
         ));
+        let block_3 = new_header_iter.next().unwrap();
         let reorg_1 = chain.accept_header(block_3);
         match reorg_1 {
             AcceptHeaderChanges::Reorganization {
@@ -716,13 +728,14 @@ mod tests {
                 assert_eq!(
                     disconnected,
                     vec![
-                        IndexedHeader::new(2, block_2),
-                        IndexedHeader::new(1, block_1),
+                        IndexedHeader::new(2, stale[1].0),
+                        IndexedHeader::new(1, stale[0].0),
                     ]
                 );
             }
             _ => panic!("reorganization should have been accepted"),
         }
+        let block_4 = new_header_iter.next().unwrap();
         let accept_4 = chain.accept_header(block_4);
         assert!(matches!(
             accept_4,
@@ -732,15 +745,15 @@ mod tests {
 
     #[test]
     fn test_assumed_checked() {
-        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f575b313ad3ef825cfc204c34da8f3c1fd1784e2553accfa38001010587cb5724d5855e66ffff7f2004000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("00000020d1d80f53343a084bd0da6d6ab846f9fe4a133de051ea00e7cae16ed19f601065798da2e5565335929ad303fc746acabc812ee8b06139bcf2a4c0eb533c21b8c4d6855e66ffff7f2000000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("0000002080f38c14e898d6646dd426428472888966e0d279d86453f42edc56fdb143241aa66c8fa8837d95be3f85d53f22e86a0d6d456b1ab348e073da4d42a39f50637423865e66ffff7f2000000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("000000204877fed370af64c0a1f7a76f6944e1127aad965b1865f99ecfdf8fa72ae23377f51921d01ff1131bd589500a8ca142884297ceeb1aa762ad727249e9a23f2cb023865e66ffff7f2000000000").unwrap()).unwrap();
+        let GraphScenario {
+            base,
+            stale: _,
+            new: _,
+        } = get_graph_scenario(3);
         let mut chain = BlockTree::from_genesis(Network::Regtest);
-        chain.accept_header(block_1);
-        chain.accept_header(block_2);
-        chain.accept_header(block_3);
-        chain.accept_header(block_4);
+        for header in base.into_iter().map(|hex| hex.0) {
+            chain.accept_header(header);
+        }
         chain.assume_checked_to(3);
         assert!(!chain.filters_synced());
         chain.assume_checked_to(4);
