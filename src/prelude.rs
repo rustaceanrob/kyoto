@@ -120,6 +120,27 @@ impl ZerolikeExt for Work {
 }
 
 #[cfg(test)]
+macro_rules! impl_deserialize {
+    ($t:ident, $for:ident) => {
+        impl<'de> serde::Deserialize<'de> for $t {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+                let bitcoin_type: $for =
+                    bitcoin::consensus::deserialize(&bytes).map_err(serde::de::Error::custom)?;
+                Ok($t(bitcoin_type))
+            }
+        }
+    };
+}
+
+#[cfg(test)]
+pub(crate) use impl_deserialize;
+
+#[cfg(test)]
 mod tests {
     use super::Median;
 
