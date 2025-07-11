@@ -140,11 +140,11 @@ pub(crate) enum ProcessBlockResponse {
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
+    use std::time::Duration;
 
     use super::*;
 
-    #[test]
-    fn test_block_queue() {
+    fn three_block_hashes() -> [BlockHash; 3] {
         let hash_1 =
             BlockHash::from_str("0000007a93b953158a12aef32eb9cc4366eb1eea5892fb04afbeec421c29319d")
                 .unwrap();
@@ -154,6 +154,12 @@ mod test {
         let hash_3 =
             BlockHash::from_str("000000254633c01d43534d80981c3d1e0f4f3541cce2af68084e7631832d2572")
                 .unwrap();
+        [hash_1, hash_2, hash_3]
+    }
+
+    #[test]
+    fn test_block_queue() {
+        let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
         queue.add(hash_1);
         queue.add(hash_2);
@@ -189,16 +195,7 @@ mod test {
 
     #[tokio::test(start_paused = true)]
     async fn test_laggy_peer() {
-        use std::time::Duration;
-        let hash_1 =
-            BlockHash::from_str("0000007a93b953158a12aef32eb9cc4366eb1eea5892fb04afbeec421c29319d")
-                .unwrap();
-        let hash_2 =
-            BlockHash::from_str("0000009e41d363546c5126c045bdef80e863324ac87f2bec88927a53662f6c0b")
-                .unwrap();
-        let hash_3 =
-            BlockHash::from_str("000000254633c01d43534d80981c3d1e0f4f3541cce2af68084e7631832d2572")
-                .unwrap();
+        let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
         queue.add(hash_1);
         queue.add(hash_2);
@@ -238,15 +235,7 @@ mod test {
 
     #[test]
     fn test_blocks_removed() {
-        let hash_1 =
-            BlockHash::from_str("0000007a93b953158a12aef32eb9cc4366eb1eea5892fb04afbeec421c29319d")
-                .unwrap();
-        let hash_2 =
-            BlockHash::from_str("0000009e41d363546c5126c045bdef80e863324ac87f2bec88927a53662f6c0b")
-                .unwrap();
-        let hash_3 =
-            BlockHash::from_str("000000254633c01d43534d80981c3d1e0f4f3541cce2af68084e7631832d2572")
-                .unwrap();
+        let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
         queue.add(hash_1);
         queue.add(hash_2);

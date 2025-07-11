@@ -611,7 +611,7 @@ impl<H: HeaderStore> Chain<H> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::{collections::HashSet, str::FromStr};
+    use std::{collections::HashSet, fs::File, str::FromStr};
 
     use bitcoin::hashes::sha256d;
     use bitcoin::hashes::Hash;
@@ -621,6 +621,7 @@ mod tests {
         p2p::message_filter::{CFHeaders, CFilter},
         BlockHash, FilterHash, FilterHeader,
     };
+    use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
     use crate::{
@@ -662,87 +663,168 @@ mod tests {
         )
     }
 
+    fn base_block() -> HeaderCheckpoint {
+        HeaderCheckpoint::new(
+            2496,
+            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
+                .unwrap(),
+        )
+    }
+
+    #[derive(Debug, Clone)]
+    struct HexHeader(Header);
+    crate::prelude::impl_deserialize!(HexHeader, Header);
+
+    #[derive(Debug, Clone)]
+    struct HexFilter(Vec<u8>);
+
+    impl<'de> serde::Deserialize<'de> for HexFilter {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+            Ok(HexFilter(bytes))
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct HexPrevHeader(FilterHeader);
+    crate::prelude::impl_deserialize!(HexPrevHeader, FilterHeader);
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct BlockData {
+        header: HexHeader,
+        filter: HexFilter,
+    }
+
+    impl BlockData {
+        fn filter_hash(&self) -> FilterHash {
+            let hash = sha256d::Hash::hash(&self.filter.0);
+            FilterHash::from_raw_hash(hash)
+        }
+    }
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    struct ChainScenario {
+        most_work: Vec<BlockData>,
+        stale_chain: Vec<BlockData>,
+        prev_header: HexPrevHeader,
+    }
+
+    impl ChainScenario {
+        fn most_work_headers(&self) -> Vec<Header> {
+            self.most_work.iter().map(|data| data.header.0).collect()
+        }
+
+        fn n_most_work_headers(&self, n: usize) -> Vec<Header> {
+            self.most_work
+                .iter()
+                .map(|data| data.header.0)
+                .take(n)
+                .collect()
+        }
+
+        fn filters(&self) -> Vec<CFilter> {
+            self.most_work
+                .iter()
+                .map(|data| CFilter {
+                    filter_type: 0x00,
+                    block_hash: data.header.0.block_hash(),
+                    filter: data.filter.0.clone(),
+                })
+                .collect()
+        }
+
+        fn n_most_work_filter_hashes(&self, n: usize) -> Vec<FilterHash> {
+            self.most_work
+                .iter()
+                .take(n)
+                .map(|data| data.filter_hash())
+                .collect()
+        }
+
+        fn last_block_hash(&self) -> BlockHash {
+            self.most_work
+                .last()
+                .map(|data| data.header.0.block_hash())
+                .unwrap()
+        }
+
+        fn last_block_header(&self) -> Header {
+            self.most_work.last().map(|data| data.header.0).unwrap()
+        }
+
+        fn prev_header(&self) -> FilterHeader {
+            self.prev_header.0
+        }
+    }
+
+    fn load_scenario() -> ChainScenario {
+        let file = File::open("./tests/data/chain_scenario_one.json").unwrap();
+        serde_json::from_reader(&file).unwrap()
+    }
+
     #[tokio::test]
     async fn test_fork_includes_old_vals() {
-        let gen = HeaderCheckpoint::new(
-            0,
-            BlockHash::from_str("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor, 1);
-        let block_1: Header = deserialize(&hex::decode("0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f047eb4d0fe76345e307d0e020a079cedfa37101ee7ac84575cf829a611b0f84bc4805e66ffff7f2001000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("00000020299e41732deb76d869fcdb5f72518d3784e99482f572afb73068d52134f1f75e1f20f5da8d18661d0f13aa3db8fff0f53598f7d61f56988a6d66573394b2c6ffc5805e66ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea3471f1dbedc283ce6a43a87ed3c8e6326dae8d3dbacce1b2daba08e508054ffdb697815e66ffff7f2001000000").unwrap()).unwrap();
-        let batch_1 = vec![block_1, block_2, block_3];
-        let new_block_3: Header = deserialize(&hex::decode("00000020b96feaa82716f11befeb608724acee4743e0920639a70f35f1637a88b8b6ea349c6240c5d0521966771808950f796c9c04088bc9551a828b64f1cf06831705dfbc835e66ffff7f2000000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("00000020d2a1c6ba2be393f405fe2f4574565f9ee38ac68d264872fcd82b030970d0232ce882eb47c3dd138587120f1ad97dd0e73d1e30b79559ad516cb131f83dcb87e9bc835e66ffff7f2002000000").unwrap()).unwrap();
-        let batch_2 = vec![block_1, block_2, new_block_3, block_4];
+        let chain_scenario = load_scenario();
+        let canonical = chain_scenario.most_work;
+        let mut canonical_iter = canonical.into_iter();
+        let block_1 = canonical_iter.next().unwrap().header.0;
+        let block_2 = canonical_iter.next().unwrap().header.0;
+        let block_3 = canonical_iter.next().unwrap().header.0;
+        let block_4 = chain_scenario
+            .stale_chain
+            .into_iter()
+            .next()
+            .unwrap()
+            .header
+            .0;
+        let batch_1 = vec![block_1, block_2, block_3, block_4];
+        let new_block_4 = canonical_iter.next().unwrap().header.0;
+        let block_5 = canonical_iter.next().unwrap().header.0;
+        let batch_2 = vec![block_1, block_2, block_3, new_block_4, block_5];
         let chain_sync = chain.sync_chain(batch_1).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 3);
-        let mut index = 1;
-        for block in vec![block_1, block_2, block_3] {
-            assert_eq!(
-                chain.header_chain.block_hash_at_height(index).unwrap(),
-                block.into()
-            );
-            index += 1;
-        }
+        assert_eq!(chain.header_chain.height(), 2500);
         let chain_sync = chain.sync_chain(batch_2).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 4);
-        let mut index = 1;
-        for block in vec![block_1, block_2, new_block_3, block_4] {
-            assert_eq!(
-                chain.header_chain.block_hash_at_height(index).unwrap(),
-                block.into()
-            );
-            index += 1;
-        }
+        assert_eq!(chain.header_chain.height(), 2501);
+        let block_iter = chain
+            .header_chain
+            .iter_headers()
+            .map(|header| header.header)
+            .collect::<Vec<Header>>();
+        assert_eq!(
+            block_iter,
+            vec![block_5, new_block_4, block_3, block_2, block_1]
+        );
     }
 
     #[tokio::test]
     async fn test_filters_out_of_order() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 1);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let header_batch = scenario.most_work_headers();
+        let block_5 = scenario.last_block_header();
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
+        assert_eq!(chain.header_chain.height(), 2501);
+        height_monitor.lock().await.insert(1.into(), 2501);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
+        let filter_hashes = scenario.n_most_work_filter_hashes(5);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: block_5.block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -750,74 +832,30 @@ mod tests {
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
         chain.next_filter_message();
-        let sync_filter_1 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_1.block_hash(),
-            filter: filter_1,
-        });
-        assert!(sync_filter_1.is_ok());
-        let sync_filter_3 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_3.block_hash(),
-            filter: filter_3,
-        });
-        assert!(sync_filter_3.is_ok());
-        let sync_filter_2 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_2.block_hash(),
-            filter: filter_2,
-        });
-        assert!(sync_filter_2.is_ok());
-        let sync_filter_4 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_4.block_hash(),
-            filter: filter_4,
-        });
-        assert!(sync_filter_4.is_ok());
+        for filter in scenario.filters().into_iter().rev() {
+            assert!(chain.sync_filter(filter).is_ok())
+        }
         assert!(chain.is_filters_synced());
     }
 
     #[tokio::test]
     async fn test_bad_filter() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 1);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
+        assert_eq!(chain.header_chain.height(), 2501);
+        height_monitor.lock().await.insert(1.into(), 2501);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -825,151 +863,53 @@ mod tests {
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
         chain.next_filter_message();
+        let mismatch_filter = scenario.filters().first().unwrap().filter.clone();
         let sync_filter_1 = chain.sync_filter(CFilter {
             filter_type: 0x00,
-            block_hash: block_1.block_hash(),
-            filter: filter_2,
+            block_hash: scenario.last_block_hash(),
+            filter: mismatch_filter,
         });
         assert!(sync_filter_1.is_err());
-        let sync_filter_1 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_1.block_hash(),
-            filter: filter_1,
-        });
-        assert!(sync_filter_1.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_bad_blockhash() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
-        let chain_sync = chain.sync_chain(header_batch).await;
-        assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        chain.next_cf_header_message();
-        let cf_headers = CFHeaders {
-            filter_type: 0x00,
-            // Wrong block hash
-            stop_hash: block_3.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
-        };
-        let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
-        assert!(cf_header_sync_res.is_err());
-        // Try the request again
-        chain.next_cf_header_message();
-        let cf_headers = CFHeaders {
-            filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
-        };
-        let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
-        assert!(cf_header_sync_res.is_ok());
-        let append_attempt = cf_header_sync_res.unwrap();
-        assert_eq!(CFHeaderChanges::Extended, append_attempt);
-        assert!(chain.is_cf_headers_synced());
-        chain.next_filter_message();
-        let sync_filter_1 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_2.block_hash(),
-            filter: filter_1.clone(),
-        });
-        assert!(sync_filter_1.is_err());
-        let sync_filter_1 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_1.block_hash(),
-            filter: filter_1,
-        });
+        let good_filter = scenario.filters().last().unwrap().clone();
+        let sync_filter_1 = chain.sync_filter(good_filter);
         assert!(sync_filter_1.is_ok());
     }
 
     #[tokio::test]
     async fn test_has_conflict() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
+        assert_eq!(chain.header_chain.height(), 2501);
+        height_monitor.lock().await.insert(1.into(), 2501);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
+        let mut conflict_hashes = scenario.n_most_work_filter_hashes(4);
+        conflict_hashes.push(
+            scenario
+                .stale_chain
+                .first()
+                .map(|data| data.filter_hash())
+                .unwrap(),
+        );
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_3],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: conflict_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -978,26 +918,18 @@ mod tests {
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(3.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1007,45 +939,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_uneven_cf_headers() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
-        assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
+        assert_eq!(chain.header_chain.height(), 2501);
+        height_monitor.lock().await.insert(1.into(), 2501);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1053,38 +962,26 @@ mod tests {
         // Not enough filter hashes
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(4),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         // Wrong stop hash
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_3.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.most_work_headers()[3].into(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1093,174 +990,102 @@ mod tests {
 
     #[tokio::test]
     async fn test_reorg_no_queue() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let new_block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
-        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let scenario = load_scenario();
+        let mut stale_headers = scenario.n_most_work_headers(3);
+        let stale_block_data = scenario.stale_chain.first().unwrap();
+        stale_headers.push(stale_block_data.header.0);
+        let chain_sync = chain.sync_chain(stale_headers).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let new_filter_4 = hex::decode("0189dff0").unwrap();
-        let filter_5 = hex::decode("01504fe0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let new_filter_hash_4 = sha256d::Hash::hash(&new_filter_4);
-        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        let new_filter_hash_4 = FilterHash::from_raw_hash(new_filter_hash_4);
-        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
         chain.next_cf_header_message();
         // Reorganize the blocks
-        let header_batch = vec![new_block_4, block_5];
+        let most_work = scenario.most_work_headers();
+        let header_batch = vec![most_work[3], most_work[4]];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.next_cf_header_message();
+        let mut stale_hashes = scenario.n_most_work_filter_hashes(3);
+        stale_hashes.push(stale_block_data.filter_hash());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: stale_block_data.header.0.block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: stale_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                new_filter_hash_4,
-                filter_hash_5,
-            ],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                new_filter_hash_4,
-                filter_hash_5,
-            ],
+            stop_hash: scenario.last_block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::Extended);
         chain.next_filter_message();
-        let sync_filter_1 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_1.block_hash(),
-            filter: filter_1,
-        });
+        let filters = scenario.filters();
+        let sync_filter_1 = chain.sync_filter(filters[0].clone());
         assert!(sync_filter_1.is_ok());
-        let sync_filter_4 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: block_4.block_hash(),
-            filter: filter_4,
-        });
-        assert!(sync_filter_4.is_err());
-        let sync_filter_4 = chain.sync_filter(CFilter {
-            filter_type: 0x00,
-            block_hash: new_block_4.block_hash(),
-            filter: new_filter_4,
-        });
+        let sync_filter_2 = chain.sync_filter(filters[1].clone());
+        assert!(sync_filter_2.is_ok());
+        let sync_filter_4 = chain.sync_filter(filters[3].clone());
         assert!(sync_filter_4.is_ok());
     }
 
     #[tokio::test]
     async fn test_reorg_with_queue() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134f84b9962adfb060e7b251a52d0ad0bc13eb6a69d35900860e9e0e027ff2bb86a3462c266ffff7f2001000000").unwrap()).unwrap();
-        let new_block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
-        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let mut header_batch = scenario.n_most_work_headers(3);
+        let stale = scenario
+            .stale_chain
+            .first()
+            .map(|data| data.header.0)
+            .unwrap();
+        header_batch.push(stale);
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0107dda0").unwrap();
-        let new_filter_4 = hex::decode("0189dff0").unwrap();
-        let filter_5 = hex::decode("01504fe0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let new_filter_hash_4 = sha256d::Hash::hash(&new_filter_4);
-        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        let new_filter_hash_4 = FilterHash::from_raw_hash(new_filter_hash_4);
-        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
         chain.next_cf_header_message();
+        let mut stale_hashes = scenario.n_most_work_filter_hashes(3);
+        let stale_hash = scenario
+            .stale_chain
+            .first()
+            .map(|data| data.filter_hash())
+            .unwrap();
+        stale_hashes.push(stale_hash);
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: stale.block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: stale_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         // Reorganize the blocks
+        let new_chain = scenario.most_work_headers();
+        let new_block_4 = new_chain[3];
+        let block_5 = new_chain[4];
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
@@ -1270,18 +1095,8 @@ mod tests {
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                new_filter_hash_4,
-                filter_hash_5,
-            ],
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1289,18 +1104,8 @@ mod tests {
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                new_filter_hash_4,
-                filter_hash_5,
-            ],
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1310,11 +1115,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "temporarily broken due to hex decoding"]
     async fn reorg_during_filter_sync() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
@@ -1430,40 +1231,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_inv_no_queue() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
-        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
+        let scenario = load_scenario();
+        let header_batch = scenario.n_most_work_headers(4);
+        let block_4 = header_batch
+            .last()
+            .map(|header| header.block_hash())
+            .unwrap();
         let chain_sync = chain.sync_chain(header_batch).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0189dff0").unwrap();
-        let filter_5 = hex::decode("01504fe0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
         chain.next_cf_header_message();
+        let block_5 = scenario.last_block_header();
         let chain_sync = chain.sync_chain(vec![block_5]).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
@@ -1471,13 +1254,9 @@ mod tests {
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            stop_hash: block_4,
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(4),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_err());
@@ -1485,36 +1264,16 @@ mod tests {
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                filter_hash_4,
-                filter_hash_5,
-            ],
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                filter_hash_4,
-                filter_hash_5,
-            ],
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
         };
         let cf_header_sync_res = chain.sync_cf_headers(2.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
@@ -1522,72 +1281,39 @@ mod tests {
 
     #[tokio::test]
     async fn test_inv_with_queue() {
-        let gen = HeaderCheckpoint::new(
-            2496,
-            BlockHash::from_str("4b4f478800538b3301b681358f84d870da0f9c4cde63ebd85fa0f273dfb07c6a")
-                .unwrap(),
-        );
+        let gen = base_block();
         let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
-        let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
-        let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
-        let block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
-        let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
-        let header_batch = vec![block_1, block_2, block_3, block_4];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let scenario = load_scenario();
+        let first_four = scenario.n_most_work_headers(4);
+        let block_4 = first_four.last().copied().unwrap();
+        let chain_sync = chain.sync_chain(first_four).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
-        let filter_1 = hex::decode("018976c0").unwrap();
-        let filter_2 = hex::decode("018b1f28").unwrap();
-        let filter_3 = hex::decode("01117310").unwrap();
-        let filter_4 = hex::decode("0189dff0").unwrap();
-        let filter_5 = hex::decode("01504fe0").unwrap();
-        let filter_hash_1 = sha256d::Hash::hash(&filter_1);
-        let filter_hash_2 = sha256d::Hash::hash(&filter_2);
-        let filter_hash_3 = sha256d::Hash::hash(&filter_3);
-        let filter_hash_4 = sha256d::Hash::hash(&filter_4);
-        let filter_hash_5 = sha256d::Hash::hash(&filter_5);
-        let filter_hash_1 = FilterHash::from_raw_hash(filter_hash_1);
-        let filter_hash_2 = FilterHash::from_raw_hash(filter_hash_2);
-        let filter_hash_3 = FilterHash::from_raw_hash(filter_hash_3);
-        let filter_hash_4 = FilterHash::from_raw_hash(filter_hash_4);
-        let filter_hash_5 = FilterHash::from_raw_hash(filter_hash_5);
+        let first_four_filter_hashes = scenario.n_most_work_filter_hashes(4);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: block_4.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![filter_hash_1, filter_hash_2, filter_hash_3, filter_hash_4],
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: first_four_filter_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
-        let chain_sync = chain.sync_chain(vec![block_5]).await;
+        let last_header = scenario.last_block_header();
+        let all_filter_hashes = scenario.n_most_work_filter_hashes(5);
+        let chain_sync = chain.sync_chain(vec![last_header]).await;
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.clear_compact_filter_queue();
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
-            stop_hash: block_5.block_hash(),
-            previous_filter_header: FilterHeader::from_slice(
-                &hex::decode("12c10339861d7ca367696b8c92a4c5acb609e66e5bf2d352376225ead1f78011")
-                    .unwrap(),
-            )
-            .unwrap(),
-            filter_hashes: vec![
-                filter_hash_1,
-                filter_hash_2,
-                filter_hash_3,
-                filter_hash_4,
-                filter_hash_5,
-            ],
+            stop_hash: last_header.block_hash(),
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: all_filter_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
         assert!(cf_header_sync_res.is_ok());
