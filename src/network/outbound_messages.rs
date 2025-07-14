@@ -71,6 +71,11 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
+    pub(crate) fn sendheaders(&mut self) -> Result<Vec<u8>, PeerError> {
+        let msg = NetworkMessage::SendHeaders;
+        self.serialize(msg)
+    }
+
     pub(crate) fn headers(
         &mut self,
         locator_hashes: Vec<BlockHash>,
