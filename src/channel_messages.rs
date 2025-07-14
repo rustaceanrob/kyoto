@@ -18,6 +18,8 @@ pub(crate) enum MainThreadMessage {
     GetAddr,
     GetAddrV2,
     WtxidRelay,
+    #[allow(unused)]
+    SendHeaders,
     GetHeaders(GetHeaderConfig),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
