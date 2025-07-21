@@ -3,7 +3,7 @@ use std::{
     fmt::Debug,
     net::IpAddr,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use bitcoin::{
@@ -33,7 +33,7 @@ use crate::{
         peer::Peer,
         PeerId, PeerTimeoutConfig,
     },
-    prelude::{default_port_from_network, Median, Netgroup},
+    prelude::{default_port_from_network, Netgroup},
     PeerStoreSizeConfig, TrustedPeer, Warning,
 };
 
@@ -47,7 +47,6 @@ type Whitelist = Vec<TrustedPeer>;
 // A peer that is or was connected to the node
 #[derive(Debug)]
 pub(crate) struct ManagedPeer {
-    net_time: i64,
     address: AddrV2,
     port: u16,
     service_flags: ServiceFlags,
@@ -75,7 +74,6 @@ pub(crate) struct PeerMap<P: PeerStore + 'static> {
     dns_resolver: DnsResolver,
 }
 
-#[allow(dead_code)]
 impl<P: PeerStore> PeerMap<P> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -122,32 +120,6 @@ impl<P: PeerStore> PeerMap<P> {
             .values()
             .filter(|peer| !peer.handle.is_finished())
             .count()
-    }
-
-    // The number of peers that serve compact block filters
-    pub fn num_cpf_peers(&mut self) -> usize {
-        self.map
-            .values()
-            .filter(|peer| !peer.handle.is_finished())
-            .filter(|peer| peer.service_flags.has(ServiceFlags::COMPACT_FILTERS))
-            .count()
-    }
-
-    // Get the median time adjustment for the currently connected peers
-    pub fn median_time_adjustment(&self) -> i64 {
-        let mut time_offsets: Vec<i64> = self.map.values().map(|peer| peer.net_time).collect();
-        time_offsets.median()
-    }
-
-    // Set the time offset of a connected peer
-    pub fn set_offset(&mut self, peer: PeerId, time: i64) {
-        if let Some(peer) = self.map.get_mut(&peer) {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs();
-            peer.net_time = time - now as i64;
-        }
     }
 
     // Set a new timeout duration
@@ -198,7 +170,6 @@ impl<P: PeerStore> PeerMap<P> {
                 address: loaded_peer.addr,
                 port: loaded_peer.port,
                 broadcast_min: FeeRate::BROADCAST_MIN,
-                net_time: 0,
                 ptx,
                 handle,
             },

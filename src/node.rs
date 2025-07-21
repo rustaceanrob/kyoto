@@ -169,7 +169,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 PeerMessage::Version(version) => {
                                     {
                                         let mut peer_map = self.peer_map.lock().await;
-                                        peer_map.set_offset(peer_thread.nonce, version.timestamp);
                                         peer_map.set_services(peer_thread.nonce, version.services);
                                         peer_map.set_height(peer_thread.nonce, version.start_height as u32).await;
                                     }
