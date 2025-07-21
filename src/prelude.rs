@@ -21,34 +21,6 @@ macro_rules! impl_sourceless_error {
 
 pub(crate) use impl_sourceless_error;
 
-pub trait Median<T> {
-    fn median(&mut self) -> T;
-}
-
-macro_rules! impl_median_for {
-    ($t:ident) => {
-        impl Median<$t> for [$t] {
-            fn median(&mut self) -> $t {
-                self.sort();
-                let len = self.len();
-                if len == 0 {
-                    0
-                } else if len % 2 == 1 {
-                    self[len / 2]
-                } else {
-                    let mid = len / 2;
-                    (self[mid - 1] + self[mid]) / 2
-                }
-            }
-        }
-    };
-}
-
-impl_median_for!(u32);
-impl_median_for!(u64);
-impl_median_for!(i32);
-impl_median_for!(i64);
-
 pub trait Netgroup {
     fn netgroup(&self) -> String;
 }
@@ -139,24 +111,3 @@ macro_rules! impl_deserialize {
 
 #[cfg(test)]
 pub(crate) use impl_deserialize;
-
-#[cfg(test)]
-mod tests {
-    use super::Median;
-
-    #[test]
-    fn test_median() {
-        let mut empty: Vec<u32> = Vec::new();
-        assert_eq!(empty.median(), 0);
-        let mut single: Vec<u32> = vec![4];
-        assert_eq!(single.median(), 4);
-        let mut odd: Vec<u32> = vec![2, 3, 4, 5, 1];
-        assert_eq!(odd.median(), 3);
-        let mut even: Vec<u32> = vec![2, 3, 4, 5, 6, 1];
-        assert_eq!(even.median(), 3);
-        let mut even: Vec<i64> = vec![2, 3, 4, 5, 6, 1];
-        assert_eq!(even.median(), 3.5 as i64);
-        let mut mtp: Vec<u64> = vec![420, 120, 120, 120, 120, 120, 620, 620, 620, 620, 620];
-        assert_eq!(mtp.median(), 420);
-    }
-}
