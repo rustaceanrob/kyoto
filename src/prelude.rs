@@ -63,7 +63,6 @@ pub(crate) fn default_port_from_network(network: &Network) -> u16 {
         Network::Testnet4 => 48333,
         Network::Signet => 38333,
         Network::Regtest => 18444,
-        _ => unreachable!(),
     }
 }
 

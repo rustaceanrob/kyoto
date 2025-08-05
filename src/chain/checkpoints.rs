@@ -542,7 +542,6 @@ impl HeaderCheckpoint {
             Network::Testnet4 => Self::headers_from_const(TESTNET4_HEADER_CP),
             Network::Signet => Self::headers_from_const(SIGNET_HEADER_CP),
             Network::Regtest => Self::headers_from_const(REGTEST_HEADER_CP),
-            _ => unreachable!(),
         };
         let mut cp = *checkpoints
             .first()
@@ -568,7 +567,6 @@ impl HeaderCheckpoint {
             Network::Testnet4 => Self::headers_from_const(TESTNET4_HEADER_CP),
             Network::Signet => Self::headers_from_const(SIGNET_HEADER_CP),
             Network::Regtest => Self::headers_from_const(REGTEST_HEADER_CP),
-            _ => unreachable!(),
         };
         *checkpoints
             .last()
@@ -603,7 +601,6 @@ impl HeaderCheckpoints {
             Network::Testnet4 => TESTNET4_HEADER_CP.to_vec(),
             Network::Signet => SIGNET_HEADER_CP.to_vec(),
             Network::Regtest => REGTEST_HEADER_CP.to_vec(),
-            _ => unreachable!(),
         };
         cp_list.iter().for_each(|(height, hash)| {
             checkpoints.push_back(HeaderCheckpoint {
