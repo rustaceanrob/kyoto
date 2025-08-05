@@ -92,7 +92,6 @@ pub(crate) async fn bootstrap_dns(network: Network, dns_resolver: DnsResolver) -
         Network::Signet => SIGNET_SEEDS.to_vec(),
         Network::Regtest => Vec::with_capacity(0),
         Network::Testnet4 => TESTNET4_SEEDS.to_vec(),
-        _ => unreachable!(),
     };
     let mut ip_addrs: Vec<IpAddr> = vec![];
     for host in seeds {
