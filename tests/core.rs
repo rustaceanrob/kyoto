@@ -109,10 +109,10 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<
     }
 }
 
-async fn print_logs(mut log_rx: Receiver<String>, mut warn_rx: UnboundedReceiver<Warning>) {
+async fn print_logs(mut info_rx: Receiver<Info>, mut warn_rx: UnboundedReceiver<Warning>) {
     loop {
         tokio::select! {
-            log = log_rx.recv() => {
+            log = info_rx.recv() => {
                 if let Some(log) = log {
                     println!("{log}")
                 }
@@ -143,12 +143,11 @@ async fn live_reorg() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     // Reorganize the blocks
     let old_best = best;
@@ -196,12 +195,11 @@ async fn live_reorg_additional_sync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     // Reorganize the blocks
     let old_best = best;
@@ -252,12 +250,11 @@ async fn various_client_methods() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     let batch = requester.get_header_range(10_000..10_002).await.unwrap();
     assert!(batch.is_empty());
@@ -286,12 +283,11 @@ async fn stop_reorg_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     let batch = requester.get_header_range(0..10).await.unwrap();
     assert!(!batch.is_empty());
@@ -307,12 +303,11 @@ async fn stop_reorg_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // Make sure the reorganization is caught after a cold start
     while let Some(message) = channel.recv().await {
         match message {
@@ -342,12 +337,11 @@ async fn stop_reorg_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
     requester.shutdown().unwrap();
@@ -370,12 +364,11 @@ async fn stop_reorg_two_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     requester.shutdown().unwrap();
     // Reorganize the blocks
@@ -392,12 +385,11 @@ async fn stop_reorg_two_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     while let Some(message) = channel.recv().await {
         match message {
             kyoto::messages::Event::BlocksDisconnected {
@@ -426,12 +418,11 @@ async fn stop_reorg_two_resync() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
     requester.shutdown().unwrap();
@@ -453,12 +444,11 @@ async fn stop_reorg_start_on_orphan() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     drop(handle);
     requester.shutdown().unwrap();
@@ -478,12 +468,11 @@ async fn stop_reorg_start_on_orphan() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = channel.recv().await {
         match message {
@@ -519,12 +508,11 @@ async fn stop_reorg_start_on_orphan() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
     drop(handle);
@@ -544,12 +532,11 @@ async fn stop_reorg_start_on_orphan() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
-    tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
     sync_assert(&best, &mut channel).await;
     requester.shutdown().unwrap();
@@ -637,7 +624,6 @@ async fn tx_can_broadcast() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        mut log_rx,
         mut info_rx,
         mut warn_rx,
         mut event_rx,
@@ -646,11 +632,6 @@ async fn tx_can_broadcast() {
     tokio::time::timeout(tokio::time::Duration::from_secs(60), async move {
         loop {
             tokio::select! {
-                log = log_rx.recv() => {
-                    if let Some(log) = log {
-                        println!("{log}")
-                    }
-                }
                 info = info_rx.recv() => {
                     if let Some(info) = info {
                         match info {
@@ -700,14 +681,13 @@ async fn blocks_are_fetched() {
     }
     let Client {
         requester: _,
-        log_rx,
-        info_rx: _,
+        info_rx,
         warn_rx,
         event_rx: mut channel,
     } = client;
     println!("Asserting all blocks were requested");
     tokio::task::spawn(async move { node.run().await });
-    let handle = tokio::task::spawn(async move { print_logs(log_rx, warn_rx).await });
+    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     while let Some(event) = channel.recv().await {
         match event {
             Event::Block(indexed_block) => {

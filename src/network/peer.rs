@@ -88,11 +88,7 @@ impl<P: PeerStore + 'static> Peer<P> {
             )
             .await
             .map_err(|_| PeerError::HandshakeFailed)?;
-            if let Err(ref e) = handshake_result {
-                crate::log!(
-                    self.dialog,
-                    format!("Failed to establish an encrypted connection: {e}")
-                );
+            if handshake_result.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect);
             }
             let (decryptor, encryptor) = handshake_result?;
@@ -135,7 +131,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                 return Ok(());
             }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
-                crate::log!(self.dialog, format!(
+                crate::debug!(format!(
                     "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
                     self.nonce, self.timeout_config.max_connection_time.as_secs(),
                 ));
@@ -314,7 +310,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                         self.write_bytes(writer, msg).await?;
                         self.message_state.sent_tx(wtxid);
                         tx_queue.successful(wtxid);
-                        crate::info!(self.dialog, Info::TxGossiped(wtxid))
+                        self.dialog.send_info(Info::TxGossiped(wtxid)).await;
                     }
                 }
                 Ok(())
@@ -329,7 +325,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                 }
                 self.message_state.verack.got_ack();
                 if self.message_state.verack.both_acks() {
-                    crate::info!(self.dialog, Info::SuccessfulHandshake);
+                    self.dialog.send_info(Info::SuccessfulHandshake).await;
                     self.message_state.finish_version_handshake();
                 }
                 Ok(())
@@ -433,7 +429,7 @@ impl<P: PeerStore + 'static> Peer<P> {
                 self.write_bytes(writer, message).await?;
                 self.message_state.verack.sent_ack();
                 if self.message_state.verack.both_acks() {
-                    crate::info!(self.dialog, Info::SuccessfulHandshake);
+                    self.dialog.send_info(Info::SuccessfulHandshake).await;
                     self.message_state.finish_version_handshake();
                 }
                 // Take any pending announcements and share them now that the handshake is over
@@ -469,22 +465,16 @@ impl<P: PeerStore + 'static> Peer<P> {
         W: AsyncWrite + Send + Unpin,
         R: AsyncRead + Send + Unpin,
     {
-        crate::log!(
-            self.dialog,
-            "Initiating a handshake for encrypted messaging"
-        );
+        crate::debug!("Initiating a handshake for encrypted messaging");
         let handshake =
             AsyncProtocol::new(self.network, Role::Initiator, None, None, reader, writer).await;
         match handshake {
             Ok(proto) => {
-                crate::log!(self.dialog, "Established an encrypted connection");
+                crate::debug!("Established an encrypted connection");
                 let (reader, writer) = proto.into_split();
                 Ok((reader.decoder(), writer.encoder()))
             }
-            Err(e) => {
-                crate::log!(self.dialog, format!("V2 handshake failed {e}"));
-                Err(PeerError::HandshakeFailed)
-            }
+            Err(_) => Err(PeerError::HandshakeFailed),
         }
     }
 }

@@ -56,7 +56,6 @@ async fn main() {
     // specific tasks.
     let Client {
         requester,
-        mut log_rx,
         mut info_rx,
         mut warn_rx,
         mut event_rx,
@@ -92,11 +91,6 @@ async fn main() {
                         Info::ConnectionsMet => tracing::info!("All required connections met"),
                         _ => (),
                     }
-                }
-            }
-            log = log_rx.recv() => {
-                if let Some(log) = log {
-                    tracing::info!("{log}");
                 }
             }
             warn = warn_rx.recv() => {

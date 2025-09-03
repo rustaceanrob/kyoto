@@ -142,14 +142,12 @@ impl<H: HeaderStore> Chain<H> {
                     HeaderRejection::UnknownPrevHash(_) => {
                         return Err(HeaderPersistenceError::CannotLocateHistory);
                     }
-                    HeaderRejection::InvalidPow { expected, got } => {
-                        crate::log!(
-                            self.dialog,
-                            format!(
-                                "Unexpected invalid proof of work when importing a block header. expected {}, got: {}",
-                                expected.to_consensus(),
-                                got.to_consensus()
-                            )
+                    HeaderRejection::InvalidPow {
+                        expected: _,
+                        got: _,
+                    } => {
+                        crate::debug!(
+                            "Unexpected invalid proof of work when importing a block header"
                         );
                     }
                 },
@@ -183,22 +181,19 @@ impl<H: HeaderStore> Chain<H> {
             let changes = self.header_chain.accept_header(header);
             match changes {
                 AcceptHeaderChanges::Accepted { connected_at } => {
-                    crate::log!(
-                        self.dialog,
-                        format!(
-                            "Chain updated {} -> {}",
-                            connected_at.height,
-                            connected_at.header.block_hash()
-                        )
-                    );
+                    crate::debug!(format!(
+                        "Chain updated {} -> {}",
+                        connected_at.height,
+                        connected_at.header.block_hash()
+                    ));
                     db.stage(BlockHeaderChanges::Connected(connected_at));
                     if let Some(checkpoint) = next_checkpoint {
                         if connected_at.height.eq(&checkpoint.height) {
                             if connected_at.header.block_hash().eq(&checkpoint.hash) {
-                                crate::log!(
-                                    self.dialog,
-                                    format!("Found checkpoint, height: {}", checkpoint.height)
-                                );
+                                crate::debug!(format!(
+                                    "Found checkpoint, height: {}",
+                                    checkpoint.height
+                                ));
                                 self.checkpoints.advance();
                             } else {
                                 self.dialog
@@ -213,24 +208,21 @@ impl<H: HeaderStore> Chain<H> {
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => match next_checkpoint {
                     Some(_checkpoint_expected) => {
-                        crate::log!(self.dialog, "Detected fork before known checkpoint");
+                        crate::debug!("Detected fork before known checkpoint");
                         self.dialog.send_warning(Warning::UnexpectedSyncError {
                             warning: "Pre-checkpoint fork".into(),
                         });
                     }
                     None => {
                         fork_added = Some(connected_at);
-                        crate::log!(
-                            self.dialog,
-                            format!("Fork created or extended {}", connected_at.height)
-                        )
+                        crate::debug!(format!("Fork created or extended {}", connected_at.height))
                     }
                 },
                 AcceptHeaderChanges::Reorganization {
                     mut accepted,
                     mut disconnected,
                 } => {
-                    crate::log!(self.dialog, "Valid reorganization found");
+                    crate::debug!("Valid reorganization found");
                     accepted.sort();
                     disconnected.sort();
                     let removed_hashes: Vec<BlockHash> = disconnected
@@ -253,8 +245,8 @@ impl<H: HeaderStore> Chain<H> {
                         expected: _,
                         got: _,
                     } => return Err(HeaderSyncError::InvalidBits),
-                    HeaderRejection::UnknownPrevHash(prev) => {
-                        crate::log!(self.dialog, format!("Unknown prevhash does not link to the current header chain: {prev}"));
+                    HeaderRejection::UnknownPrevHash(_) => {
+                        crate::debug!("Unknown prevhash does not link to the current header chain");
                         return Err(HeaderSyncError::FloatingHeaders);
                     }
                 },
@@ -581,30 +573,26 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     pub(crate) async fn send_chain_update(&self) {
-        crate::info!(
-            self.dialog,
-            Info::Progress(Progress::new(
+        self.dialog
+            .send_info(Info::Progress(Progress::new(
                 self.header_chain.total_filter_headers_synced(),
                 self.header_chain.total_filters_synced(),
-                self.header_chain.internal_chain_len() as u32
-            ))
-        );
-        crate::log!(
-            self.dialog,
-            format!(
-                "Headers: ({}/{}) CFHeaders: ({}/{}) CFilters: ({}/{})",
-                self.header_chain.height(),
-                self.heights
-                    .lock()
-                    .await
-                    .max()
-                    .unwrap_or(self.header_chain.height()),
-                self.header_chain.total_filter_headers_synced(),
                 self.header_chain.internal_chain_len() as u32,
-                self.header_chain.total_filters_synced(),
-                self.header_chain.internal_chain_len() as u32,
-            )
-        );
+            )))
+            .await;
+        crate::debug!(format!(
+            "Headers: ({}/{}) CFHeaders: ({}/{}) CFilters: ({}/{})",
+            self.header_chain.height(),
+            self.heights
+                .lock()
+                .await
+                .max()
+                .unwrap_or(self.header_chain.height()),
+            self.header_chain.total_filter_headers_synced(),
+            self.header_chain.internal_chain_len() as u32,
+            self.header_chain.total_filters_synced(),
+            self.header_chain.internal_chain_len() as u32,
+        ));
     }
 }
 
@@ -639,7 +627,6 @@ mod tests {
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: u8,
     ) -> Chain<()> {
-        let (log_tx, _) = tokio::sync::mpsc::channel::<String>(1);
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -650,13 +637,7 @@ mod tests {
             HashSet::new(),
             anchor,
             checkpoints,
-            Arc::new(Dialog::new(
-                crate::LogLevel::Debug,
-                log_tx,
-                info_tx,
-                warn_tx,
-                event_tx,
-            )),
+            Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
             (),
             peers,
