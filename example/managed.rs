@@ -4,7 +4,7 @@
 
 use kyoto::messages::Event;
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint, Client};
-use kyoto::{AddrV2, Address, BlockHash, LogLevel, Network, ServiceFlags, TrustedPeer};
+use kyoto::{AddrV2, Address, BlockHash, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{net::Ipv4Addr, str::FromStr};
 
@@ -45,8 +45,6 @@ async fn main() {
         .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(1)
-        // Omit debug messages
-        .log_level(LogLevel::Info)
         // Create the node and client
         .build()
         .unwrap();
@@ -55,7 +53,6 @@ async fn main() {
 
     let Client {
         requester,
-        log_rx: _,
         mut info_rx,
         mut warn_rx,
         mut event_rx,
