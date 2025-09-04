@@ -16,7 +16,7 @@ use crate::{
     chain::checkpoints::HeaderCheckpoint,
     db::traits::{HeaderStore, PeerStore},
 };
-use crate::{LogLevel, PeerStoreSizeConfig, TrustedPeer};
+use crate::{PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "rusqlite")]
 /// The default node returned from the [`NodeBuilder`].
@@ -146,12 +146,6 @@ impl NodeBuilder {
     /// If none is provided, the _most recent_ checkpoint will be used.
     pub fn after_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
         self.config.header_checkpoint = Some(checkpoint.into());
-        self
-    }
-
-    /// Set the [`LogLevel`]. Omitting log messages may improve performance.
-    pub fn log_level(mut self, log_level: LogLevel) -> Self {
-        self.config.log_level = log_level;
         self
     }
 

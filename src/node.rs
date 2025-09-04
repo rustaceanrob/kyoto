@@ -76,17 +76,15 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             connection_type,
             target_peer_size,
             peer_timeout_config,
-            log_level,
         } = config;
         // Set up a communication channel between the node and client
-        let (log_tx, log_rx) = mpsc::channel::<String>(32);
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
         let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
-        let client = Client::new(log_rx, info_rx, warn_rx, event_rx, ctx);
+        let client = Client::new(info_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
-        let dialog = Arc::new(Dialog::new(log_level, log_tx, info_tx, warn_tx, event_tx));
+        let dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
         // We always assume we are behind
         let state = Arc::new(RwLock::new(NodeState::Behind));
         // Configure the peer manager
@@ -141,14 +139,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
     pub async fn run(&self) -> Result<(), NodeError<H::Error, P::Error>> {
-        crate::log!(self.dialog, "Starting node");
-        crate::log!(
-            self.dialog,
-            format!(
-                "Configured connection requirement: {} peers",
-                self.required_peers
-            )
-        );
+        crate::debug!("Starting node");
+        crate::debug!(format!(
+            "Configured connection requirement: {} peers",
+            self.required_peers
+        ));
         self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut peer_recv = self.peer_recv.lock().await;
@@ -174,11 +169,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     }
                                     let response = self.handle_version(peer_thread.nonce, version).await?;
                                     self.send_message(peer_thread.nonce, response).await;
-                                    crate::log!(self.dialog, format!("[{}]: version", peer_thread.nonce));
+                                    crate::debug!(format!("[{}]: version", peer_thread.nonce));
                                 }
                                 PeerMessage::Headers(headers) => {
                                     last_block.reset();
-                                    crate::log!(self.dialog, format!("[{}]: headers", peer_thread.nonce));
+                                    crate::debug!(format!("[{}]: headers", peer_thread.nonce));
                                     match self.handle_headers(peer_thread.nonce, headers).await {
                                         Some(response) => {
                                             self.send_message(peer_thread.nonce, response).await;
@@ -187,7 +182,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     }
                                 }
                                 PeerMessage::FilterHeaders(cf_headers) => {
-                                    crate::log!(self.dialog, format!("[{}]: filter headers", peer_thread.nonce));
+                                    crate::debug!(format!("[{}]: filter headers", peer_thread.nonce));
                                     match self.handle_cf_headers(peer_thread.nonce, cf_headers).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
@@ -210,7 +205,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                     None => continue,
                                 },
                                 PeerMessage::NewBlocks(blocks) => {
-                                    crate::log!(self.dialog, format!("[{}]: inv", peer_thread.nonce));
+                                    crate::debug!(format!("[{}]: inv", peer_thread.nonce));
                                     match self.handle_inventory_blocks(peer_thread.nonce, blocks).await {
                                         Some(response) => {
                                             self.broadcast(response).await;
@@ -250,8 +245,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                         self.dialog.send_warning(Warning::ChannelDropped);
                                     }
                                 } else {
-                                    crate::log!(
-                                        self.dialog,
+                                    crate::debug!(
                                         format!("Adding block {} to queue", request.hash)
                                     );
                                     queue.add(request);
@@ -338,7 +332,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     // If there are blocks in the queue, we should request them of a random peer
     async fn get_blocks(&self) {
         if let Some(block_request) = self.pop_block_queue().await {
-            crate::log!(self.dialog, "Sending block request to random peer");
+            crate::debug!("Sending block request to random peer");
             self.send_random(block_request).await;
         }
     }
@@ -351,16 +345,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         drop(queue);
         match broadcast.broadcast_policy {
             TxBroadcastPolicy::AllPeers => {
-                crate::log!(
-                    self.dialog,
-                    format!("Sending transaction to {} connected peers", peer_map.live())
-                );
+                crate::debug!(format!(
+                    "Sending transaction to {} connected peers",
+                    peer_map.live()
+                ));
                 peer_map
                     .broadcast(MainThreadMessage::BroadcastPending)
                     .await
             }
             TxBroadcastPolicy::RandomPeer => {
-                crate::log!(self.dialog, "Sending transaction to a random peer");
+                crate::debug!("Sending transaction to a random peer");
                 peer_map
                     .send_random(MainThreadMessage::BroadcastPending)
                     .await
@@ -375,24 +369,27 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::Behind => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_synced().await {
-                    crate::info!(self.dialog, Info::StateChange(NodeState::HeadersSynced));
+                    self.dialog
+                        .send_info(Info::StateChange(NodeState::HeadersSynced))
+                        .await;
                     *state = NodeState::HeadersSynced;
                 }
             }
             NodeState::HeadersSynced => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_cf_headers_synced() {
-                    crate::info!(
-                        self.dialog,
-                        Info::StateChange(NodeState::FilterHeadersSynced)
-                    );
+                    self.dialog
+                        .send_info(Info::StateChange(NodeState::FilterHeadersSynced))
+                        .await;
                     *state = NodeState::FilterHeadersSynced;
                 }
             }
             NodeState::FilterHeadersSynced => {
                 let header_chain = self.chain.lock().await;
                 if header_chain.is_filters_synced() {
-                    crate::info!(self.dialog, Info::StateChange(NodeState::FiltersSynced));
+                    self.dialog
+                        .send_info(Info::StateChange(NodeState::FiltersSynced))
+                        .await;
                     *state = NodeState::FiltersSynced;
                 }
             }
@@ -408,20 +405,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         ),
                         chain.last_ten(),
                     );
-                    crate::info!(
-                        self.dialog,
-                        Info::StateChange(NodeState::TransactionsSynced)
-                    );
+                    self.dialog
+                        .send_info(Info::StateChange(NodeState::TransactionsSynced))
+                        .await;
                     self.dialog.send_event(Event::Synced(update));
                 }
             }
             NodeState::TransactionsSynced => {
                 if last_block.stale() {
                     self.dialog.send_warning(Warning::PotentialStaleTip);
-                    crate::log!(
-                        self.dialog,
-                        "Disconnecting from remote nodes to find new connections"
-                    );
+                    crate::debug!("Disconnecting from remote nodes to find new connections");
                     self.broadcast(MainThreadMessage::Disconnect).await;
                     last_block.reset();
                 }
@@ -494,14 +487,14 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             .await;
         // Now we may request peers if required
         if needs_peers {
-            crate::log!(self.dialog, "Requesting new addresses");
+            crate::debug!("Requesting new addresses");
             peer_map
                 .send_message(nonce, MainThreadMessage::GetAddr)
                 .await;
         }
         // Inform the user we are connected to all required peers
         if peer_map.live().eq(&self.required_peers) {
-            crate::info!(self.dialog, Info::ConnectionsMet);
+            self.dialog.send_info(Info::ConnectionsMet).await;
         }
         // Even if we start the node as caught up in terms of height, we need to check for reorgs. So we can send this unconditionally.
         let chain = self.chain.lock().await;
@@ -522,22 +515,20 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         match chain.sync_chain(headers).await {
             Ok(changes) => match changes {
                 HeaderChainChanges::Extended(height) => {
-                    crate::info!(self.dialog, Info::NewChainHeight(height));
+                    self.dialog.send_info(Info::NewChainHeight(height)).await;
                 }
-                HeaderChainChanges::Reorg { height, hashes } => {
+                HeaderChainChanges::Reorg { height: _, hashes } => {
                     let mut queue = self.block_queue.lock().await;
                     queue.remove(&hashes);
-                    for hash in hashes {
-                        crate::log!(self.dialog, format!("{hash} was reorganized"));
-                    }
-                    crate::log!(self.dialog, format!("New chain height: {height}"));
+                    crate::debug!(format!("{} blocks reorganized", hashes.len()));
                 }
                 HeaderChainChanges::ForkAdded { tip } => {
-                    crate::log!(
-                        self.dialog,
-                        format!("Candidate fork {} -> {}", tip.height, tip.block_hash())
-                    );
-                    crate::info!(self.dialog, Info::NewFork { tip });
+                    crate::debug!(format!(
+                        "Candidate fork {} -> {}",
+                        tip.height,
+                        tip.block_hash()
+                    ));
+                    self.dialog.send_info(Info::NewFork { tip }).await;
                 }
                 HeaderChainChanges::Duplicate => (),
             },
@@ -668,19 +659,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 }
             },
             ProcessBlockResponse::LateResponse => {
-                crate::log!(
-                    self.dialog,
-                    format!(
-                        "Peer {} responded late to a request for hash {}",
-                        peer_id, block_hash
-                    )
-                );
+                crate::debug!(format!(
+                    "Peer {} responded late to a request for hash {}",
+                    peer_id, block_hash
+                ));
             }
             ProcessBlockResponse::UnknownHash => {
-                crate::log!(
-                    self.dialog,
-                    format!("Peer {} responded with an irrelevant block", peer_id)
-                );
+                crate::debug!(format!(
+                    "Peer {} responded with an irrelevant block",
+                    peer_id
+                ));
             }
         }
         None
@@ -697,13 +685,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         ) {
             let mut queue = self.block_queue.lock().await;
             let next_block_hash = queue.pop();
-            return match next_block_hash {
-                Some(block_hash) => {
-                    crate::log!(self.dialog, format!("Next block in queue: {}", block_hash));
-                    Some(MainThreadMessage::GetBlock(block_hash))
-                }
-                None => None,
-            };
+            return next_block_hash.map(MainThreadMessage::GetBlock);
         }
         None
     }
@@ -720,7 +702,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         for block in blocks.iter() {
             peer_map.increment_height(nonce).await;
             if !chain.header_chain.contains(*block) {
-                crate::log!(self.dialog, format!("New block: {}", block));
+                crate::debug!(format!("New block: {}", block));
             }
         }
         match *state {
@@ -730,7 +712,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     .into_iter()
                     .any(|block| !chain.header_chain.contains(block))
                 {
-                    crate::info!(self.dialog, Info::StateChange(NodeState::Behind));
+                    self.dialog
+                        .send_info(Info::StateChange(NodeState::Behind))
+                        .await;
                     *state = NodeState::Behind;
                     let next_headers = GetHeaderConfig {
                         locators: chain.header_chain.locators(),
@@ -760,10 +744,9 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             NodeState::HeadersSynced => None,
             _ => {
                 chain.clear_filters();
-                crate::info!(
-                    self.dialog,
-                    Info::StateChange(NodeState::FilterHeadersSynced)
-                );
+                self.dialog
+                    .send_info(Info::StateChange(NodeState::FilterHeadersSynced))
+                    .await;
                 *state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(chain.next_filter_message()))
             }
@@ -772,7 +755,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
 
     // When the application starts, fetch any headers we know about from the database.
     async fn fetch_headers(&self) -> Result<(), NodeError<H::Error, P::Error>> {
-        crate::log!(self.dialog, "Attempting to load headers from the database");
+        crate::debug!("Attempting to load headers from the database");
         let mut chain = self.chain.lock().await;
         chain
             .load_headers()

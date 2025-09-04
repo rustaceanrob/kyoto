@@ -21,8 +21,6 @@ use super::{
 pub struct Client {
     /// Send events to a node, such as broadcasting a transaction.
     pub requester: Requester,
-    /// Receive log/debug messages from a node.
-    pub log_rx: mpsc::Receiver<String>,
     /// Receive informational messages from the node.
     pub info_rx: mpsc::Receiver<Info>,
     /// Receive warning messages from a node.
@@ -33,7 +31,6 @@ pub struct Client {
 
 impl Client {
     pub(crate) fn new(
-        log_rx: mpsc::Receiver<String>,
         info_rx: mpsc::Receiver<Info>,
         warn_rx: mpsc::UnboundedReceiver<Warning>,
         event_rx: mpsc::UnboundedReceiver<Event>,
@@ -41,7 +38,6 @@ impl Client {
     ) -> Self {
         Self {
             requester: Requester::new(ntx),
-            log_rx,
             info_rx,
             warn_rx,
             event_rx,
@@ -288,27 +284,16 @@ mod tests {
     #[tokio::test]
     async fn test_client_works() {
         let transaction: Transaction = deserialize(&hex::decode("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000").unwrap()).unwrap();
-        let (log_tx, log_rx) = tokio::sync::mpsc::channel::<String>(1);
         let (_, info_rx) = tokio::sync::mpsc::channel::<Info>(1);
         let (_, warn_rx) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (_, event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
         let Client {
             requester,
-            mut log_rx,
             info_rx: _,
             warn_rx: _,
             event_rx: _,
-        } = Client::new(log_rx, info_rx, warn_rx, event_rx, ctx);
-        let send_res = log_tx.send("An important message".into()).await;
-        assert!(send_res.is_ok());
-        let message = log_rx.recv().await;
-        assert!(message.is_some());
-        tokio::task::spawn(async move { log_tx.send("Another important message".into()).await });
-        assert!(send_res.is_ok());
-        let message = log_rx.recv().await;
-        assert!(message.is_some());
-        drop(log_rx);
+        } = Client::new(info_rx, warn_rx, event_rx, ctx);
         let broadcast = requester.broadcast_tx(TxBroadcast::new(
             transaction.clone(),
             crate::TxBroadcastPolicy::AllPeers,

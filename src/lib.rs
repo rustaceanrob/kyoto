@@ -42,25 +42,16 @@
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, mut log_rx, info_rx: _, warn_rx: _, mut event_rx } = client;
+//!     let Client { requester, info_rx: _, warn_rx: _, mut event_rx } = client;
 //!     // Sync with the single script added
 //!     loop {
-//!         tokio::select! {
-//!             log = log_rx.recv() => {
-//!                 if let Some(log) = log {
-//!                     tracing::info!("{log}");
-//!                 }
-//!             }
-//!             event = event_rx.recv() => {
-//!                 if let Some(event) = event {
-//!                     match event {
-//!                         Event::Synced(_) => {
-//!                             tracing::info!("Sync complete!");
-//!                             break;
-//!                         },
-//!                         _ => (),
-//!                     }
-//!                 }
+//!         if let Some(event) = event_rx.recv().await {
+//!             match event {
+//!                 Event::Synced(_) => {
+//!                     tracing::info!("Sync complete!");
+//!                     break;
+//!                 },
+//!                 _ => (),
 //!             }
 //!         }
 //!     }
@@ -379,19 +370,6 @@ pub enum PeerStoreSizeConfig {
     Limit(u32),
 }
 
-/// Select the category of messages for the node to emit.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum LogLevel {
-    /// Send debug strings. These messages are intended for debugging or troubleshooting
-    /// node operation.
-    #[default]
-    Debug,
-    /// Send info and warning messages, but omit debug strings - including their memory allocations. Ideal for a production application that uses minimal logging.
-    Info,
-    /// Send warnings only.
-    Warning,
-}
-
 /// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
 pub enum NodeState {
@@ -461,24 +439,11 @@ pub async fn lookup_host<S: AsRef<str>>(hostname: S, resolver: impl Into<IpAddr>
     responses
 }
 
-macro_rules! log {
-    ($dialog:expr, $expr:expr) => {
-        match $dialog.log_level {
-            crate::LogLevel::Debug => $dialog.send_dialog($expr).await,
-            _ => (),
-        }
+macro_rules! debug {
+    ($expr:expr) => {
+        #[cfg(debug_assertions)]
+        println!("{}", $expr)
     };
 }
 
-macro_rules! info {
-    ($dialog:expr, $expr:expr) => {
-        match $dialog.log_level {
-            crate::LogLevel::Debug => $dialog.send_info($expr).await,
-            crate::LogLevel::Info => $dialog.send_info($expr).await,
-            _ => (),
-        }
-    };
-}
-
-pub(crate) use info;
-pub(crate) use log;
+pub(crate) use debug;

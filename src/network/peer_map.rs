@@ -150,10 +150,10 @@ impl<P: PeerStore> PeerMap<P> {
         if !self.connector.can_connect(&loaded_peer.addr) {
             return Err(PeerError::UnreachableSocketAddr);
         }
-        crate::log!(
-            self.dialog,
-            format!("Connecting to {:?}:{}", loaded_peer.addr, loaded_peer.port)
-        );
+        crate::debug!(format!(
+            "Connecting to {:?}:{}",
+            loaded_peer.addr, loaded_peer.port
+        ));
         let connection = self
             .connector
             .connect(
@@ -244,7 +244,7 @@ impl<P: PeerStore> PeerMap<P> {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
         if let Some(peer) = self.whitelist.pop() {
-            crate::log!(self.dialog, "Using a configured peer");
+            crate::debug!("Using a configured peer");
             let port = peer
                 .port
                 .unwrap_or(default_port_from_network(&self.network));
@@ -337,7 +337,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
-        crate::log!(self.dialog, "Bootstrapping peers with DNS");
+        crate::debug!("Bootstrapping peers with DNS");
         let mut db_lock = self.db.lock().await;
         let new_peers = bootstrap_dns(self.network, self.dns_resolver)
             .await
@@ -347,10 +347,7 @@ impl<P: PeerStore> PeerMap<P> {
                 IpAddr::V6(ip) => AddrV2::Ipv6(ip),
             })
             .collect::<Vec<AddrV2>>();
-        crate::log!(
-            self.dialog,
-            format!("Adding {} sourced from DNS", new_peers.len())
-        );
+        crate::debug!(format!("Adding {} sourced from DNS", new_peers.len()));
         for peer in new_peers {
             db_lock
                 .update(PersistedPeer::new(

@@ -5,7 +5,7 @@ use bitcoin::ScriptBuf;
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
     network::{dns::DnsResolver, ConnectionType},
-    LogLevel, PeerStoreSizeConfig, PeerTimeoutConfig, TrustedPeer,
+    PeerStoreSizeConfig, PeerTimeoutConfig, TrustedPeer,
 };
 
 const REQUIRED_PEERS: u8 = 1;
@@ -20,7 +20,6 @@ pub(crate) struct NodeConfig {
     pub connection_type: ConnectionType,
     pub target_peer_size: PeerStoreSizeConfig,
     pub peer_timeout_config: PeerTimeoutConfig,
-    pub log_level: LogLevel,
 }
 
 impl Default for NodeConfig {
@@ -35,7 +34,6 @@ impl Default for NodeConfig {
             connection_type: Default::default(),
             target_peer_size: PeerStoreSizeConfig::default(),
             peer_timeout_config: PeerTimeoutConfig::default(),
-            log_level: Default::default(),
         }
     }
 }

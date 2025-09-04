@@ -2,7 +2,7 @@
 //! expected sync time on your machine and in your region.
 
 use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
-use kyoto::{Client, Event, LogLevel, Network, ScriptBuf};
+use kyoto::{Client, Event, Network, ScriptBuf};
 use std::collections::HashSet;
 use tokio::time::Instant;
 
@@ -31,8 +31,6 @@ async fn main() {
         .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(2)
-        // Set the log level to omit debug strings
-        .log_level(LogLevel::Info)
         // Create the node and client
         .build()
         .unwrap();
@@ -43,7 +41,6 @@ async fn main() {
     // specific tasks.
     let Client {
         requester,
-        mut log_rx,
         mut info_rx,
         mut warn_rx,
         mut event_rx,
@@ -78,11 +75,6 @@ async fn main() {
             info = info_rx.recv() => {
                 if let Some(info) = info {
                     tracing::info!("{info}");
-                }
-            }
-            log = log_rx.recv() => {
-                if let Some(log) = log {
-                    tracing::info!("{log}");
                 }
             }
             warn = warn_rx.recv() => {
