@@ -22,7 +22,7 @@ use crate::{
     chain::{
         block_queue::{BlockQueue, BlockRecipient, ProcessBlockResponse},
         chain::Chain,
-        checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
+        checkpoints::HeaderCheckpoint,
         error::{CFilterSyncError, HeaderSyncError},
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
@@ -102,16 +102,11 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             Arc::clone(&height_monitor),
             dns_resolver,
         )));
-        // Prepare the header checkpoints for the chain source
-        let mut checkpoints = HeaderCheckpoints::new(&network);
-        let checkpoint = header_checkpoint.unwrap_or_else(|| checkpoints.last());
-        checkpoints.prune_up_to(checkpoint);
         // Build the chain
         let chain = Chain::new(
             network,
             addresses,
-            checkpoint,
-            checkpoints,
+            header_checkpoint,
             Arc::clone(&dialog),
             height_monitor,
             header_store,

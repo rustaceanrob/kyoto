@@ -10,7 +10,7 @@
 //! ```no_run
 //! use std::str::FromStr;
 //! use std::collections::HashSet;
-//! use kyoto::{NodeBuilder, Event, Client, Address, Network, HeaderCheckpoint, BlockHash};
+//! use kyoto::{NodeBuilder, Event, Client, Address, Network, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -25,16 +25,12 @@
 //!         .into();
 //!     let mut addresses = HashSet::new();
 //!     addresses.insert(address);
-//!     // Start the scan after a specified header
-//!     let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(170_000, Network::Signet);
 //!     // Create a new node builder
 //!     let builder = NodeBuilder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
 //!     let (node, client) = builder
 //!         // The Bitcoin scripts to monitor
 //!         .add_scripts(addresses)
-//!         // Only scan blocks strictly after a checkpoint
-//!         .after_checkpoint(checkpoint)
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
 //!         .build()
@@ -101,9 +97,7 @@ use std::net::{IpAddr, SocketAddr};
 
 // Re-exports
 #[doc(inline)]
-pub use chain::checkpoints::{
-    HeaderCheckpoint, MAINNET_HEADER_CP, SIGNET_HEADER_CP, TESTNET4_HEADER_CP,
-};
+pub use chain::checkpoints::HeaderCheckpoint;
 
 #[cfg(feature = "rusqlite")]
 #[doc(inline)]

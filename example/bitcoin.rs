@@ -1,13 +1,12 @@
 //! Sync a simple script with the Bitcoin network. This example is intended to demonstrate the
 //! expected sync time on your machine and in your region.
 
-use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
+use kyoto::builder::NodeBuilder;
 use kyoto::{Client, Event, Network, ScriptBuf};
 use std::collections::HashSet;
 use tokio::time::Instant;
 
 const NETWORK: Network = Network::Bitcoin;
-const TAPROOT: u32 = 700_000;
 
 #[tokio::main]
 async fn main() {
@@ -15,8 +14,6 @@ async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
     let now = Instant::now();
-    // Use a predefined checkpoint
-    let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(TAPROOT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
     let address = ScriptBuf::new_op_return(b"Kyoto light client");
     let mut addresses = HashSet::new();
@@ -27,8 +24,6 @@ async fn main() {
     let (node, client) = builder
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
-        // Only scan blocks strictly after a checkpoint
-        .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(2)
         // Create the node and client

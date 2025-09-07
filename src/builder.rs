@@ -59,15 +59,12 @@ const MAX_PEERS: u8 = 15;
 ///     .into();
 /// let mut script_set = HashSet::new();
 /// script_set.insert(address);
-/// let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(170_000, Network::Signet);
 ///
 /// let builder = NodeBuilder::new(Network::Signet);
 /// // Add node preferences and build the node/client
 /// let (mut node, client) = builder
 ///     // The Bitcoin scripts to monitor
 ///     .add_scripts(script_set)
-///     // Only scan blocks strictly after a checkpoint
-///     .after_checkpoint(checkpoint)
 ///     // The number of connections we would like to maintain
 ///     .required_peers(2)
 ///     .build()
