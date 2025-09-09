@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 
 use super::{
     cfheader_batch::CFHeaderBatch,
-    checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
+    checkpoints::HeaderCheckpoint,
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
@@ -40,7 +40,6 @@ const FILTER_BATCH_SIZE: u32 = 999;
 pub(crate) struct Chain<H: HeaderStore> {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
-    checkpoints: HeaderCheckpoints,
     network: Network,
     db: Arc<Mutex<H>>,
     heights: Arc<Mutex<HeightMonitor>>,
@@ -49,21 +48,21 @@ pub(crate) struct Chain<H: HeaderStore> {
 }
 
 impl<H: HeaderStore> Chain<H> {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network: Network,
         scripts: HashSet<ScriptBuf>,
-        anchor: HeaderCheckpoint,
-        checkpoints: HeaderCheckpoints,
+        anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         db: H,
         quorum_required: u8,
     ) -> Self {
-        let header_chain = BlockTree::new(anchor, network);
+        let header_chain = match anchor {
+            Some(header) => BlockTree::new(header, network),
+            None => BlockTree::from_genesis(network),
+        };
         Chain {
             header_chain,
-            checkpoints,
             request_state: FilterRequestState::new(quorum_required),
             network,
             db: Arc::new(Mutex::new(db)),
@@ -132,11 +131,6 @@ impl<H: HeaderStore> Chain<H> {
                         self.dialog.send_warning(Warning::CorruptedHeaders);
                         return Err(HeaderPersistenceError::HeadersDoNotLink);
                     }
-                    if let Some(checkpoint) = self.checkpoints.next() {
-                        if connected_at.header.block_hash().eq(&checkpoint.hash) {
-                            self.checkpoints.advance()
-                        }
-                    }
                 }
                 AcceptHeaderChanges::Rejected(reject_reason) => match reject_reason {
                     HeaderRejection::UnknownPrevHash(_) => {
@@ -173,7 +167,6 @@ impl<H: HeaderStore> Chain<H> {
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
-        let next_checkpoint = self.checkpoints.next().copied();
         let mut db = self.db.lock().await;
         let mut reorged_hashes = None;
         let mut fork_added = None;
@@ -187,37 +180,12 @@ impl<H: HeaderStore> Chain<H> {
                         connected_at.header.block_hash()
                     ));
                     db.stage(BlockHeaderChanges::Connected(connected_at));
-                    if let Some(checkpoint) = next_checkpoint {
-                        if connected_at.height.eq(&checkpoint.height) {
-                            if connected_at.header.block_hash().eq(&checkpoint.hash) {
-                                crate::debug!(format!(
-                                    "Found checkpoint, height: {}",
-                                    checkpoint.height
-                                ));
-                                self.checkpoints.advance();
-                            } else {
-                                self.dialog
-                    .send_warning(
-                        Warning::UnexpectedSyncError { warning: "Unmatched checkpoint sent by a peer. Restarting header sync with new peers.".into() }
-                    );
-                                return Err(HeaderSyncError::InvalidCheckpoint);
-                            }
-                        }
-                    }
                 }
                 AcceptHeaderChanges::Duplicate => (),
-                AcceptHeaderChanges::ExtendedFork { connected_at } => match next_checkpoint {
-                    Some(_checkpoint_expected) => {
-                        crate::debug!("Detected fork before known checkpoint");
-                        self.dialog.send_warning(Warning::UnexpectedSyncError {
-                            warning: "Pre-checkpoint fork".into(),
-                        });
-                    }
-                    None => {
-                        fork_added = Some(connected_at);
-                        crate::debug!(format!("Fork created or extended {}", connected_at.height))
-                    }
-                },
+                AcceptHeaderChanges::ExtendedFork { connected_at } => {
+                    fork_added = Some(connected_at);
+                    crate::debug!(format!("Fork created or extended {}", connected_at.height))
+                }
                 AcceptHeaderChanges::Reorganization {
                     mut accepted,
                     mut disconnected,
@@ -613,7 +581,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::{
-        chain::checkpoints::{HeaderCheckpoint, HeaderCheckpoints},
+        chain::checkpoints::HeaderCheckpoint,
         {
             dialog::Dialog,
             messages::{Event, Info, Warning},
@@ -630,13 +598,10 @@ mod tests {
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
-        let mut checkpoints = HeaderCheckpoints::new(&bitcoin::Network::Regtest);
-        checkpoints.prune_up_to(anchor);
         Chain::new(
             bitcoin::Network::Regtest,
             HashSet::new(),
-            anchor,
-            checkpoints,
+            Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
             (),

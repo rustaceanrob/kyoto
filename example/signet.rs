@@ -1,6 +1,6 @@
 //! Usual sync on Signet.
 
-use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint};
+use kyoto::builder::NodeBuilder;
 use kyoto::{AddrV2, Address, Client, Event, Info, Network, ServiceFlags, TrustedPeer};
 use std::collections::HashSet;
 use std::{
@@ -9,7 +9,6 @@ use std::{
 };
 
 const NETWORK: Network = Network::Signet;
-const RECOVERY_HEIGHT: u32 = 220_000;
 const ADDR: &str = "tb1qmfjfv35csd200t0cfpckvx4ccw6w7ytkvga2gn";
 
 #[tokio::main]
@@ -17,8 +16,6 @@ async fn main() {
     // Add third-party logging
     let subscriber = tracing_subscriber::FmtSubscriber::new();
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    // Use a predefined checkpoint
-    let checkpoint = HeaderCheckpoint::closest_checkpoint_below_height(RECOVERY_HEIGHT, NETWORK);
     // Add Bitcoin scripts to scan the blockchain for
     let address = Address::from_str(ADDR)
         .unwrap()
@@ -42,8 +39,6 @@ async fn main() {
         .add_peers(vec![(peer_1, None).into(), peer_2])
         // The Bitcoin scripts to monitor
         .add_scripts(addresses)
-        // Only scan blocks strictly after a checkpoint
-        .after_checkpoint(checkpoint)
         // The number of connections we would like to maintain
         .required_peers(2)
         // Create the node and client
