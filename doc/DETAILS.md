@@ -10,14 +10,14 @@ Some lower-level architecture decisions are documented in a blog series over at 
 
 ### Functional Goals
 
-- [x] Provide an archival index for blocks and transactions related to a set of `scriptPubKey`, presumably because the user is interested in transactions with these scripts involved.
+- [x] Provide an archival index for filters and blocks.
 - [x] Provide an interface to the P2P network, particularly to allow for new transaction broadcasting. Messages will be encrypted if remote nodes advertise support for BIP324. Kyoto also offers experimental support for Tor routing.
 - [x] Provide a testing ground for experimentation and research into the Bitcoin P2P network. Particularly in tradeoffs between finding reliable peers, trying new peers, and eclipse attacks.
 - [x] Provide rudimentary blockchain data, like the height of the chain, the "chainwork", the `CompactTarget` of the last block, etc.
 
 ### Out of Scope
 
-- Any wallet functionality beyond indexing transactions. This includes balances, transaction construction, etc. Bitcoin wallets are complex for a number of reasons, and additional functionality within this scope would detract from other improvements.
+- Any wallet functionality beyond indexing chain data. This includes balances, transaction construction, etc. Bitcoin wallets are complex for a number of reasons, and additional functionality within this scope would detract from other improvements.
 
 # Recommendations
 

@@ -98,7 +98,7 @@ impl MessageGenerator {
     }
 
     pub(crate) fn block(&mut self, hash: BlockHash) -> Result<Vec<u8>, PeerError> {
-        let inv = get_block_from_cfg(hash);
+        let inv = Inventory::Block(hash);
         let msg = NetworkMessage::GetData(vec![inv]);
         self.serialize(msg)
     }
@@ -166,13 +166,5 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         ),
         start_height: 0,
         relay: false,
-    }
-}
-
-fn get_block_from_cfg(hash: BlockHash) -> Inventory {
-    if cfg!(feature = "filter-control") {
-        Inventory::WitnessBlock(hash)
-    } else {
-        Inventory::Block(hash)
     }
 }

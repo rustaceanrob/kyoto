@@ -33,7 +33,6 @@ rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
 [features]
 default = ["rusqlite"]
 rusqlite = ["dep:rusqlite"]
-filter-control = []
 
 [dev-dependencies]
 corepc-node = { version = "0.7.1", default-features = false, features = [
@@ -60,8 +59,3 @@ path = "example/signet.rs"
 [[example]]
 name = "bitcoin"
 path = "example/bitcoin.rs"
-
-[[example]]
-name = "managed"
-path = "example/managed.rs"
-required-features = ["filter-control"]

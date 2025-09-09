@@ -22,8 +22,6 @@ async fn main() {
     let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
-        // The Bitcoin scripts to monitor
-        .add_scripts(addresses)
         // The number of connections we would like to maintain
         .required_peers(2)
         // Create the node and client
@@ -57,13 +55,10 @@ async fn main() {
                             tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
                             break;
                         },
-                        Event::Block(indexed_block) => {
-                            let hash = indexed_block.block.block_hash();
-                            tracing::info!("Received block: {}", hash);
-                        },
                         Event::BlocksDisconnected { accepted: _, disconnected: _} => {
                             tracing::warn!("Some blocks were reorganized")
                         },
+                        _ => (),
                     }
                 }
             }

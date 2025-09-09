@@ -1,14 +1,10 @@
 extern crate alloc;
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::Range,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, ops::Range, sync::Arc};
 
 use bitcoin::{
     block::Header,
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
-    BlockHash, Network, ScriptBuf,
+    BlockHash, Network,
 };
 use tokio::sync::Mutex;
 
@@ -20,7 +16,6 @@ use super::{
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
     HeaderChainChanges, HeightExt, HeightMonitor, PeerId,
 };
-#[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
@@ -43,14 +38,12 @@ pub(crate) struct Chain<H: HeaderStore> {
     network: Network,
     db: Arc<Mutex<H>>,
     heights: Arc<Mutex<HeightMonitor>>,
-    scripts: HashSet<ScriptBuf>,
     dialog: Arc<Dialog>,
 }
 
 impl<H: HeaderStore> Chain<H> {
     pub(crate) fn new(
         network: Network,
-        scripts: HashSet<ScriptBuf>,
         anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
@@ -67,7 +60,6 @@ impl<H: HeaderStore> Chain<H> {
             network,
             db: Arc::new(Mutex::new(db)),
             heights: height_monitor,
-            scripts,
             dialog,
         }
     }
@@ -400,8 +392,6 @@ impl<H: HeaderStore> Chain<H> {
         &mut self,
         filter_message: CFilter,
     ) -> Result<FilterCheck, CFilterSyncError> {
-        #[allow(unused_mut)]
-        let mut needs_request = None;
         let filter = Filter::new(filter_message.filter, filter_message.block_hash);
         let expected_filter_hash = self
             .header_chain
@@ -418,7 +408,6 @@ impl<H: HeaderStore> Chain<H> {
             }
         }
 
-        #[cfg(feature = "filter-control")]
         if !self
             .header_chain
             .is_filter_checked(&filter_message.block_hash)
@@ -431,17 +420,6 @@ impl<H: HeaderStore> Chain<H> {
             self.dialog.send_event(Event::IndexedFilter(indexed_filter));
         }
 
-        #[cfg(not(feature = "filter-control"))]
-        if !self
-            .header_chain
-            .is_filter_checked(&filter_message.block_hash)
-            && filter
-                .contains_any(self.scripts.iter())
-                .map_err(CFilterSyncError::Filter)?
-        {
-            needs_request = Some(filter_message.block_hash);
-        }
-
         self.header_chain.check_filter(filter_message.block_hash);
         let stop_hash = self
             .request_state
@@ -449,10 +427,7 @@ impl<H: HeaderStore> Chain<H> {
             .ok_or(CFilterSyncError::UnrequestedStophash)?
             .stop_hash;
         let was_last_in_batch = filter_message.block_hash.eq(&stop_hash);
-        Ok(FilterCheck {
-            needs_request,
-            was_last_in_batch,
-        })
+        Ok(FilterCheck { was_last_in_batch })
     }
 
     // Next filter message, if there is one
@@ -483,11 +458,6 @@ impl<H: HeaderStore> Chain<H> {
     // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
         self.header_chain.filters_synced()
-    }
-
-    // Add a script to our list
-    pub(crate) fn put_script(&mut self, script: ScriptBuf) {
-        self.scripts.insert(script);
     }
 
     // Fetch a header from the cache or disk.
@@ -567,7 +537,7 @@ impl<H: HeaderStore> Chain<H> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::{collections::HashSet, fs::File, str::FromStr};
+    use std::{fs::File, str::FromStr};
 
     use bitcoin::hashes::sha256d;
     use bitcoin::hashes::Hash;
@@ -600,7 +570,6 @@ mod tests {
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         Chain::new(
             bitcoin::Network::Regtest,
-            HashSet::new(),
             Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,

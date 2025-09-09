@@ -1,11 +1,8 @@
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 
-use bitcoin::{
-    block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, ScriptBuf, Wtxid,
-};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 use tokio::sync::oneshot;
 
-#[cfg(feature = "filter-control")]
 use crate::IndexedFilter;
 use crate::{
     chain::{checkpoints::HeaderCheckpoint, IndexedHeader},
@@ -60,7 +57,7 @@ impl core::fmt::Display for Info {
 /// Data and structures useful for a consumer, such as a wallet.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// A relevant [`Block`](crate) based on the user provided scripts.
+    /// A relevant [`Block`](crate).
     /// Note that the block may not contain any transactions contained in the script set.
     /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
@@ -74,7 +71,6 @@ pub enum Event {
         disconnected: Vec<IndexedHeader>,
     },
     /// A compact block filter with associated height and block hash.
-    #[cfg(feature = "filter-control")]
     IndexedFilter(IndexedFilter),
 }
 
@@ -155,10 +151,7 @@ pub(crate) enum ClientMessage {
     Shutdown,
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(TxBroadcast),
-    /// Add more Bitcoin [`ScriptBuf`] to look for.
-    #[allow(dead_code)]
-    AddScript(ScriptBuf),
-    /// Starting at the configured anchor checkpoint, look for block inclusions with newly added scripts.
+    /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan,
     /// Explicitly request a block from the node.
     GetBlock(BlockRequest),

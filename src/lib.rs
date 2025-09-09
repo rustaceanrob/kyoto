@@ -8,29 +8,17 @@
 //! # Example usage
 //!
 //! ```no_run
-//! use std::str::FromStr;
-//! use std::collections::HashSet;
-//! use kyoto::{NodeBuilder, Event, Client, Address, Network, BlockHash};
+//! use kyoto::{NodeBuilder, Event, Client, Network, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     // Add third-party logging
 //!     let subscriber = tracing_subscriber::FmtSubscriber::new();
 //!     tracing::subscriber::set_global_default(subscriber).unwrap();
-//!     // Add Bitcoin scripts to scan the blockchain for
-//!     let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
-//!         .unwrap()
-//!         .require_network(Network::Signet)
-//!         .unwrap()
-//!         .into();
-//!     let mut addresses = HashSet::new();
-//!     addresses.insert(address);
 //!     // Create a new node builder
 //!     let builder = NodeBuilder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
 //!     let (node, client) = builder
-//!         // The Bitcoin scripts to monitor
-//!         .add_scripts(addresses)
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
 //!         .build()
@@ -39,7 +27,6 @@
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
 //!     let Client { requester, info_rx: _, warn_rx: _, mut event_rx } = client;
-//!     // Sync with the single script added
 //!     loop {
 //!         if let Some(event) = event_rx.recv().await {
 //!             match event {
@@ -58,8 +45,6 @@
 //! # Features
 //!
 //! `rusqlite`: use the default `rusqlite` database implementations. Default and recommend feature.
-//!
-//! `filter-control`: check filters and request blocks directly. Recommended for silent payments or strict chain ordering implementations.
 
 #![warn(missing_docs)]
 pub mod chain;
@@ -87,7 +72,6 @@ pub mod messages;
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
 
-#[cfg(feature = "filter-control")]
 use chain::Filter;
 
 use network::dns::DnsQuery;
@@ -99,8 +83,8 @@ use std::net::{IpAddr, SocketAddr};
 #[doc(inline)]
 pub use chain::checkpoints::HeaderCheckpoint;
 
-#[cfg(feature = "rusqlite")]
 #[doc(inline)]
+#[cfg(feature = "rusqlite")]
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 
 #[doc(inline)]
@@ -121,7 +105,6 @@ pub use {
     crate::node::Node,
 };
 
-#[cfg(feature = "filter-control")]
 #[doc(inline)]
 pub use bitcoin::bip158::BlockFilter;
 #[doc(inline)]
@@ -147,7 +130,6 @@ impl IndexedBlock {
     }
 }
 
-#[cfg(feature = "filter-control")]
 /// A compact block filter with associated height.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedFilter {
@@ -155,7 +137,6 @@ pub struct IndexedFilter {
     filter: Filter,
 }
 
-#[cfg(feature = "filter-control")]
 impl IndexedFilter {
     fn new(height: u32, filter: Filter) -> Self {
         Self { height, filter }
@@ -184,14 +165,12 @@ impl IndexedFilter {
     }
 }
 
-#[cfg(feature = "filter-control")]
 impl std::cmp::PartialOrd for IndexedFilter {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-#[cfg(feature = "filter-control")]
 impl std::cmp::Ord for IndexedFilter {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.height.cmp(&other.height)
