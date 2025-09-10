@@ -2,7 +2,7 @@
 //! expected sync time on your machine and in your region.
 
 use kyoto::builder::NodeBuilder;
-use kyoto::{lookup_host, Client, Event, Network, ScriptBuf};
+use kyoto::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use tokio::time::Instant;
@@ -27,6 +27,8 @@ async fn main() {
     let (node, client) = builder
         // The number of connections we would like to maintain
         .required_peers(2)
+        // Only scan for taproot scripts
+        .after_checkpoint(HeaderCheckpoint::taproot_activation())
         // Add some initial peers
         .add_peers(seeds.into_iter().map(From::from))
         // Create the node and client

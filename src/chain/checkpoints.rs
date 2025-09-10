@@ -18,6 +18,24 @@ impl HeaderCheckpoint {
     pub fn new(height: Height, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
     }
+
+    /// One block before the activation of the taproot softfork.
+    pub fn taproot_activation() -> Self {
+        let hash = "000000000000000000013712fc242ee6dd28476d0e9c931c75f83e6974c6bccc"
+            .parse::<BlockHash>()
+            .unwrap();
+        let height = 709_631;
+        HeaderCheckpoint { height, hash }
+    }
+
+    /// One block before the activation of the segwit softfork.
+    pub fn segwit_activation() -> Self {
+        let hash = "000000000000000000cbeff0b533f8e1189cf09dfbebf57a8ebe349362811b80"
+            .parse::<BlockHash>()
+            .unwrap();
+        let height = 481_823;
+        HeaderCheckpoint { height, hash }
+    }
 }
 
 impl From<(u32, BlockHash)> for HeaderCheckpoint {
