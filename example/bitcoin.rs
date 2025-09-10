@@ -2,11 +2,13 @@
 //! expected sync time on your machine and in your region.
 
 use kyoto::builder::NodeBuilder;
-use kyoto::{Client, Event, Network, ScriptBuf};
+use kyoto::{lookup_host, Client, Event, Network, ScriptBuf};
 use std::collections::HashSet;
+use std::net::Ipv4Addr;
 use tokio::time::Instant;
 
 const NETWORK: Network = Network::Bitcoin;
+const HOST_ADDR: Ipv4Addr = Ipv4Addr::new(1, 1, 1, 1);
 
 #[tokio::main]
 async fn main() {
@@ -18,12 +20,15 @@ async fn main() {
     let address = ScriptBuf::new_op_return(b"Kyoto light client");
     let mut addresses = HashSet::new();
     addresses.insert(address);
+    let seeds = lookup_host("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us", HOST_ADDR).await;
     // Create a new node builder
     let builder = NodeBuilder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // The number of connections we would like to maintain
         .required_peers(2)
+        // Add some initial peers
+        .add_peers(seeds.into_iter().map(From::from))
         // Create the node and client
         .build()
         .unwrap();
