@@ -7,7 +7,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, Network, ScriptBuf,
+    Block, BlockHash, Network,
 };
 use tokio::sync::{
     mpsc::{Receiver, UnboundedReceiver},
@@ -70,7 +70,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
             required_peers,
             white_list,
             dns_resolver,
-            addresses,
             data_path: _,
             header_checkpoint,
             connection_type,
@@ -105,7 +104,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         // Build the chain
         let chain = Chain::new(
             network,
-            addresses,
             header_checkpoint,
             Arc::clone(&dialog),
             height_monitor,
@@ -224,7 +222,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                             ClientMessage::Broadcast(transaction) => {
                                 self.broadcast_transaction(transaction).await;
                             },
-                            ClientMessage::AddScript(script) =>  self.add_script(script).await,
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan().await {
                                     self.broadcast(response).await;
@@ -582,14 +579,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         let mut chain = self.chain.lock().await;
         match chain.sync_filter(filter) {
             Ok(potential_message) => {
-                let FilterCheck {
-                    needs_request,
-                    was_last_in_batch,
-                } = potential_message;
-                if let Some(hash) = needs_request {
-                    let mut queue = self.block_queue.lock().await;
-                    queue.add(hash);
-                }
+                let FilterCheck { was_last_in_batch } = potential_message;
                 if was_last_in_batch {
                     chain.send_chain_update().await;
                     if !chain.is_filters_synced() {
@@ -722,12 +712,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                 }
             }
         }
-    }
-
-    // Add more scripts to the chain to look for. Does not imply a rescan.
-    async fn add_script(&self, script: ScriptBuf) {
-        let mut chain = self.chain.lock().await;
-        chain.put_script(script);
     }
 
     // Clear the filter hash cache and redownload the filters.

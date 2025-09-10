@@ -1,6 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
-
-use bitcoin::ScriptBuf;
+use std::path::PathBuf;
 
 use crate::{
     chain::checkpoints::HeaderCheckpoint,
@@ -14,7 +12,6 @@ pub(crate) struct NodeConfig {
     pub required_peers: u8,
     pub white_list: Vec<TrustedPeer>,
     pub dns_resolver: DnsResolver,
-    pub addresses: HashSet<ScriptBuf>,
     pub data_path: Option<PathBuf>,
     pub header_checkpoint: Option<HeaderCheckpoint>,
     pub connection_type: ConnectionType,
@@ -28,7 +25,6 @@ impl Default for NodeConfig {
             required_peers: REQUIRED_PEERS,
             white_list: Default::default(),
             dns_resolver: DnsResolver::default(),
-            addresses: Default::default(),
             data_path: Default::default(),
             header_checkpoint: Default::default(),
             connection_type: Default::default(),

@@ -154,7 +154,6 @@ pub(crate) enum CFHeaderChanges {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FilterCheck {
-    pub(crate) needs_request: Option<BlockHash>,
     // This filter was for the `stop_hash`
     pub(crate) was_last_in_batch: bool,
 }

@@ -1,5 +1,3 @@
-#[cfg(not(feature = "filter-control"))]
-use bitcoin::ScriptBuf;
 use bitcoin::{block::Header, BlockHash, FeeRate};
 use bitcoin::{Amount, Transaction};
 use std::{collections::BTreeMap, ops::Range, time::Duration};
@@ -116,19 +114,6 @@ impl Requester {
         rx.await.map_err(|_| FetchFeeRateError::RecvError)
     }
 
-    /// Add more Bitcoin [`ScriptBuf`] to watch for. Does not rescan the filters.
-    /// If the script was already present in the node's collection, no change will occur.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    #[cfg(not(feature = "filter-control"))]
-    pub fn add_script(&self, script: impl Into<ScriptBuf>) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::AddScript(script.into()))
-            .map_err(|_| ClientError::SendError)
-    }
-
     /// Get a header at the specified height, if it exists.
     ///
     /// # Note
@@ -229,7 +214,7 @@ impl Requester {
         Ok(FeeRate::from_sat_per_kwu(fee_rate))
     }
 
-    /// Starting after the configured checkpoint, look for block inclusions with newly added scripts.
+    /// Starting after the configured checkpoint, re-emit all block filters.
     ///
     /// # Errors
     ///

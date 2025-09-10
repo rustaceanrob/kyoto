@@ -2,8 +2,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::{path::PathBuf, time::Duration};
 
 use bitcoin::Network;
-#[cfg(not(feature = "filter-control"))]
-use bitcoin::ScriptBuf;
 
 use super::{client::Client, config::NodeConfig, node::Node};
 #[cfg(feature = "rusqlite")]
@@ -43,33 +41,6 @@ const MAX_PEERS: u8 = 15;
 ///     .build()
 ///     .unwrap();
 /// ```
-///
-/// Or, more practically, known Bitcoin scripts to monitor for may be added
-/// as the node is built.
-///
-/// ```rust
-/// use std::collections::HashSet;
-/// use std::str::FromStr;
-/// use kyoto::{HeaderCheckpoint, NodeBuilder, Network, Address, BlockHash};
-///
-/// let address = Address::from_str("tb1q9pvjqz5u5sdgpatg3wn0ce438u5cyv85lly0pc")
-///     .unwrap()
-///     .require_network(Network::Signet)
-///     .unwrap()
-///     .into();
-/// let mut script_set = HashSet::new();
-/// script_set.insert(address);
-///
-/// let builder = NodeBuilder::new(Network::Signet);
-/// // Add node preferences and build the node/client
-/// let (mut node, client) = builder
-///     // The Bitcoin scripts to monitor
-///     .add_scripts(script_set)
-///     // The number of connections we would like to maintain
-///     .required_peers(2)
-///     .build()
-///     .unwrap();
-/// ```
 pub struct NodeBuilder {
     config: NodeConfig,
     network: Network,
@@ -98,16 +69,6 @@ impl NodeBuilder {
     /// Add a preferred peer to try to connect to.
     pub fn add_peer(mut self, trusted_peer: impl Into<TrustedPeer>) -> Self {
         self.config.white_list.push(trusted_peer.into());
-        self
-    }
-
-    /// Add Bitcoin scripts to monitor for. You may add more later with the [`Client`].
-    #[cfg(not(feature = "filter-control"))]
-    pub fn add_scripts(mut self, scripts: impl IntoIterator<Item = ScriptBuf>) -> Self {
-        let script_iter = scripts.into_iter();
-        for script in script_iter {
-            self.config.addresses.insert(script);
-        }
         self
     }
 
