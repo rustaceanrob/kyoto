@@ -30,7 +30,7 @@
 //!     loop {
 //!         if let Some(event) = event_rx.recv().await {
 //!             match event {
-//!                 Event::Synced(_) => {
+//!                 Event::FiltersSynced(_) => {
 //!                     tracing::info!("Sync complete!");
 //!                     break;
 //!                 },
@@ -343,9 +343,9 @@ pub enum PeerStoreSizeConfig {
     Limit(u32),
 }
 
-/// The state of the node with respect to connected peers.
+// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
-pub enum NodeState {
+enum NodeState {
     /// We are behind on block headers according to our peers.
     Behind,
     /// We may start downloading compact block filter headers.
@@ -354,8 +354,6 @@ pub enum NodeState {
     FilterHeadersSynced,
     /// We may start asking for blocks with matches.
     FiltersSynced,
-    /// We found all known transactions to the wallet.
-    TransactionsSynced,
 }
 
 impl core::fmt::Display for NodeState {
@@ -371,7 +369,6 @@ impl core::fmt::Display for NodeState {
                 write!(f, "Requesting compact block filters.")
             }
             NodeState::FiltersSynced => write!(f, "Downloading blocks with relevant transactions."),
-            NodeState::TransactionsSynced => write!(f, "Fully synced to the highest block."),
         }
     }
 }
