@@ -77,7 +77,7 @@ async fn main() {
                                 break;
                             }
                         },
-                        Event::Synced(_) => break,
+                        Event::FiltersSynced(_) => break,
                         _ => (),
                     }
                 }

@@ -51,7 +51,7 @@ async fn main() {
             event = event_rx.recv() => {
                 if let Some(event) = event {
                     match event {
-                        Event::Synced(update) => {
+                        Event::FiltersSynced(update) => {
                             tracing::info!("Chain tip: {}",update.tip().hash);
                             // Request information from the node
                             let fee = requester.broadcast_min_feerate().await.unwrap();

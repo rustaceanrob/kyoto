@@ -76,6 +76,7 @@ impl BlockQueue {
         ProcessBlockResponse::UnknownHash
     }
 
+    #[allow(unused)]
     pub(crate) fn complete(&self) -> bool {
         self.want.is_none() && self.queue.is_empty()
     }

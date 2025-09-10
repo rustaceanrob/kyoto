@@ -96,7 +96,7 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<
     loop {
         tokio::select! {
             event = channel.recv() => {
-                if let Some(Event::Synced(update)) = event {
+                if let Some(Event::FiltersSynced(update)) = event {
                     assert_eq!(update.tip().hash, *best);
                     println!("Correct sync");
                     break;
@@ -159,7 +159,7 @@ async fn live_reorg() {
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::messages::Event::Synced(update) => {
+            kyoto::messages::Event::FiltersSynced(update) => {
                 assert_eq!(update.tip().hash, best);
                 requester.shutdown().unwrap();
                 break;
@@ -209,7 +209,7 @@ async fn live_reorg_additional_sync() {
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::messages::Event::Synced(update) => {
+            kyoto::messages::Event::FiltersSynced(update) => {
                 assert_eq!(update.tip().hash, best);
                 break;
             }
@@ -300,7 +300,7 @@ async fn stop_reorg_resync() {
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::messages::Event::Synced(update) => {
+            kyoto::messages::Event::FiltersSynced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -378,7 +378,7 @@ async fn stop_reorg_two_resync() {
                 assert_eq!(blocks.last().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.last().unwrap().height);
             }
-            kyoto::messages::Event::Synced(update) => {
+            kyoto::messages::Event::FiltersSynced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;
@@ -458,7 +458,7 @@ async fn stop_reorg_start_on_orphan() {
                 assert_eq!(blocks.first().unwrap().header.block_hash(), old_best);
                 assert_eq!(old_height as u32, blocks.first().unwrap().height);
             }
-            kyoto::messages::Event::Synced(update) => {
+            kyoto::messages::Event::FiltersSynced(update) => {
                 println!("Done");
                 assert_eq!(update.tip().hash, best);
                 break;

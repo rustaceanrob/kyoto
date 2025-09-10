@@ -223,7 +223,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 self.broadcast_transaction(transaction).await;
                             },
                             ClientMessage::Rescan => {
-                                if let Some(response) = self.rescan().await {
+                                if let Some(response) = self.rescan() {
                                     self.peer_map.broadcast(response).await;
                                 }
                             },
@@ -333,31 +333,17 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         match self.state {
             NodeState::Behind => {
                 if self.chain.is_synced().await {
-                    self.dialog
-                        .send_info(Info::StateChange(NodeState::HeadersSynced))
-                        .await;
                     self.state = NodeState::HeadersSynced;
                 }
             }
             NodeState::HeadersSynced => {
                 if self.chain.is_cf_headers_synced() {
-                    self.dialog
-                        .send_info(Info::StateChange(NodeState::FilterHeadersSynced))
-                        .await;
                     self.state = NodeState::FilterHeadersSynced;
                 }
             }
             NodeState::FilterHeadersSynced => {
                 if self.chain.is_filters_synced() {
-                    self.dialog
-                        .send_info(Info::StateChange(NodeState::FiltersSynced))
-                        .await;
                     self.state = NodeState::FiltersSynced;
-                }
-            }
-            NodeState::FiltersSynced => {
-                if self.block_queue.complete() {
-                    self.state = NodeState::TransactionsSynced;
                     let update = SyncUpdate::new(
                         HeaderCheckpoint::new(
                             self.chain.header_chain.height(),
@@ -365,13 +351,10 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         ),
                         self.chain.last_ten(),
                     );
-                    self.dialog
-                        .send_info(Info::StateChange(NodeState::TransactionsSynced))
-                        .await;
-                    self.dialog.send_event(Event::Synced(update));
+                    self.dialog.send_event(Event::FiltersSynced(update));
                 }
             }
-            NodeState::TransactionsSynced => {
+            NodeState::FiltersSynced => {
                 if last_block.stale() {
                     self.dialog.send_warning(Warning::PotentialStaleTip);
                     crate::debug!("Disconnecting from remote nodes to find new connections");
@@ -623,9 +606,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     fn pop_block_queue(&mut self) -> Option<MainThreadMessage> {
         if matches!(
             self.state,
-            NodeState::FilterHeadersSynced
-                | NodeState::FiltersSynced
-                | NodeState::TransactionsSynced
+            NodeState::FilterHeadersSynced | NodeState::FiltersSynced
         ) {
             let next_block_hash = self.block_queue.pop();
             return next_block_hash.map(MainThreadMessage::GetBlock);
@@ -652,9 +633,6 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                     .into_iter()
                     .any(|block| !self.chain.header_chain.contains(block))
                 {
-                    self.dialog
-                        .send_info(Info::StateChange(NodeState::Behind))
-                        .await;
                     self.state = NodeState::Behind;
                     let next_headers = GetHeaderConfig {
                         locators: self.chain.header_chain.locators(),
@@ -670,15 +648,12 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // Clear the filter hash cache and redownload the filters.
-    async fn rescan(&mut self) -> Option<MainThreadMessage> {
+    fn rescan(&mut self) -> Option<MainThreadMessage> {
         match self.state {
             NodeState::Behind => None,
             NodeState::HeadersSynced => None,
             _ => {
                 self.chain.clear_filters();
-                self.dialog
-                    .send_info(Info::StateChange(NodeState::FilterHeadersSynced))
-                    .await;
                 self.state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(
                     self.chain.next_filter_message(),

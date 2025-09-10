@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 use crate::IndexedFilter;
 use crate::{
     chain::{checkpoints::HeaderCheckpoint, IndexedHeader},
-    IndexedBlock, NodeState, TrustedPeer, TxBroadcast,
+    IndexedBlock, TrustedPeer, TxBroadcast,
 };
 
 use super::error::{FetchBlockError, FetchHeaderError};
@@ -14,8 +14,6 @@ use super::error::{FetchBlockError, FetchHeaderError};
 /// Informational messages emitted by a node
 #[derive(Debug, Clone)]
 pub enum Info {
-    /// The current state of the node in the syncing process.
-    StateChange(NodeState),
     /// The node was able to successfully complete a version handshake.
     SuccessfulHandshake,
     /// The node is connected to all required peers.
@@ -40,7 +38,6 @@ pub enum Info {
 impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Info::StateChange(s) => write!(f, "{s}"),
             Info::SuccessfulHandshake => write!(f, "Successful version handshake with a peer"),
             Info::TxGossiped(txid) => write!(f, "Transaction gossiped: {txid}"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
@@ -62,7 +59,7 @@ pub enum Event {
     /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
     /// The node is fully synced, having scanned the requested range.
-    Synced(SyncUpdate),
+    FiltersSynced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
     BlocksDisconnected {
         /// Blocks that were accepted to the chain of most work in ascending order by height.

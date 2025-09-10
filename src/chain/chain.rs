@@ -393,6 +393,14 @@ impl<H: HeaderStore> Chain<H> {
         filter_message: CFilter,
     ) -> Result<FilterCheck, CFilterSyncError> {
         let filter = Filter::new(filter_message.filter, filter_message.block_hash);
+        if self
+            .header_chain
+            .is_filter_checked(&filter_message.block_hash)
+        {
+            return Ok(FilterCheck {
+                was_last_in_batch: false,
+            });
+        }
         let expected_filter_hash = self
             .header_chain
             .filter_commitment(filter_message.block_hash);
@@ -407,19 +415,12 @@ impl<H: HeaderStore> Chain<H> {
                 return Err(CFilterSyncError::UnknownFilterHash);
             }
         }
-
-        if !self
+        let height = self
             .header_chain
-            .is_filter_checked(&filter_message.block_hash)
-        {
-            let height = self
-                .header_chain
-                .height_of_hash(filter_message.block_hash)
-                .ok_or(CFilterSyncError::UnknownFilterHash)?;
-            let indexed_filter = IndexedFilter::new(height, filter);
-            self.dialog.send_event(Event::IndexedFilter(indexed_filter));
-        }
-
+            .height_of_hash(filter_message.block_hash)
+            .ok_or(CFilterSyncError::UnknownFilterHash)?;
+        let indexed_filter = IndexedFilter::new(height, filter);
+        self.dialog.send_event(Event::IndexedFilter(indexed_filter));
         self.header_chain.check_filter(filter_message.block_hash);
         let stop_hash = self
             .request_state
