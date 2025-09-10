@@ -574,18 +574,23 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         }
         let process_block_response = self.block_queue.process_block(&block_hash);
         match process_block_response {
-            ProcessBlockResponse::Accepted { block_recipient } => match block_recipient {
-                BlockRecipient::Client(sender) => {
-                    let send_err = sender.send(Ok(IndexedBlock::new(height, block))).is_err();
-                    if send_err {
-                        self.dialog.send_warning(Warning::ChannelDropped);
-                    };
+            ProcessBlockResponse::Accepted { block_recipient } => {
+                self.dialog
+                    .send_info(Info::BlockReceived(block.block_hash()))
+                    .await;
+                match block_recipient {
+                    BlockRecipient::Client(sender) => {
+                        let send_err = sender.send(Ok(IndexedBlock::new(height, block))).is_err();
+                        if send_err {
+                            self.dialog.send_warning(Warning::ChannelDropped);
+                        };
+                    }
+                    BlockRecipient::Event => {
+                        self.dialog
+                            .send_event(Event::Block(IndexedBlock::new(height, block)));
+                    }
                 }
-                BlockRecipient::Event => {
-                    self.dialog
-                        .send_event(Event::Block(IndexedBlock::new(height, block)));
-                }
-            },
+            }
             ProcessBlockResponse::LateResponse => {
                 crate::debug!(format!(
                     "Peer {} responded late to a request for hash {}",

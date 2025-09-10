@@ -33,6 +33,8 @@ pub enum Info {
     /// guaranteed. You may receive duplicate messages for a given `wtxid` given your broadcast
     /// policy.
     TxGossiped(Wtxid),
+    /// A requested block has been received and is being processed.
+    BlockReceived(BlockHash),
 }
 
 impl core::fmt::Display for Info {
@@ -47,6 +49,7 @@ impl core::fmt::Display for Info {
             }
             Info::NewChainHeight(height) => write!(f, "New chain height: {height}"),
             Info::NewFork { tip } => write!(f, "New fork {} -> {}", tip.height, tip.block_hash()),
+            Info::BlockReceived(hash) => write!(f, "Received block {hash}"),
         }
     }
 }
