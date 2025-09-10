@@ -1,7 +1,7 @@
 //! Sync a simple script with the Bitcoin network. This example is intended to demonstrate the
 //! expected sync time on your machine and in your region.
 
-use kyoto::builder::NodeBuilder;
+use kyoto::builder::Builder;
 use kyoto::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
@@ -22,7 +22,7 @@ async fn main() {
     addresses.insert(address);
     let seeds = lookup_host("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us", HOST_ADDR).await;
     // Create a new node builder
-    let builder = NodeBuilder::new(NETWORK);
+    let builder = Builder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // The number of connections we would like to maintain

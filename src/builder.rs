@@ -32,21 +32,21 @@ const MAX_PEERS: u8 = 15;
 /// ```rust
 /// use std::net::{IpAddr, Ipv4Addr};
 /// use std::collections::HashSet;
-/// use kyoto::{NodeBuilder, Network};
+/// use kyoto::{Builder, Network};
 ///
 /// let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), None);
-/// let builder = NodeBuilder::new(Network::Regtest);
+/// let builder = Builder::new(Network::Regtest);
 /// let (node, client) = builder
 ///     .add_peers(vec![host.into()])
 ///     .build()
 ///     .unwrap();
 /// ```
-pub struct NodeBuilder {
+pub struct Builder {
     config: NodeConfig,
     network: Network,
 }
 
-impl NodeBuilder {
+impl Builder {
     /// Create a new [`NodeBuilder`].
     pub fn new(network: Network) -> Self {
         Self {

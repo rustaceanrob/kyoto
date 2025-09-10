@@ -56,7 +56,7 @@ fn new_node(
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let mut builder = kyoto::builder::NodeBuilder::new(bitcoin::Network::Regtest);
+    let mut builder = kyoto::builder::Builder::new(bitcoin::Network::Regtest);
     if let Some(checkpoint) = checkpoint {
         builder = builder.after_checkpoint(checkpoint);
     }

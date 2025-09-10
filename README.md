@@ -33,9 +33,9 @@ just example
 
 ## Getting Started
 
-It is recommended to walk through the [Signet example code](./example/signet.rs). Unlike usual clients that source data from the blockchain, there are two components to the CBF system. There is a "node" that fetches data on behalf of a user, and a "client" that receives data, logs, and warnings from the node. The client may also interact with the node by sending transactions to broadcast or new scripts. This crate allows a highly configurable node construction, so your app may optimize for the desired speed, privacy, and preferences.
+It is recommended to walk through the [Signet example code](./example/signet.rs). Unlike usual clients that source data from the blockchain, there are two components to the CBF system. There is a "node" that fetches data on behalf of a user, and a "client" that receives data, logs, and warnings from the node. The client may also interact with the node by sending transactions to broadcast or fetching metadata. This crate allows a highly configurable node construction, so your app may optimize for the desired speed, privacy, and preferences.
 
-See the [docs](https://docs.rs/kyoto-cbf) for more details on the `NodeBuilder`, `Node`, `Client`, and more.
+See the [docs](https://docs.rs/kyoto-cbf) for more details on the `Builder`, `Node`, `Client`, and more.
 
 ### BDK
 
