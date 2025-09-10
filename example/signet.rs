@@ -2,7 +2,7 @@
 //! and request a block be downloaded.
 
 use kyoto::messages::Event;
-use kyoto::{builder::NodeBuilder, chain::checkpoints::HeaderCheckpoint, Client};
+use kyoto::{builder::Builder, chain::checkpoints::HeaderCheckpoint, Client};
 use kyoto::{Address, BlockHash, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -29,7 +29,7 @@ async fn main() {
     let mut addresses = HashSet::new();
     addresses.insert(address);
     // Create a new node builder
-    let builder = NodeBuilder::new(NETWORK);
+    let builder = Builder::new(NETWORK);
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Only scan blocks strictly after a checkpoint

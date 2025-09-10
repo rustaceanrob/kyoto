@@ -8,7 +8,7 @@
 //! # Example usage
 //!
 //! ```no_run
-//! use kyoto::{NodeBuilder, Event, Client, Network, BlockHash};
+//! use kyoto::{Builder, Event, Client, Network, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -16,7 +16,7 @@
 //!     let subscriber = tracing_subscriber::FmtSubscriber::new();
 //!     tracing::subscriber::set_global_default(subscriber).unwrap();
 //!     // Create a new node builder
-//!     let builder = NodeBuilder::new(Network::Signet);
+//!     let builder = Builder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
 //!     let (node, client) = builder
 //!         // The number of connections we would like to maintain
@@ -97,7 +97,7 @@ pub use tokio::sync::mpsc::UnboundedReceiver;
 
 #[doc(inline)]
 pub use {
-    crate::builder::NodeBuilder,
+    crate::builder::Builder,
     crate::client::{Client, Requester},
     crate::error::{ClientError, NodeError},
     crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
