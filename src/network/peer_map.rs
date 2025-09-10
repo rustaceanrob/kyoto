@@ -115,7 +115,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // The number of peers with live connections
-    pub fn live(&mut self) -> usize {
+    pub fn live(&self) -> usize {
         self.map
             .values()
             .filter(|peer| !peer.handle.is_finished())
@@ -213,14 +213,14 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Send a message to the specified peer
-    pub async fn send_message(&mut self, nonce: PeerId, message: MainThreadMessage) {
+    pub async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
         }
     }
 
     // Broadcast to all connected peers, returning if at least one peer received the message.
-    pub async fn broadcast(&mut self, message: MainThreadMessage) -> bool {
+    pub async fn broadcast(&self, message: MainThreadMessage) -> bool {
         let active = self.map.values().filter(|peer| !peer.handle.is_finished());
         let mut sends = Vec::new();
         for peer in active {
@@ -231,7 +231,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Send to a random peer, returning true if the message was sent.
-    pub async fn send_random(&mut self, message: MainThreadMessage) -> bool {
+    pub async fn send_random(&self, message: MainThreadMessage) -> bool {
         let mut rng = StdRng::from_entropy();
         if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
             let res = peer.ptx.send(message).await;
