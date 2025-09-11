@@ -36,7 +36,7 @@ pub(crate) struct Chain<H: HeaderStore> {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    db: Arc<Mutex<H>>,
+    db: H,
     heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
 }
@@ -58,7 +58,7 @@ impl<H: HeaderStore> Chain<H> {
             header_chain,
             request_state: FilterRequestState::new(quorum_required),
             network,
-            db: Arc::new(Mutex::new(db)),
+            db,
             heights: height_monitor,
             dialog,
         }
@@ -87,7 +87,6 @@ impl<H: HeaderStore> Chain<H> {
     // Load in headers, ideally allowing the difficulty adjustment to be audited and
     // reorganizations to be handled gracefully.
     pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
-        let mut db = self.db.lock().await;
         // The original height the user requested a scan after
         let scan_height = self.header_chain.height();
         // The header relevant to compute the next adjustment
@@ -98,12 +97,24 @@ impl<H: HeaderStore> Chain<H> {
         let min_interesting_height = last_adjustment.min(reorg);
         let max_interesting_height = last_adjustment.max(reorg);
         // Get the maximum of the two interesting heights. In case the minimum is not available
-        if let Some(header) = db.header_at(max_interesting_height).await.ok().flatten() {
+        if let Some(header) = self
+            .db
+            .header_at(max_interesting_height)
+            .await
+            .ok()
+            .flatten()
+        {
             self.header_chain =
                 BlockTree::from_header(max_interesting_height, header, self.network);
         }
         // If this succeeds, both reorgs and difficulty adjustments can be handled gracefully.
-        if let Some(header) = db.header_at(min_interesting_height).await.ok().flatten() {
+        if let Some(header) = self
+            .db
+            .header_at(min_interesting_height)
+            .await
+            .ok()
+            .flatten()
+        {
             self.header_chain =
                 BlockTree::from_header(min_interesting_height, header, self.network);
         }
@@ -111,7 +122,8 @@ impl<H: HeaderStore> Chain<H> {
         // the history from this point onward. This is either: from the user start height,
         // from the last difficulty adjustment, or seven blocks ago, depending on what the
         // header store was able to provide.
-        let loaded_headers = db
+        let loaded_headers = self
+            .db
             .load(self.header_chain.height().increment()..)
             .await
             .map_err(HeaderPersistenceError::Database)?;
@@ -159,7 +171,6 @@ impl<H: HeaderStore> Chain<H> {
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
-        let mut db = self.db.lock().await;
         let mut reorged_hashes = None;
         let mut fork_added = None;
         for header in header_batch.into_iter() {
@@ -171,7 +182,7 @@ impl<H: HeaderStore> Chain<H> {
                         connected_at.height,
                         connected_at.header.block_hash()
                     ));
-                    db.stage(BlockHeaderChanges::Connected(connected_at));
+                    self.db.stage(BlockHeaderChanges::Connected(connected_at));
                 }
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => {
@@ -190,7 +201,7 @@ impl<H: HeaderStore> Chain<H> {
                         .map(|index| index.header.block_hash())
                         .collect();
                     reorged_hashes = Some(removed_hashes);
-                    db.stage(BlockHeaderChanges::Reorganized {
+                    self.db.stage(BlockHeaderChanges::Reorganized {
                         accepted: accepted.clone(),
                         reorganized: disconnected.clone(),
                     });
@@ -212,12 +223,11 @@ impl<H: HeaderStore> Chain<H> {
                 },
             }
         }
-        if let Err(e) = db.write().await {
+        if let Err(e) = self.db.write().await {
             self.dialog.send_warning(Warning::FailedPersistence {
                 warning: format!("Could not save headers to disk: {e}"),
             });
         }
-        drop(db);
         match reorged_hashes {
             Some(reorgs) => {
                 self.clear_compact_filter_queue();
@@ -469,8 +479,7 @@ impl<H: HeaderStore> Chain<H> {
         match self.header_chain.header_at_height(height) {
             Some(header) => Ok(Some(header)),
             None => {
-                let mut db = self.db.lock().await;
-                let header_opt = db.header_at(height).await;
+                let header_opt = self.db.header_at(height).await;
                 if header_opt.is_err() {
                     self.dialog
                         .send_warning(Warning::FailedPersistence {
@@ -485,11 +494,10 @@ impl<H: HeaderStore> Chain<H> {
     }
 
     pub(crate) async fn fetch_header_range(
-        &self,
+        &mut self,
         range: Range<u32>,
     ) -> Result<BTreeMap<u32, Header>, HeaderPersistenceError<H::Error>> {
-        let mut db = self.db.lock().await;
-        let range_opt = db.load(range).await;
+        let range_opt = self.db.load(range).await;
         if range_opt.is_err() {
             self.dialog.send_warning(Warning::FailedPersistence {
                 warning: "Unexpected error fetching a range of headers from the header store"
