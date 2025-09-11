@@ -17,7 +17,7 @@ use crate::{
 use crate::{PeerStoreSizeConfig, TrustedPeer};
 
 #[cfg(feature = "rusqlite")]
-/// The default node returned from the [`NodeBuilder`].
+/// The default node returned from the [`Builder`].
 pub type NodeDefault = Node<SqliteHeaderDb, SqlitePeerDb>;
 
 const MIN_PEERS: u8 = 1;
@@ -47,7 +47,7 @@ pub struct Builder {
 }
 
 impl Builder {
-    /// Create a new [`NodeBuilder`].
+    /// Create a new [`Builder`].
     pub fn new(network: Network) -> Self {
         Self {
             config: NodeConfig::default(),
