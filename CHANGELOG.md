@@ -5,6 +5,27 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.0
+
+## Added
+
+- Take the inner `BlockFilter` from `IndexedFilter`
+- `Info::BlockReceived` to convey the node is doing work
+
+## Changed
+
+- `Node::run` consumes `self`
+- Most checkpoints are removed, less segwit and taproot activations
+- `NodeState` is now internal to the library
+- `NodeBuilder` is renamed `Builder`
+- Scripts are no longer add, only filters are emitted
+
+## Fixes
+
+- Interior mutexes removed
+- Remove `ScriptBuf` from internals to avoid filter check race conditions
+- Additional mining delay
+
 ## 0.14.0
 
 ## Changed
