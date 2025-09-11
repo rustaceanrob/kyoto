@@ -69,7 +69,7 @@ async fn main() {
                             let height = filter.height();
                             tracing::info!("Checking filter: {height}");
                             if filter.contains_any(addresses.iter()) {
-                                let hash = *filter.block_hash();
+                                let hash = filter.block_hash();
                                 tracing::info!("Found script at {}!", hash);
                                 let indexed_block = requester.get_block(hash).await.unwrap();
                                 let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
