@@ -195,6 +195,10 @@ impl Filter {
             .map_err(|_| FilterError::IORead)
     }
 
+    pub fn into_filter(self) -> BlockFilter {
+        self.block_filter
+    }
+
     pub fn contents(self) -> Vec<u8> {
         self.block_filter.content
     }

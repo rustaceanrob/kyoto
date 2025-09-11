@@ -148,8 +148,8 @@ impl IndexedFilter {
     }
 
     /// Return the [`BlockHash`] associated with this filer
-    pub fn block_hash(&self) -> &BlockHash {
-        self.filter.block_hash()
+    pub fn block_hash(&self) -> BlockHash {
+        *self.filter.block_hash()
     }
 
     /// Does the filter contain a positive match for any of the provided scripts
@@ -157,6 +157,11 @@ impl IndexedFilter {
         self.filter
             .contains_any(scripts)
             .expect("vec reader is infallible")
+    }
+
+    /// Consume the index and get underlying block filter.
+    pub fn block_filter(self) -> BlockFilter {
+        self.filter.into_filter()
     }
 
     /// Consume the filter and get the raw bytes
