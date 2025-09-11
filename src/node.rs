@@ -157,10 +157,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                         Some(peer_thread) => {
                             match peer_thread.message {
                                 PeerMessage::Version(version) => {
-                                    {
-                                        self.peer_map.set_services(peer_thread.nonce, version.services);
-                                        self.peer_map.set_height(peer_thread.nonce, version.start_height as u32).await;
-                                    }
+                                    self.peer_map.set_services(peer_thread.nonce, version.services);
+                                    self.peer_map.set_height(peer_thread.nonce, version.start_height as u32).await;
                                     let response = self.handle_version(peer_thread.nonce, version).await?;
                                     self.peer_map.send_message(peer_thread.nonce, response).await;
                                     crate::debug!(format!("[{}]: version", peer_thread.nonce));
@@ -281,7 +279,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     async fn dispatch(&mut self) -> Result<(), NodeError<H::Error, P::Error>> {
         self.peer_map.clean().await;
         let live = self.peer_map.live();
-        let required = self.next_required_peers().await;
+        let required = self.next_required_peers();
         // Find more peers when lower than the desired threshold.
         if live < required {
             self.dialog.send_warning(Warning::NeedConnections {
@@ -366,7 +364,7 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
     }
 
     // When syncing headers we are only interested in one peer to start
-    async fn next_required_peers(&self) -> PeerRequirement {
+    fn next_required_peers(&self) -> PeerRequirement {
         match self.state {
             NodeState::Behind => 1,
             _ => self.required_peers,
