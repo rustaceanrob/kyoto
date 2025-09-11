@@ -1,8 +1,8 @@
 //! Sync a simple script with the Bitcoin network. This example is intended to demonstrate the
 //! expected sync time on your machine and in your region.
 
-use kyoto::builder::Builder;
-use kyoto::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
+use bip157::builder::Builder;
+use bip157::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use tokio::time::Instant;

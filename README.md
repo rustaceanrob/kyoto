@@ -5,10 +5,10 @@
   </p>
 
   <p>
-    <a href="https://crates.io/crates/kyoto-cbf"><img alt="Crate Info" src="https://img.shields.io/crates/v/kyoto-cbf.svg"/></a>
+    <a href="https://crates.io/crates/bip157"><img alt="Crate Info" src="https://img.shields.io/crates/v/bip157.svg"/></a>
     <a href="https://github.com/2140-dev/kyoto/blob/master/LICENSE"><img alt="MIT or Apache-2.0 Licensed" src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg"/></a>
     <a href="https://github.com/2140-dev/kyoto/actions?query=workflow%3A%22Build+%26+Test%22"><img alt="CI Status" src="https://github.com/2140-dev/kyoto/workflows/CI/badge.svg"/></a>
-    <a href="https://docs.rs/kyoto-cbf"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-kyoto_cbf-green"/></a>
+    <a href="https://docs.rs/bip157"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bip157-green"/></a>
     <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
   </p>
 </div>
@@ -35,7 +35,13 @@ just example
 
 It is recommended to walk through the [Signet example code](./example/signet.rs). Unlike usual clients that source data from the blockchain, there are two components to the CBF system. There is a "node" that fetches data on behalf of a user, and a "client" that receives data, logs, and warnings from the node. The client may also interact with the node by sending transactions to broadcast or fetching metadata. This crate allows a highly configurable node construction, so your app may optimize for the desired speed, privacy, and preferences.
 
-See the [docs](https://docs.rs/kyoto-cbf) for more details on the `Builder`, `Node`, `Client`, and more.
+See the [docs](https://docs.rs/bip157) for more details on the `Builder`, `Node`, `Client`, and more.
+
+To add to your project:
+
+```
+cargo add bip157
+```
 
 ### BDK
 
@@ -47,7 +53,7 @@ Kyoto integrates well with the Bitcoin Dev Kit (BDK) ecosystem.
 
 ## Minimum Supported Rust Version (MSRV) Policy
 
-The `kyoto` core library with default features supports an MSRV of Rust 1.63.
+The `bip157` core library with default features supports an MSRV of Rust 1.63.
 
 ## Contributing
 

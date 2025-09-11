@@ -1,14 +1,14 @@
-//! Kyoto is a conservative, private, and vetted Bitcoin client built in accordance
+//! This crate is a conservative, private, and vetted Bitcoin client built in accordance
 //! with the [BIP157](https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki) and [BIP158](https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki)
-//! standards. _Conservative_, as in Kyoto makes very little assumptions about the underlying memory requirements of the
-//! device running the software. _Private_, as in the Bitcoin nodes that serve Kyoto nodes data do not know what transactions the
+//! standards. _Conservative_, as in this crate makes very little assumptions about the underlying memory requirements of the
+//! device running the software. _Private_, as in the Bitcoin nodes that serve this client data do not know what transactions the
 //! client is querying for, only the entire Bitcoin block. _Vetted_, as in the dependencies of the core library are meant to remain limited,
 //! rigorously tested, and absolutely necessary.
 //!
 //! # Example usage
 //!
 //! ```no_run
-//! use kyoto::{Builder, Event, Client, Network, BlockHash};
+//! use bip157::{Builder, Event, Client, Network, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -225,7 +225,7 @@ pub enum TxBroadcastPolicy {
 ///
 /// ```rust
 /// use std::net::{IpAddr, Ipv4Addr};
-/// use kyoto::{TrustedPeer, ServiceFlags, AddrV2};
+/// use bip157::{TrustedPeer, ServiceFlags, AddrV2};
 ///
 /// let local_host = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 /// let mut trusted = TrustedPeer::from_ip(local_host);
@@ -389,7 +389,7 @@ impl core::fmt::Display for NodeState {
 /// ```no_run
 /// use std::net::{IpAddr, Ipv4Addr};
 ///
-/// use kyoto::lookup_host;
+/// use bip157::lookup_host;
 ///
 /// #[tokio::main]
 /// async fn main() {
