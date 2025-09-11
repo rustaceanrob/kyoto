@@ -130,7 +130,7 @@ async fn live_reorg() {
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
-    mine_blocks(rpc, &miner, 10, 1).await;
+    mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
     let (node, client) = new_node(socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
@@ -178,7 +178,7 @@ async fn live_reorg_additional_sync() {
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks
     let miner = rpc.new_address().unwrap();
-    mine_blocks(rpc, &miner, 10, 1).await;
+    mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
     let (node, client) = new_node(socket_addr, tempdir, None);
     tokio::task::spawn(async move { node.run().await });
@@ -258,7 +258,7 @@ async fn stop_reorg_resync() {
     let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks.
     let miner = rpc.new_address().unwrap();
-    mine_blocks(rpc, &miner, 10, 1).await;
+    mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
     let (node, client) = new_node(socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });
@@ -336,7 +336,7 @@ async fn stop_reorg_two_resync() {
     let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
     // Mine some blocks.
     let miner = rpc.new_address().unwrap();
-    mine_blocks(rpc, &miner, 10, 1).await;
+    mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
     let (node, client) = new_node(socket_addr, tempdir.clone(), None);
     tokio::task::spawn(async move { node.run().await });

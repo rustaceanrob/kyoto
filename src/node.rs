@@ -624,8 +624,8 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
         blocks: Vec<BlockHash>,
     ) -> Option<MainThreadMessage> {
         for block in blocks.iter() {
-            self.peer_map.increment_height(nonce).await;
             if !self.chain.header_chain.contains(*block) {
+                self.peer_map.increment_height(nonce).await;
                 crate::debug!(format!("New block: {}", block));
             }
         }
