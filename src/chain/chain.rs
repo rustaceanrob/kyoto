@@ -16,8 +16,8 @@ use super::{
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
     HeaderChainChanges, HeightMonitor, PeerId,
 };
-use crate::IndexedFilter;
 use crate::{chain::header_batch::HeadersBatch, dialog::Dialog, messages::Event, Info, Progress};
+use crate::{db::BlockHeaderChanges, IndexedFilter};
 
 const FILTER_BASIC: u8 = 0x00;
 const CF_HEADER_BATCH_SIZE: u32 = 1_999;
@@ -96,6 +96,8 @@ impl Chain {
                         connected_at.height,
                         connected_at.header.block_hash()
                     ));
+                    self.dialog
+                        .send_event(Event::Chain(BlockHeaderChanges::Connected(connected_at)));
                 }
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => {
@@ -114,11 +116,11 @@ impl Chain {
                         .map(|index| index.header.block_hash())
                         .collect();
                     reorged_hashes = Some(removed_hashes);
-                    let disconnected_event = Event::BlocksDisconnected {
+                    let changes = BlockHeaderChanges::Reorganized {
                         accepted,
-                        disconnected,
+                        reorganized: disconnected,
                     };
-                    self.dialog.send_event(disconnected_event);
+                    self.dialog.send_event(Event::Chain(changes));
                 }
                 AcceptHeaderChanges::Rejected(rejected_header) => match rejected_header {
                     HeaderRejection::InvalidPow {

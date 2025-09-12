@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
+use crate::db::BlockHeaderChanges;
 use crate::IndexedFilter;
 use crate::{
     chain::{checkpoints::HeaderCheckpoint, IndexedHeader},
@@ -63,12 +64,7 @@ pub enum Event {
     /// The node is fully synced, having scanned the requested range.
     FiltersSynced(SyncUpdate),
     /// Blocks were reorganized out of the chain.
-    BlocksDisconnected {
-        /// Blocks that were accepted to the chain of most work in ascending order by height.
-        accepted: Vec<IndexedHeader>,
-        /// Blocks that were disconnected from the chain of most work in ascending order by height.
-        disconnected: Vec<IndexedHeader>,
-    },
+    Chain(BlockHeaderChanges),
     /// A compact block filter with associated height and block hash.
     IndexedFilter(IndexedFilter),
 }
