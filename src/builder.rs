@@ -32,7 +32,7 @@ const MAX_PEERS: u8 = 15;
 /// ```rust
 /// use std::net::{IpAddr, Ipv4Addr};
 /// use std::collections::HashSet;
-/// use kyoto::{Builder, Network};
+/// use bip157::{Builder, Network};
 ///
 /// let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), None);
 /// let builder = Builder::new(Network::Regtest);

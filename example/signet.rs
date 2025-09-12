@@ -1,9 +1,9 @@
-//! Kyoto expects you check your scripts directly. Here is an example flow of how to query a filter
+//! bip157 expects you check your scripts directly. Here is an example flow of how to query a filter
 //! and request a block be downloaded.
 
-use kyoto::messages::Event;
-use kyoto::{builder::Builder, chain::checkpoints::HeaderCheckpoint, Client};
-use kyoto::{Address, BlockHash, Network};
+use bip157::messages::Event;
+use bip157::{builder::Builder, chain::checkpoints::HeaderCheckpoint, Client};
+use bip157::{Address, BlockHash, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
 
