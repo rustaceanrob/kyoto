@@ -8,7 +8,7 @@ use crate::chain::checkpoints::HeaderCheckpoint;
 #[cfg(feature = "rusqlite")]
 use crate::db::error::SqlInitializationError;
 #[cfg(feature = "rusqlite")]
-use crate::db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
+use crate::db::sqlite::peers::SqlitePeerDb;
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::network::ConnectionType;
 use crate::{PeerStoreSizeConfig, TrustedPeer};
@@ -168,12 +168,10 @@ impl Builder {
     #[cfg(feature = "rusqlite")]
     pub fn build(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
-        let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new(
             self.network,
             core::mem::take(&mut self.config),
             peer_store,
-            header_store,
         ))
     }
 }

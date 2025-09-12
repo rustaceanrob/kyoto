@@ -192,8 +192,6 @@ async fn live_reorg_additional_sync() {
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
-    let fetched_header = requester.get_header(10).await.unwrap();
-    assert_eq!(old_best, fetched_header.block_hash());
     invalidate_block(rpc, &best).await;
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -241,10 +239,7 @@ async fn various_client_methods() {
     } = client;
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
-    let batch = requester.get_header_range(10_000..10_002).await.unwrap();
-    assert!(batch.is_empty());
     let _ = requester.broadcast_min_feerate().await.unwrap();
-    let _ = requester.get_header(3).await.unwrap();
     assert!(requester.is_running());
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
@@ -269,8 +264,6 @@ async fn stop_reorg_resync() {
     } = client;
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
-    let batch = requester.get_header_range(0..10).await.unwrap();
-    assert!(!batch.is_empty());
     requester.shutdown().unwrap();
     // Reorganize the blocks
     let old_best = best;

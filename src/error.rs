@@ -6,15 +6,12 @@ use crate::{db::error::SqlHeaderStoreError, impl_sourceless_error};
 #[derive(Debug)]
 pub enum NodeError<P: Debug + Display> {
     /// The persistence layer experienced a critical error.
-    HeaderDatabase(HeaderPersistenceError),
-    /// The persistence layer experienced a critical error.
     PeerDatabase(PeerManagerError<P>),
 }
 
 impl<P: Debug + Display> core::fmt::Display for NodeError<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
             NodeError::PeerDatabase(e) => write!(f, "peer manager: {e}"),
         }
     }
@@ -23,12 +20,6 @@ impl<P: Debug + Display> core::fmt::Display for NodeError<P> {
 impl<P: Debug + Display> std::error::Error for NodeError<P> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
-    }
-}
-
-impl<P: Debug + Display> From<HeaderPersistenceError> for NodeError<P> {
-    fn from(value: HeaderPersistenceError) -> Self {
-        NodeError::HeaderDatabase(value)
     }
 }
 
@@ -118,11 +109,6 @@ pub enum FetchHeaderError {
     /// The channel to the node was likely closed and dropped from memory.
     /// This implies the node is not running.
     SendError,
-    /// The database operation failed while attempting to find the header.
-    DatabaseOptFailed {
-        /// The message from the backend describing the failure.
-        error: String,
-    },
     /// The channel to the client was likely closed by the node and dropped from memory.
     RecvError,
     /// The header at the requested height does not yet exist.
@@ -134,12 +120,6 @@ impl core::fmt::Display for FetchHeaderError {
         match self {
             FetchHeaderError::SendError => {
                 write!(f, "the receiver of this message was dropped from memory.")
-            }
-            FetchHeaderError::DatabaseOptFailed { error } => {
-                write!(
-                    f,
-                    "the database operation failed while attempting to find the header: {error}"
-                )
             }
             FetchHeaderError::RecvError => write!(
                 f,
@@ -160,11 +140,6 @@ pub enum FetchBlockError {
     /// The channel to the node was likely closed and dropped from memory.
     /// This implies the node is not running.
     SendError,
-    /// The database operation failed while attempting to find the header.
-    DatabaseOptFailed {
-        /// The message from the backend describing the failure.
-        error: String,
-    },
     /// The channel to the client was likely closed by the node and dropped from memory.
     RecvError,
     /// The hash is not a member of the chain of most work.
@@ -176,12 +151,6 @@ impl core::fmt::Display for FetchBlockError {
         match self {
             FetchBlockError::SendError => {
                 write!(f, "the receiver of this message was dropped from memory.")
-            }
-            FetchBlockError::DatabaseOptFailed { error } => {
-                write!(
-                    f,
-                    "the database operation failed while attempting to find the header: {error}"
-                )
             }
             FetchBlockError::RecvError => write!(
                 f,

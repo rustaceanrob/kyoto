@@ -26,13 +26,13 @@ use crate::{
         block_queue::{BlockQueue, BlockRecipient, ProcessBlockResponse},
         chain::Chain,
         checkpoints::HeaderCheckpoint,
-        error::{CFilterSyncError, HeaderSyncError},
+        error::HeaderSyncError,
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     db::traits::PeerStore,
-    error::{FetchBlockError, FetchHeaderError},
+    error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    IndexedBlock, NodeState, SqliteHeaderDb, TxBroadcast, TxBroadcastPolicy,
+    IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
 
 use super::{
@@ -63,12 +63,7 @@ pub struct Node<P: PeerStore + 'static> {
 }
 
 impl<P: PeerStore> Node<P> {
-    pub(crate) fn new(
-        network: Network,
-        config: NodeConfig,
-        peer_store: P,
-        header_store: SqliteHeaderDb,
-    ) -> (Self, Client) {
+    pub(crate) fn new(network: Network, config: NodeConfig, peer_store: P) -> (Self, Client) {
         let NodeConfig {
             required_peers,
             white_list,
@@ -110,7 +105,6 @@ impl<P: PeerStore> Node<P> {
             header_checkpoint,
             Arc::clone(&dialog),
             height_monitor,
-            header_store,
             required_peers,
         );
         (
@@ -139,7 +133,6 @@ impl<P: PeerStore> Node<P> {
             "Configured connection requirement: {} peers",
             self.required_peers
         ));
-        self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut interval = tokio::time::interval(LOOP_TIMEOUT);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -245,22 +238,6 @@ impl<P: PeerStore> Node<P> {
                             },
                             ClientMessage::AddPeer(peer) => {
                                 self.peer_map.add_trusted_peer(peer);
-                            },
-                            ClientMessage::GetHeader(request) => {
-                                let (height, oneshot) = request.into_values();
-                                let header_opt = self.chain.fetch_header(height).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }).and_then(|opt| opt.ok_or(FetchHeaderError::UnknownHeight));
-                                let send_result = oneshot.send(header_opt);
-                                if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped);
-                                };
-                            },
-                            ClientMessage::GetHeaderBatch(request) => {
-                                let (range, oneshot) = request.into_values();
-                                let range_opt = self.chain.fetch_header_range(range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
-                                let send_result = oneshot.send(range_opt);
-                                if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped);
-                                };
                             },
                             ClientMessage::GetBroadcastMinFeeRate(request) => {
                                 let (_, oneshot) = request.into_values();
@@ -543,13 +520,8 @@ impl<P: PeerStore> Node<P> {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
                     warning: format!("Compact filter syncing encountered an error: {e}"),
                 });
-                match e {
-                    CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
-                    _ => {
-                        self.peer_map.ban(peer_id).await;
-                        Some(MainThreadMessage::Disconnect)
-                    }
-                }
+                self.peer_map.ban(peer_id).await;
+                Some(MainThreadMessage::Disconnect)
             }
         }
     }
@@ -667,14 +639,5 @@ impl<P: PeerStore> Node<P> {
                 ))
             }
         }
-    }
-
-    // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&mut self) -> Result<(), NodeError<P::Error>> {
-        crate::debug!("Attempting to load headers from the database");
-        self.chain
-            .load_headers()
-            .await
-            .map_err(NodeError::HeaderDatabase)
     }
 }
