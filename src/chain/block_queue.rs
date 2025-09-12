@@ -6,7 +6,7 @@ use std::{
 use bitcoin::BlockHash;
 use tokio::{sync::oneshot, time::Instant};
 
-use crate::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
+use crate::{error::FetchBlockError, messages::ClientRequest, IndexedBlock};
 
 const SPAM_LIMIT: Duration = Duration::from_secs(5);
 
@@ -105,10 +105,13 @@ impl Request {
         }
     }
 
-    fn from_block_request(block_request: BlockRequest) -> Self {
+    fn from_block_request(
+        block_request: ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>,
+    ) -> Self {
+        let (hash, oneshot) = block_request.into_values();
         Self {
-            hash: block_request.hash,
-            recipient: BlockRecipient::Client(block_request.oneshot),
+            hash,
+            recipient: BlockRecipient::Client(oneshot),
         }
     }
 }
@@ -119,8 +122,8 @@ impl From<BlockHash> for Request {
     }
 }
 
-impl From<BlockRequest> for Request {
-    fn from(value: BlockRequest) -> Self {
+impl From<ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>> for Request {
+    fn from(value: ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>) -> Self {
         Request::from_block_request(value)
     }
 }

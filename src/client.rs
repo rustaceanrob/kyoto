@@ -6,12 +6,13 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
+use crate::messages::ClientRequest;
 use crate::{Event, Info, TrustedPeer, TxBroadcast, Warning};
 
-use super::{error::FetchBlockError, messages::BlockRequest, IndexedBlock};
+use super::{error::FetchBlockError, IndexedBlock};
 use super::{
     error::{ClientError, FetchFeeRateError, FetchHeaderError},
-    messages::{BatchHeaderRequest, ClientMessage, HeaderRequest},
+    messages::ClientMessage,
 };
 
 /// A [`Client`] allows for communication with a running node.
@@ -108,8 +109,9 @@ impl Requester {
     /// If the node has stopped running.
     pub async fn broadcast_min_feerate(&self) -> Result<FeeRate, FetchFeeRateError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<FeeRate>();
+        let request = ClientRequest::new((), tx);
         self.ntx
-            .send(ClientMessage::GetBroadcastMinFeeRate(tx))
+            .send(ClientMessage::GetBroadcastMinFeeRate(request))
             .map_err(|_| FetchFeeRateError::SendError)?;
         rx.await.map_err(|_| FetchFeeRateError::RecvError)
     }
@@ -126,7 +128,7 @@ impl Requester {
     /// If the node has stopped running.
     pub async fn get_header(&self, height: u32) -> Result<Header, FetchHeaderError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Header, FetchHeaderError>>();
-        let message = HeaderRequest::new(tx, height);
+        let message = ClientRequest::new(height, tx);
         self.ntx
             .send(ClientMessage::GetHeader(message))
             .map_err(|_| FetchHeaderError::SendError)?;
@@ -144,7 +146,7 @@ impl Requester {
     ) -> Result<BTreeMap<u32, Header>, FetchHeaderError> {
         let (tx, rx) =
             tokio::sync::oneshot::channel::<Result<BTreeMap<u32, Header>, FetchHeaderError>>();
-        let message = BatchHeaderRequest::new(tx, range);
+        let message = ClientRequest::new(range, tx);
         self.ntx
             .send(ClientMessage::GetHeaderBatch(message))
             .map_err(|_| FetchHeaderError::SendError)?;
@@ -160,7 +162,7 @@ impl Requester {
     /// If the node has stopped running.
     pub async fn get_block(&self, block_hash: BlockHash) -> Result<IndexedBlock, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
-        let message = BlockRequest::new(tx, block_hash);
+        let message = ClientRequest::new(block_hash, tx);
         self.ntx
             .send(ClientMessage::GetBlock(message))
             .map_err(|_| FetchBlockError::SendError)?;
@@ -178,7 +180,7 @@ impl Requester {
         block_hash: BlockHash,
     ) -> Result<oneshot::Receiver<Result<IndexedBlock, FetchBlockError>>, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
-        let message = BlockRequest::new(tx, block_hash);
+        let message = ClientRequest::new(block_hash, tx);
         self.ntx
             .send(ClientMessage::GetBlock(message))
             .map_err(|_| FetchBlockError::SendError)?;
@@ -196,7 +198,7 @@ impl Requester {
         block_hash: BlockHash,
     ) -> Result<FeeRate, FetchBlockError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<IndexedBlock, FetchBlockError>>();
-        let message = BlockRequest::new(tx, block_hash);
+        let message = ClientRequest::new(block_hash, tx);
         self.ntx
             .send(ClientMessage::GetBlock(message))
             .map_err(|_| FetchBlockError::SendError)?;
