@@ -88,7 +88,7 @@ pub use chain::checkpoints::HeaderCheckpoint;
 pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
 
 #[doc(inline)]
-pub use db::traits::{HeaderStore, PeerStore};
+pub use db::traits::PeerStore;
 
 #[doc(inline)]
 pub use tokio::sync::mpsc::Receiver;

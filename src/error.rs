@@ -1,17 +1,17 @@
 use std::fmt::{Debug, Display};
 
-use crate::impl_sourceless_error;
+use crate::{db::error::SqlHeaderStoreError, impl_sourceless_error};
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
-pub enum NodeError<H: Debug + Display, P: Debug + Display> {
+pub enum NodeError<P: Debug + Display> {
     /// The persistence layer experienced a critical error.
-    HeaderDatabase(HeaderPersistenceError<H>),
+    HeaderDatabase(HeaderPersistenceError),
     /// The persistence layer experienced a critical error.
     PeerDatabase(PeerManagerError<P>),
 }
 
-impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H, P> {
+impl<P: Debug + Display> core::fmt::Display for NodeError<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
@@ -20,19 +20,19 @@ impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H,
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> std::error::Error for NodeError<H, P> {
+impl<P: Debug + Display> std::error::Error for NodeError<P> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> From<HeaderPersistenceError<H>> for NodeError<H, P> {
-    fn from(value: HeaderPersistenceError<H>) -> Self {
+impl<P: Debug + Display> From<HeaderPersistenceError> for NodeError<P> {
+    fn from(value: HeaderPersistenceError) -> Self {
         NodeError::HeaderDatabase(value)
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> From<PeerManagerError<P>> for NodeError<H, P> {
+impl<P: Debug + Display> From<PeerManagerError<P>> for NodeError<P> {
     fn from(value: PeerManagerError<P>) -> Self {
         NodeError::PeerDatabase(value)
     }
@@ -69,7 +69,7 @@ impl<P: Debug + Display> From<P> for PeerManagerError<P> {
 
 /// Errors with the block header representation that prevent the node from operating.
 #[derive(Debug)]
-pub enum HeaderPersistenceError<H: Debug + Display> {
+pub enum HeaderPersistenceError {
     /// The block headers do not point to each other in a list.
     HeadersDoNotLink,
     /// Some predefined checkpoint does not match.
@@ -77,10 +77,10 @@ pub enum HeaderPersistenceError<H: Debug + Display> {
     /// A user tried to retrieve headers too far in the past for what is in their database.
     CannotLocateHistory,
     /// A database error.
-    Database(H),
+    Database(SqlHeaderStoreError),
 }
 
-impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
+impl core::fmt::Display for HeaderPersistenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
@@ -91,13 +91,9 @@ impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
     }
 }
 
-impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl_sourceless_error!(HeaderPersistenceError);
 
-/// Errors occuring when the client is talking to the node.
+/// Errors occurring when the client is talking to the node.
 #[derive(Debug)]
 pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
@@ -116,7 +112,7 @@ impl core::fmt::Display for ClientError {
 
 impl_sourceless_error!(ClientError);
 
-/// Errors occuring when the client is fetching headers from the node.
+/// Errors occurring when the client is fetching headers from the node.
 #[derive(Debug)]
 pub enum FetchHeaderError {
     /// The channel to the node was likely closed and dropped from memory.
@@ -158,7 +154,7 @@ impl core::fmt::Display for FetchHeaderError {
 
 impl_sourceless_error!(FetchHeaderError);
 
-/// Errors occuring when the client is fetching blocks from the node.
+/// Errors occurring when the client is fetching blocks from the node.
 #[derive(Debug)]
 pub enum FetchBlockError {
     /// The channel to the node was likely closed and dropped from memory.

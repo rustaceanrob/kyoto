@@ -19,7 +19,7 @@ use super::{
 use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
-    db::{traits::HeaderStore, BlockHeaderChanges},
+    db::{sqlite::headers::SqliteHeaderDb, BlockHeaderChanges},
     dialog::Dialog,
     error::HeaderPersistenceError,
     messages::{Event, Warning},
@@ -32,22 +32,22 @@ const CF_HEADER_BATCH_SIZE: u32 = 1_999;
 const FILTER_BATCH_SIZE: u32 = 999;
 
 #[derive(Debug)]
-pub(crate) struct Chain<H: HeaderStore> {
+pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    db: H,
+    db: SqliteHeaderDb,
     heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
 }
 
-impl<H: HeaderStore> Chain<H> {
+impl Chain {
     pub(crate) fn new(
         network: Network,
         anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        db: H,
+        db: SqliteHeaderDb,
         quorum_required: u8,
     ) -> Self {
         let header_chain = match anchor {
@@ -86,7 +86,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // Load in headers, ideally allowing the difficulty adjustment to be audited and
     // reorganizations to be handled gracefully.
-    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
+    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
         // The original height the user requested a scan after
         let scan_height = self.header_chain.height();
         // The header relevant to compute the next adjustment
@@ -475,7 +475,7 @@ impl<H: HeaderStore> Chain<H> {
     pub(crate) async fn fetch_header(
         &mut self,
         height: u32,
-    ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
+    ) -> Result<Option<Header>, HeaderPersistenceError> {
         match self.header_chain.header_at_height(height) {
             Some(header) => Ok(Some(header)),
             None => {
@@ -496,7 +496,7 @@ impl<H: HeaderStore> Chain<H> {
     pub(crate) async fn fetch_header_range(
         &mut self,
         range: Range<u32>,
-    ) -> Result<BTreeMap<u32, Header>, HeaderPersistenceError<H::Error>> {
+    ) -> Result<BTreeMap<u32, Header>, HeaderPersistenceError> {
         let range_opt = self.db.load(range).await;
         if range_opt.is_err() {
             self.dialog.send_warning(Warning::FailedPersistence {
@@ -554,11 +554,12 @@ mod tests {
         block::Header,
         consensus::deserialize,
         p2p::message_filter::{CFHeaders, CFilter},
-        BlockHash, FilterHash, FilterHeader,
+        BlockHash, FilterHash, FilterHeader, Network,
     };
     use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
+    use crate::SqliteHeaderDb;
     use crate::{
         chain::checkpoints::HeaderCheckpoint,
         {
@@ -573,16 +574,16 @@ mod tests {
         anchor: HeaderCheckpoint,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: u8,
-    ) -> Chain<()> {
+    ) -> Chain {
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         Chain::new(
-            bitcoin::Network::Regtest,
+            Network::Regtest,
             Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
-            (),
+            SqliteHeaderDb::new(Network::Regtest, None).unwrap(),
             peers,
         )
     }

@@ -6,8 +6,7 @@ use std::{
 
 use bip157::{
     chain::checkpoints::HeaderCheckpoint, client::Client, lookup_host, node::Node, Address,
-    BlockHash, Event, Info, ServiceFlags, SqliteHeaderDb, SqlitePeerDb, Transaction, TrustedPeer,
-    Warning,
+    BlockHash, Event, Info, ServiceFlags, SqlitePeerDb, Transaction, TrustedPeer, Warning,
 };
 use bitcoin::{
     absolute,
@@ -52,7 +51,7 @@ fn new_node(
     socket_addr: SocketAddrV4,
     tempdir_path: PathBuf,
     checkpoint: Option<HeaderCheckpoint>,
-) -> (Node<SqliteHeaderDb, SqlitePeerDb>, Client) {
+) -> (Node<SqlitePeerDb>, Client) {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
