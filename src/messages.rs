@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, ops::Range, time::Duration};
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
-use tokio::sync::oneshot;
 
 use crate::IndexedFilter;
 use crate::{
@@ -154,64 +153,38 @@ pub(crate) enum ClientMessage {
     /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan,
     /// Explicitly request a block from the node.
-    GetBlock(BlockRequest),
+    GetBlock(ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>),
     /// Set a new connection timeout.
     SetDuration(Duration),
     /// Add another known peer to connect to.
     AddPeer(TrustedPeer),
     /// Request a header from a specified height.
-    GetHeader(HeaderRequest),
+    GetHeader(ClientRequest<u32, Result<Header, FetchHeaderError>>),
     /// Request a range of headers.
-    GetHeaderBatch(BatchHeaderRequest),
+    GetHeaderBatch(ClientRequest<Range<u32>, Result<BTreeMap<u32, Header>, FetchHeaderError>>),
     /// Request the broadcast minimum fee rate.
-    GetBroadcastMinFeeRate(FeeRateSender),
+    GetBroadcastMinFeeRate(ClientRequest<(), FeeRate>),
     /// Send an empty message to see if the node is running.
     NoOp,
 }
 
-type HeaderSender = tokio::sync::oneshot::Sender<Result<Header, FetchHeaderError>>;
-
 #[derive(Debug)]
-pub(crate) struct HeaderRequest {
-    pub(crate) oneshot: HeaderSender,
-    pub(crate) height: u32,
+pub(crate) struct ClientRequest<D: Clone, U> {
+    data: D,
+    response: tokio::sync::oneshot::Sender<U>,
 }
 
-impl HeaderRequest {
-    pub(crate) fn new(oneshot: HeaderSender, height: u32) -> Self {
-        Self { oneshot, height }
+impl<D: Clone, U> ClientRequest<D, U> {
+    pub(crate) fn new(data: D, response: tokio::sync::oneshot::Sender<U>) -> Self {
+        Self { data, response }
     }
-}
 
-type BatchHeaderSender =
-    tokio::sync::oneshot::Sender<Result<BTreeMap<u32, Header>, FetchHeaderError>>;
-
-#[derive(Debug)]
-pub(crate) struct BatchHeaderRequest {
-    pub(crate) oneshot: BatchHeaderSender,
-    pub(crate) range: Range<u32>,
-}
-
-impl BatchHeaderRequest {
-    pub(crate) fn new(oneshot: BatchHeaderSender, range: Range<u32>) -> Self {
-        Self { oneshot, range }
+    pub(crate) fn data(&self) -> D {
+        self.data.clone()
     }
-}
 
-pub(crate) type FeeRateSender = tokio::sync::oneshot::Sender<FeeRate>;
-
-#[derive(Debug)]
-pub(crate) struct BlockRequest {
-    pub(crate) oneshot: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
-    pub(crate) hash: BlockHash,
-}
-
-impl BlockRequest {
-    pub(crate) fn new(
-        oneshot: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
-        hash: BlockHash,
-    ) -> Self {
-        Self { oneshot, hash }
+    pub(crate) fn into_values(self) -> (D, tokio::sync::oneshot::Sender<U>) {
+        (self.data, self.response)
     }
 }
 

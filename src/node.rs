@@ -226,15 +226,16 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 }
                             },
                             ClientMessage::GetBlock(request) => {
-                                let height_opt = self.chain.header_chain.height_of_hash(request.hash);
+                                let height_opt = self.chain.header_chain.height_of_hash(request.data());
                                 if height_opt.is_none() {
-                                    let err_reponse = request.oneshot.send(Err(FetchBlockError::UnknownHash));
+                                    let (_, oneshot) = request.into_values();
+                                    let err_reponse = oneshot.send(Err(FetchBlockError::UnknownHash));
                                     if err_reponse.is_err() {
                                         self.dialog.send_warning(Warning::ChannelDropped);
                                     }
                                 } else {
                                     crate::debug!(
-                                        format!("Adding block {} to queue", request.hash)
+                                        format!("Adding block {} to queue", request.data())
                                     );
                                     self.block_queue.add(request);
                                 }
@@ -246,22 +247,25 @@ impl<H: HeaderStore, P: PeerStore> Node<H, P> {
                                 self.peer_map.add_trusted_peer(peer);
                             },
                             ClientMessage::GetHeader(request) => {
-                                let header_opt = self.chain.fetch_header(request.height).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }).and_then(|opt| opt.ok_or(FetchHeaderError::UnknownHeight));
-                                let send_result = request.oneshot.send(header_opt);
+                                let (height, oneshot) = request.into_values();
+                                let header_opt = self.chain.fetch_header(height).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }).and_then(|opt| opt.ok_or(FetchHeaderError::UnknownHeight));
+                                let send_result = oneshot.send(header_opt);
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             },
                             ClientMessage::GetHeaderBatch(request) => {
-                                let range_opt = self.chain.fetch_header_range(request.range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
-                                let send_result = request.oneshot.send(range_opt);
+                                let (range, oneshot) = request.into_values();
+                                let range_opt = self.chain.fetch_header_range(range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
+                                let send_result = oneshot.send(range_opt);
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             },
                             ClientMessage::GetBroadcastMinFeeRate(request) => {
+                                let (_, oneshot) = request.into_values();
                                 let fee_rate = self.peer_map.broadcast_min();
-                                let send_result = request.send(fee_rate);
+                                let send_result = oneshot.send(fee_rate);
                                 if send_result.is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
