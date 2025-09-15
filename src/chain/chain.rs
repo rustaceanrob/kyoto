@@ -1,5 +1,5 @@
 extern crate alloc;
-use std::{collections::BTreeMap, ops::Range, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
 use bitcoin::{
     block::Header,
@@ -469,42 +469,6 @@ impl<H: HeaderStore> Chain<H> {
     // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
         self.header_chain.filters_synced()
-    }
-
-    // Fetch a header from the cache or disk.
-    pub(crate) async fn fetch_header(
-        &mut self,
-        height: u32,
-    ) -> Result<Option<Header>, HeaderPersistenceError<H::Error>> {
-        match self.header_chain.header_at_height(height) {
-            Some(header) => Ok(Some(header)),
-            None => {
-                let header_opt = self.db.header_at(height).await;
-                if header_opt.is_err() {
-                    self.dialog
-                        .send_warning(Warning::FailedPersistence {
-                            warning: format!(
-                                "Unexpected error fetching a header from the header store at height {height}"
-                            ),
-                        });
-                }
-                header_opt.map_err(HeaderPersistenceError::Database)
-            }
-        }
-    }
-
-    pub(crate) async fn fetch_header_range(
-        &mut self,
-        range: Range<u32>,
-    ) -> Result<BTreeMap<u32, Header>, HeaderPersistenceError<H::Error>> {
-        let range_opt = self.db.load(range).await;
-        if range_opt.is_err() {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: "Unexpected error fetching a range of headers from the header store"
-                    .to_string(),
-            });
-        }
-        range_opt.map_err(HeaderPersistenceError::Database)
     }
 
     // Reset the compact filter queue because we received a new block

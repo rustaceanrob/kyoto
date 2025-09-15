@@ -30,7 +30,7 @@ use crate::{
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     db::traits::HeaderStore,
-    error::{FetchBlockError, FetchHeaderError},
+    error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     IndexedBlock, NodeState, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
 };
@@ -245,22 +245,6 @@ impl<H: HeaderStore> Node<H> {
                             },
                             ClientMessage::AddPeer(peer) => {
                                 self.peer_map.add_trusted_peer(peer);
-                            },
-                            ClientMessage::GetHeader(request) => {
-                                let (height, oneshot) = request.into_values();
-                                let header_opt = self.chain.fetch_header(height).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() }).and_then(|opt| opt.ok_or(FetchHeaderError::UnknownHeight));
-                                let send_result = oneshot.send(header_opt);
-                                if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped);
-                                };
-                            },
-                            ClientMessage::GetHeaderBatch(request) => {
-                                let (range, oneshot) = request.into_values();
-                                let range_opt = self.chain.fetch_header_range(range).await.map_err(|e| FetchHeaderError::DatabaseOptFailed { error: e.to_string() });
-                                let send_result = oneshot.send(range_opt);
-                                if send_result.is_err() {
-                                    self.dialog.send_warning(Warning::ChannelDropped);
-                                };
                             },
                             ClientMessage::GetBroadcastMinFeeRate(request) => {
                                 let (_, oneshot) = request.into_values();
