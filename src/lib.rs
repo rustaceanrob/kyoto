@@ -146,14 +146,12 @@ impl IndexedFilter {
 
     /// Return the [`BlockHash`] associated with this filer
     pub fn block_hash(&self) -> BlockHash {
-        *self.filter.block_hash()
+        self.filter.block_hash()
     }
 
     /// Does the filter contain a positive match for any of the provided scripts
     pub fn contains_any<'a>(&'a self, scripts: impl Iterator<Item = &'a ScriptBuf>) -> bool {
-        self.filter
-            .contains_any(scripts)
-            .expect("vec reader is infallible")
+        self.filter.contains_any(scripts)
     }
 
     /// Consume the index and get underlying block filter.
