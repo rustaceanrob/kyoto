@@ -239,9 +239,6 @@ impl Node {
                                     self.block_queue.add(request);
                                 }
                             },
-                            ClientMessage::SetDuration(duration) => {
-                                self.peer_map.set_duration(duration);
-                            },
                             ClientMessage::AddPeer(peer) => {
                                 self.peer_map.add_trusted_peer(peer);
                             },

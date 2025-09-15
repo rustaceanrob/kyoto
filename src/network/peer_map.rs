@@ -3,7 +3,6 @@ use std::{
     fmt::Debug,
     net::IpAddr,
     sync::Arc,
-    time::Duration,
 };
 
 use bitcoin::{
@@ -120,11 +119,6 @@ impl PeerMap {
             .values()
             .filter(|peer| !peer.handle.is_finished())
             .count()
-    }
-
-    // Set a new timeout duration
-    pub fn set_duration(&mut self, duration: Duration) {
-        self.timeout_config.response_timeout = duration;
     }
 
     // Add a new trusted peer to the whitelist
