@@ -9,9 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::db::error::{SqlInitializationError, SqlPeerStoreError};
-use crate::db::traits::PeerStore;
 use crate::db::{PeerStatus, PersistedPeer};
-use crate::prelude::FutureResult;
 
 use super::{DATA_DIR, DEFAULT_CWD};
 
@@ -77,7 +75,8 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn update(&mut self, peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
+    /// Update a record
+    pub async fn update(&mut self, peer: PersistedPeer) -> Result<(), SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let stmt = match peer.status {
             PeerStatus::Gossiped => "INSERT INTO peers (ip_addr, port, service_flags, tried, banned) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(ip_addr) DO UPDATE SET port = excluded.port, service_flags = excluded.service_flags",
@@ -97,7 +96,8 @@ impl SqlitePeerDb {
         Ok(())
     }
 
-    async fn random(&mut self) -> Result<PersistedPeer, SqlPeerStoreError> {
+    /// Random peer from the database
+    pub async fn random(&mut self) -> Result<PersistedPeer, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let mut stmt =
             lock.prepare("SELECT * FROM peers WHERE banned = false ORDER BY RANDOM() LIMIT 1")?;
@@ -121,26 +121,12 @@ impl SqlitePeerDb {
         }
     }
 
-    async fn num_unbanned(&mut self) -> Result<u32, SqlPeerStoreError> {
+    /// Number of peers that are not banned
+    pub async fn num_unbanned(&mut self) -> Result<u32, SqlPeerStoreError> {
         let lock = self.conn.lock().await;
         let mut stmt = lock.prepare("SELECT COUNT(*) FROM peers WHERE banned = false")?;
         let count: u32 = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
-    }
-}
-
-impl PeerStore for SqlitePeerDb {
-    type Error = SqlPeerStoreError;
-    fn update(&mut self, peer: PersistedPeer) -> FutureResult<'_, (), Self::Error> {
-        Box::pin(self.update(peer))
-    }
-
-    fn random(&mut self) -> FutureResult<'_, PersistedPeer, Self::Error> {
-        Box::pin(self.random())
-    }
-
-    fn num_unbanned(&mut self) -> FutureResult<'_, u32, Self::Error> {
-        Box::pin(self.num_unbanned())
     }
 }
 
