@@ -1,17 +1,20 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-use crate::{db::error::SqlPeerStoreError, impl_sourceless_error};
+use crate::{
+    db::error::{SqlHeaderStoreError, SqlPeerStoreError},
+    impl_sourceless_error,
+};
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
-pub enum NodeError<H: Debug + Display> {
+pub enum NodeError {
     /// The persistence layer experienced a critical error.
-    HeaderDatabase(HeaderPersistenceError<H>),
+    HeaderDatabase(HeaderPersistenceError),
     /// The persistence layer experienced a critical error.
     PeerDatabase(PeerManagerError),
 }
 
-impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
+impl core::fmt::Display for NodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
@@ -20,19 +23,15 @@ impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
     }
 }
 
-impl<H: Debug + Display> std::error::Error for NodeError<H> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl_sourceless_error!(NodeError);
 
-impl<H: Debug + Display> From<HeaderPersistenceError<H>> for NodeError<H> {
-    fn from(value: HeaderPersistenceError<H>) -> Self {
+impl From<HeaderPersistenceError> for NodeError {
+    fn from(value: HeaderPersistenceError) -> Self {
         NodeError::HeaderDatabase(value)
     }
 }
 
-impl<H: Debug + Display> From<PeerManagerError> for NodeError<H> {
+impl From<PeerManagerError> for NodeError {
     fn from(value: PeerManagerError) -> Self {
         NodeError::PeerDatabase(value)
     }
@@ -65,7 +64,7 @@ impl From<SqlPeerStoreError> for PeerManagerError {
 
 /// Errors with the block header representation that prevent the node from operating.
 #[derive(Debug)]
-pub enum HeaderPersistenceError<H: Debug + Display> {
+pub enum HeaderPersistenceError {
     /// The block headers do not point to each other in a list.
     HeadersDoNotLink,
     /// Some predefined checkpoint does not match.
@@ -73,10 +72,10 @@ pub enum HeaderPersistenceError<H: Debug + Display> {
     /// A user tried to retrieve headers too far in the past for what is in their database.
     CannotLocateHistory,
     /// A database error.
-    Database(H),
+    Database(SqlHeaderStoreError),
 }
 
-impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
+impl core::fmt::Display for HeaderPersistenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
@@ -87,11 +86,7 @@ impl<H: Debug + Display> core::fmt::Display for HeaderPersistenceError<H> {
     }
 }
 
-impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl_sourceless_error!(HeaderPersistenceError);
 
 /// Errors occurring when the client is talking to the node.
 #[derive(Debug)]
@@ -111,48 +106,6 @@ impl core::fmt::Display for ClientError {
 }
 
 impl_sourceless_error!(ClientError);
-
-/// Errors occurring when the client is fetching headers from the node.
-#[derive(Debug)]
-pub enum FetchHeaderError {
-    /// The channel to the node was likely closed and dropped from memory.
-    /// This implies the node is not running.
-    SendError,
-    /// The database operation failed while attempting to find the header.
-    DatabaseOptFailed {
-        /// The message from the backend describing the failure.
-        error: String,
-    },
-    /// The channel to the client was likely closed by the node and dropped from memory.
-    RecvError,
-    /// The header at the requested height does not yet exist.
-    UnknownHeight,
-}
-
-impl core::fmt::Display for FetchHeaderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FetchHeaderError::SendError => {
-                write!(f, "the receiver of this message was dropped from memory.")
-            }
-            FetchHeaderError::DatabaseOptFailed { error } => {
-                write!(
-                    f,
-                    "the database operation failed while attempting to find the header: {error}"
-                )
-            }
-            FetchHeaderError::RecvError => write!(
-                f,
-                "the channel to the client was likely closed by the node and dropped from memory."
-            ),
-            FetchHeaderError::UnknownHeight => {
-                write!(f, "the header at the requested height does not yet exist.")
-            }
-        }
-    }
-}
-
-impl_sourceless_error!(FetchHeaderError);
 
 /// Errors occurring when the client is fetching blocks from the node.
 #[derive(Debug)]

@@ -1,13 +1,9 @@
-use core::{future::Future, pin::Pin};
-
 use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, Network, Work};
 
 #[allow(dead_code)]
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
 #[allow(unused)]
 pub const MEDIAN_TIME_PAST: usize = 11;
-
-pub(crate) type FutureResult<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
 
 macro_rules! impl_sourceless_error {
     ($e:ident) => {

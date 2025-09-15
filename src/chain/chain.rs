@@ -16,15 +16,15 @@ use super::{
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
     HeaderChainChanges, HeightExt, HeightMonitor, PeerId,
 };
-use crate::IndexedFilter;
 use crate::{
     chain::header_batch::HeadersBatch,
-    db::{traits::HeaderStore, BlockHeaderChanges},
+    db::BlockHeaderChanges,
     dialog::Dialog,
     error::HeaderPersistenceError,
     messages::{Event, Warning},
     Info, Progress,
 };
+use crate::{IndexedFilter, SqliteHeaderDb};
 
 const REORG_LOOKBACK: u32 = 7;
 const FILTER_BASIC: u8 = 0x00;
@@ -32,22 +32,22 @@ const CF_HEADER_BATCH_SIZE: u32 = 1_999;
 const FILTER_BATCH_SIZE: u32 = 999;
 
 #[derive(Debug)]
-pub(crate) struct Chain<H: HeaderStore> {
+pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    db: H,
+    db: SqliteHeaderDb,
     heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
 }
 
-impl<H: HeaderStore> Chain<H> {
+impl Chain {
     pub(crate) fn new(
         network: Network,
         anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        db: H,
+        db: SqliteHeaderDb,
         quorum_required: u8,
     ) -> Self {
         let header_chain = match anchor {
@@ -86,7 +86,7 @@ impl<H: HeaderStore> Chain<H> {
 
     // Load in headers, ideally allowing the difficulty adjustment to be audited and
     // reorganizations to be handled gracefully.
-    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError<H::Error>> {
+    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
         // The original height the user requested a scan after
         let scan_height = self.header_chain.height();
         // The header relevant to compute the next adjustment
@@ -523,6 +523,7 @@ mod tests {
     use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
+    use crate::SqliteHeaderDb;
     use crate::{
         chain::checkpoints::HeaderCheckpoint,
         {
@@ -537,7 +538,9 @@ mod tests {
         anchor: HeaderCheckpoint,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: u8,
-    ) -> Chain<()> {
+    ) -> Chain {
+        let binding = tempfile::tempdir().unwrap();
+        let path = binding.path();
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -546,7 +549,7 @@ mod tests {
             Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
-            (),
+            SqliteHeaderDb::new(bitcoin::Network::Regtest, Some(path.to_path_buf())).unwrap(),
             peers,
         )
     }
