@@ -22,7 +22,7 @@ use crate::{
     db::PersistedPeer,
     dialog::Dialog,
     messages::Warning,
-    Info, PeerStore,
+    Info, SqlitePeerDb,
 };
 
 use super::{
@@ -36,20 +36,20 @@ use super::{
 const LOOP_TIMEOUT: Duration = Duration::from_secs(2);
 const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
-pub(crate) struct Peer<P: PeerStore + 'static> {
+pub(crate) struct Peer {
     nonce: PeerId,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
     services: ServiceFlags,
     dialog: Arc<Dialog>,
-    db: Arc<Mutex<P>>,
+    db: Arc<Mutex<SqlitePeerDb>>,
     timeout_config: PeerTimeoutConfig,
     message_state: MessageState,
     tx_queue: Arc<Mutex<BroadcastQueue>>,
 }
 
-impl<P: PeerStore + 'static> Peer<P> {
+impl Peer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         nonce: PeerId,
@@ -58,7 +58,7 @@ impl<P: PeerStore + 'static> Peer<P> {
         main_thread_recv: Receiver<MainThreadMessage>,
         services: ServiceFlags,
         dialog: Arc<Dialog>,
-        db: Arc<Mutex<P>>,
+        db: Arc<Mutex<SqlitePeerDb>>,
         timeout_config: PeerTimeoutConfig,
         tx_queue: Arc<Mutex<BroadcastQueue>>,
     ) -> Self {

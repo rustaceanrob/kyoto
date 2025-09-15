@@ -24,7 +24,7 @@ use crate::{
     broadcaster::BroadcastQueue,
     chain::HeightMonitor,
     channel_messages::{MainThreadMessage, PeerThreadMessage},
-    db::{traits::PeerStore, PeerStatus, PersistedPeer},
+    db::{PeerStatus, PersistedPeer},
     dialog::Dialog,
     error::PeerManagerError,
     network::{
@@ -34,7 +34,7 @@ use crate::{
         PeerId, PeerTimeoutConfig,
     },
     prelude::{default_port_from_network, Netgroup},
-    PeerStoreSizeConfig, TrustedPeer, Warning,
+    PeerStoreSizeConfig, SqlitePeerDb, TrustedPeer, Warning,
 };
 
 use super::ConnectionType;
@@ -57,14 +57,14 @@ pub(crate) struct ManagedPeer {
 
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
-pub(crate) struct PeerMap<P: PeerStore + 'static> {
+pub(crate) struct PeerMap {
     pub(crate) tx_queue: Arc<Mutex<BroadcastQueue>>,
     current_id: PeerId,
     heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
-    db: Arc<Mutex<P>>,
+    db: Arc<Mutex<SqlitePeerDb>>,
     connector: ConnectionType,
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
@@ -74,12 +74,12 @@ pub(crate) struct PeerMap<P: PeerStore + 'static> {
     dns_resolver: DnsResolver,
 }
 
-impl<P: PeerStore> PeerMap<P> {
+impl PeerMap {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
         network: Network,
-        db: P,
+        db: SqlitePeerDb,
         whitelist: Whitelist,
         dialog: Arc<Dialog>,
         connection_type: ConnectionType,
@@ -242,7 +242,7 @@ impl<P: PeerStore> PeerMap<P> {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError<P::Error>> {
+    pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError> {
         if let Some(peer) = self.whitelist.pop() {
             crate::debug!("Using a configured peer");
             let port = peer
@@ -279,7 +279,7 @@ impl<P: PeerStore> PeerMap<P> {
     }
 
     // Do we need peers
-    pub async fn need_peers(&mut self) -> Result<bool, PeerManagerError<P::Error>> {
+    pub async fn need_peers(&mut self) -> Result<bool, PeerManagerError> {
         match self.target_db_size {
             PeerStoreSizeConfig::Unbounded => Ok(true),
             PeerStoreSizeConfig::Limit(limit) => {
@@ -336,7 +336,7 @@ impl<P: PeerStore> PeerMap<P> {
         }
     }
 
-    async fn bootstrap(&mut self) -> Result<(), PeerManagerError<P::Error>> {
+    async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
         crate::debug!("Bootstrapping peers with DNS");
         let mut db_lock = self.db.lock().await;
         let new_peers = bootstrap_dns(self.network, self.dns_resolver)

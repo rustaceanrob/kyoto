@@ -1,17 +1,17 @@
 use std::fmt::{Debug, Display};
 
-use crate::impl_sourceless_error;
+use crate::{db::error::SqlPeerStoreError, impl_sourceless_error};
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
-pub enum NodeError<H: Debug + Display, P: Debug + Display> {
+pub enum NodeError<H: Debug + Display> {
     /// The persistence layer experienced a critical error.
     HeaderDatabase(HeaderPersistenceError<H>),
     /// The persistence layer experienced a critical error.
-    PeerDatabase(PeerManagerError<P>),
+    PeerDatabase(PeerManagerError),
 }
 
-impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H, P> {
+impl<H: Debug + Display> core::fmt::Display for NodeError<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
@@ -20,32 +20,32 @@ impl<H: Debug + Display, P: Debug + Display> core::fmt::Display for NodeError<H,
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> std::error::Error for NodeError<H, P> {
+impl<H: Debug + Display> std::error::Error for NodeError<H> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> From<HeaderPersistenceError<H>> for NodeError<H, P> {
+impl<H: Debug + Display> From<HeaderPersistenceError<H>> for NodeError<H> {
     fn from(value: HeaderPersistenceError<H>) -> Self {
         NodeError::HeaderDatabase(value)
     }
 }
 
-impl<H: Debug + Display, P: Debug + Display> From<PeerManagerError<P>> for NodeError<H, P> {
-    fn from(value: PeerManagerError<P>) -> Self {
+impl<H: Debug + Display> From<PeerManagerError> for NodeError<H> {
+    fn from(value: PeerManagerError) -> Self {
         NodeError::PeerDatabase(value)
     }
 }
 
 /// Errors when managing persisted peers.
 #[derive(Debug)]
-pub enum PeerManagerError<P: Debug + Display> {
+pub enum PeerManagerError {
     /// Reading or writing from the database failed.
-    Database(P),
+    Database(SqlPeerStoreError),
 }
 
-impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
+impl core::fmt::Display for PeerManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PeerManagerError::Database(e) => {
@@ -55,14 +55,10 @@ impl<P: Debug + Display> core::fmt::Display for PeerManagerError<P> {
     }
 }
 
-impl<P: Debug + Display> std::error::Error for PeerManagerError<P> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl_sourceless_error!(PeerManagerError);
 
-impl<P: Debug + Display> From<P> for PeerManagerError<P> {
-    fn from(value: P) -> Self {
+impl From<SqlPeerStoreError> for PeerManagerError {
+    fn from(value: SqlPeerStoreError) -> Self {
         PeerManagerError::Database(value)
     }
 }
@@ -97,7 +93,7 @@ impl<H: Debug + Display> std::error::Error for HeaderPersistenceError<H> {
     }
 }
 
-/// Errors occuring when the client is talking to the node.
+/// Errors occurring when the client is talking to the node.
 #[derive(Debug)]
 pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
@@ -116,7 +112,7 @@ impl core::fmt::Display for ClientError {
 
 impl_sourceless_error!(ClientError);
 
-/// Errors occuring when the client is fetching headers from the node.
+/// Errors occurring when the client is fetching headers from the node.
 #[derive(Debug)]
 pub enum FetchHeaderError {
     /// The channel to the node was likely closed and dropped from memory.
@@ -158,7 +154,7 @@ impl core::fmt::Display for FetchHeaderError {
 
 impl_sourceless_error!(FetchHeaderError);
 
-/// Errors occuring when the client is fetching blocks from the node.
+/// Errors occurring when the client is fetching blocks from the node.
 #[derive(Debug)]
 pub enum FetchBlockError {
     /// The channel to the node was likely closed and dropped from memory.
