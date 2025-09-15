@@ -29,10 +29,9 @@ use crate::{
         error::{CFilterSyncError, HeaderSyncError},
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
-    db::traits::HeaderStore,
     error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    IndexedBlock, NodeState, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
+    IndexedBlock, NodeState, SqliteHeaderDb, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
 };
 
 use super::{
@@ -51,9 +50,9 @@ type PeerRequirement = usize;
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
-pub struct Node<H: HeaderStore> {
+pub struct Node {
     state: NodeState,
-    chain: Chain<H>,
+    chain: Chain,
     peer_map: PeerMap,
     required_peers: PeerRequirement,
     dialog: Arc<Dialog>,
@@ -62,12 +61,12 @@ pub struct Node<H: HeaderStore> {
     peer_recv: Receiver<PeerThreadMessage>,
 }
 
-impl<H: HeaderStore> Node<H> {
+impl Node {
     pub(crate) fn new(
         network: Network,
         config: NodeConfig,
         peer_store: SqlitePeerDb,
-        header_store: H,
+        header_store: SqliteHeaderDb,
     ) -> (Self, Client) {
         let NodeConfig {
             required_peers,
@@ -133,7 +132,7 @@ impl<H: HeaderStore> Node<H> {
     /// # Errors
     ///
     /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
-    pub async fn run(mut self) -> Result<(), NodeError<H::Error>> {
+    pub async fn run(mut self) -> Result<(), NodeError> {
         crate::debug!("Starting node");
         crate::debug!(format!(
             "Configured connection requirement: {} peers",
@@ -264,7 +263,7 @@ impl<H: HeaderStore> Node<H> {
     }
 
     // Connect to a new peer if we are not connected to enough
-    async fn dispatch(&mut self) -> Result<(), NodeError<H::Error>> {
+    async fn dispatch(&mut self) -> Result<(), NodeError> {
         self.peer_map.clean().await;
         let live = self.peer_map.live();
         let required = self.next_required_peers();
@@ -385,7 +384,7 @@ impl<H: HeaderStore> Node<H> {
         &mut self,
         nonce: PeerId,
         version_message: VersionMessage,
-    ) -> Result<MainThreadMessage, NodeError<H::Error>> {
+    ) -> Result<MainThreadMessage, NodeError> {
         if version_message.version < WTXID_VERSION {
             return Ok(MainThreadMessage::Disconnect);
         }
@@ -654,7 +653,7 @@ impl<H: HeaderStore> Node<H> {
     }
 
     // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&mut self) -> Result<(), NodeError<H::Error>> {
+    async fn fetch_headers(&mut self) -> Result<(), NodeError> {
         crate::debug!("Attempting to load headers from the database");
         self.chain
             .load_headers()

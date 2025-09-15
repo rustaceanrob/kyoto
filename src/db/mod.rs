@@ -17,8 +17,6 @@ pub mod error;
 /// Persistence traits defined with SQL Lite to store data between sessions.
 #[cfg(feature = "rusqlite")]
 pub mod sqlite;
-/// Traits that define the header and peer databases.
-pub mod traits;
 
 /// A peer that will be saved to the [`traits::PeerStore`].
 #[derive(Debug, Clone, PartialEq)]

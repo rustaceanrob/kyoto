@@ -13,10 +13,6 @@ use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::network::ConnectionType;
 use crate::{PeerStoreSizeConfig, TrustedPeer};
 
-#[cfg(feature = "rusqlite")]
-/// The default node returned from the [`Builder`].
-pub type NodeDefault = Node<SqliteHeaderDb>;
-
 const MIN_PEERS: u8 = 1;
 const MAX_PEERS: u8 = 15;
 
@@ -166,7 +162,7 @@ impl Builder {
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
     #[cfg(feature = "rusqlite")]
-    pub fn build(&mut self) -> Result<(NodeDefault, Client), SqlInitializationError> {
+    pub fn build(&mut self) -> Result<(Node, Client), SqlInitializationError> {
         let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
         let header_store = SqliteHeaderDb::new(self.network, self.config.data_path.clone())?;
         Ok(Node::new(
