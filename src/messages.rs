@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::Range, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
@@ -8,7 +8,7 @@ use crate::{
     IndexedBlock, TrustedPeer, TxBroadcast,
 };
 
-use super::error::{FetchBlockError, FetchHeaderError};
+use super::error::FetchBlockError;
 
 /// Informational messages emitted by a node
 #[derive(Debug, Clone)]
@@ -158,10 +158,6 @@ pub(crate) enum ClientMessage {
     SetDuration(Duration),
     /// Add another known peer to connect to.
     AddPeer(TrustedPeer),
-    /// Request a header from a specified height.
-    GetHeader(ClientRequest<u32, Result<Header, FetchHeaderError>>),
-    /// Request a range of headers.
-    GetHeaderBatch(ClientRequest<Range<u32>, Result<BTreeMap<u32, Header>, FetchHeaderError>>),
     /// Request the broadcast minimum fee rate.
     GetBroadcastMinFeeRate(ClientRequest<(), FeeRate>),
     /// Send an empty message to see if the node is running.
