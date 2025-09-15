@@ -26,7 +26,7 @@ use crate::{
         block_queue::{BlockQueue, BlockRecipient, ProcessBlockResponse},
         chain::Chain,
         checkpoints::HeaderCheckpoint,
-        error::{CFilterSyncError, HeaderSyncError},
+        error::HeaderSyncError,
         CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
     },
     error::FetchBlockError,
@@ -526,13 +526,8 @@ impl Node {
                 self.dialog.send_warning(Warning::UnexpectedSyncError {
                     warning: format!("Compact filter syncing encountered an error: {e}"),
                 });
-                match e {
-                    CFilterSyncError::Filter(_) => Some(MainThreadMessage::Disconnect),
-                    _ => {
-                        self.peer_map.ban(peer_id).await;
-                        Some(MainThreadMessage::Disconnect)
-                    }
-                }
+                self.peer_map.ban(peer_id).await;
+                Some(MainThreadMessage::Disconnect)
             }
         }
     }

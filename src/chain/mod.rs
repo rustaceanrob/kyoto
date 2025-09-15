@@ -26,7 +26,6 @@ use bitcoin::{
 use crate::network::PeerId;
 
 use cfheader_batch::CFHeaderBatch;
-use error::FilterError;
 
 type Height = u32;
 
@@ -182,17 +181,14 @@ impl Filter {
         &self.filter_hash
     }
 
-    pub fn block_hash(&self) -> &BlockHash {
-        &self.block_hash
+    pub fn block_hash(&self) -> BlockHash {
+        self.block_hash
     }
 
-    pub fn contains_any<'a>(
-        &'a self,
-        scripts: impl Iterator<Item = &'a ScriptBuf>,
-    ) -> Result<bool, FilterError> {
+    pub fn contains_any<'a>(&'a self, scripts: impl Iterator<Item = &'a ScriptBuf>) -> bool {
         self.block_filter
             .match_any(&self.block_hash, scripts.map(|script| script.to_bytes()))
-            .map_err(|_| FilterError::IORead)
+            .expect("vec reader is infallible")
     }
 
     pub fn into_filter(self) -> BlockFilter {
