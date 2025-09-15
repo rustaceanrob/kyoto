@@ -1,10 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Debug,
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
 
+use addrman::Record;
 use bitcoin::{
     key::rand,
     p2p::{address::AddrV2, ServiceFlags},
@@ -22,23 +23,21 @@ use tokio::{
 use crate::{
     broadcaster::BroadcastQueue,
     chain::HeightMonitor,
-    channel_messages::{MainThreadMessage, PeerThreadMessage},
-    db::{PeerStatus, PersistedPeer},
+    channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
-    error::PeerManagerError,
     network::{
         dns::{bootstrap_dns, DnsResolver},
         error::PeerError,
         peer::Peer,
         PeerId, PeerTimeoutConfig,
     },
-    prelude::{default_port_from_network, Netgroup},
-    PeerStoreSizeConfig, SqlitePeerDb, TrustedPeer, Warning,
+    prelude::default_port_from_network,
+    TrustedPeer,
 };
 
-use super::ConnectionType;
+use super::{AddressBook, ConnectionType};
 
-const MAX_TRIES: usize = 50;
+const LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 // Preferred peers to connect to based on the user configuration
 type Whitelist = Vec<TrustedPeer>;
@@ -46,9 +45,7 @@ type Whitelist = Vec<TrustedPeer>;
 // A peer that is or was connected to the node
 #[derive(Debug)]
 pub(crate) struct ManagedPeer {
-    address: AddrV2,
-    port: u16,
-    service_flags: ServiceFlags,
+    record: Record,
     broadcast_min: FeeRate,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
@@ -63,12 +60,10 @@ pub(crate) struct PeerMap {
     network: Network,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
-    db: Arc<Mutex<SqlitePeerDb>>,
+    db: Arc<Mutex<AddressBook>>,
     connector: ConnectionType,
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
-    target_db_size: PeerStoreSizeConfig,
-    net_groups: HashSet<String>,
     timeout_config: PeerTimeoutConfig,
     dns_resolver: DnsResolver,
 }
@@ -78,11 +73,9 @@ impl PeerMap {
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
         network: Network,
-        db: SqlitePeerDb,
         whitelist: Whitelist,
         dialog: Arc<Dialog>,
         connection_type: ConnectionType,
-        target_db_size: PeerStoreSizeConfig,
         timeout_config: PeerTimeoutConfig,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         dns_resolver: DnsResolver,
@@ -94,12 +87,10 @@ impl PeerMap {
             network,
             mtx,
             map: HashMap::new(),
-            db: Arc::new(Mutex::new(db)),
+            db: Arc::new(Mutex::new(AddressBook::new())),
             connector: connection_type,
             whitelist,
             dialog,
-            target_db_size,
-            net_groups: HashSet::new(),
             timeout_config,
             dns_resolver,
         }
@@ -127,42 +118,44 @@ impl PeerMap {
     }
 
     // Send out a TCP connection to a new peer and begin tracking the task
-    pub async fn dispatch(&mut self, loaded_peer: PersistedPeer) -> Result<(), PeerError> {
+    pub async fn dispatch(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
+        let (addr, port) = loaded_peer.network_addr();
+        if !self.connector.can_connect(&addr) {
+            let mut db_lock = self.db.lock().await;
+            db_lock.failed(&loaded_peer);
+            return Err(PeerError::UnreachableSocketAddr);
+        }
+        crate::debug!(format!("Connecting to {:?}:{}", addr, port));
         self.current_id.increment();
         let mut peer = Peer::new(
             self.current_id,
+            loaded_peer.clone(),
             self.network,
             self.mtx.clone(),
             prx,
-            loaded_peer.services,
             Arc::clone(&self.dialog),
             Arc::clone(&self.db),
             self.timeout_config,
             Arc::clone(&self.tx_queue),
         );
-        if !self.connector.can_connect(&loaded_peer.addr) {
-            return Err(PeerError::UnreachableSocketAddr);
-        }
-        crate::debug!(format!(
-            "Connecting to {:?}:{}",
-            loaded_peer.addr, loaded_peer.port
-        ));
         let connection = self
             .connector
-            .connect(
-                loaded_peer.addr.clone(),
-                loaded_peer.port,
-                self.timeout_config.handshake_timeout,
-            )
-            .await?;
+            .connect(addr, port, self.timeout_config.handshake_timeout)
+            .await;
+        let connection = match connection {
+            Ok(conn) => conn,
+            Err(e) => {
+                let mut db_lock = self.db.lock().await;
+                db_lock.failed(&loaded_peer);
+                return Err(e);
+            }
+        };
         let handle = tokio::spawn(async move { peer.run(connection).await });
         self.map.insert(
             self.current_id,
             ManagedPeer {
-                service_flags: loaded_peer.services,
-                address: loaded_peer.addr,
-                port: loaded_peer.port,
+                record: loaded_peer,
                 broadcast_min: FeeRate::BROADCAST_MIN,
                 ptx,
                 handle,
@@ -181,7 +174,7 @@ impl PeerMap {
     // Set the services of a peer
     pub fn set_services(&mut self, nonce: PeerId, flags: ServiceFlags) {
         if let Some(peer) = self.map.get_mut(&nonce) {
-            peer.service_flags = flags
+            peer.record.update_service_flags(flags);
         }
     }
 
@@ -236,74 +229,41 @@ impl PeerMap {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
-    pub async fn next_peer(&mut self) -> Result<PersistedPeer, PeerManagerError> {
+    pub async fn next_peer(&mut self) -> Option<Record> {
         if let Some(peer) = self.whitelist.pop() {
             crate::debug!("Using a configured peer");
             let port = peer
                 .port
                 .unwrap_or(default_port_from_network(&self.network));
-            let peer =
-                PersistedPeer::new(peer.address, port, peer.known_services, PeerStatus::Tried);
-            return Ok(peer);
+            let record = Record::new(peer.address(), port, peer.known_services, &LOCAL_HOST);
+            return Some(record);
         }
-        let current_count = {
-            let mut peer_manager = self.db.lock().await;
-            peer_manager.num_unbanned().await?
-        };
-        if current_count < 1 {
-            self.dialog.send_warning(Warning::EmptyPeerDatabase);
-            self.bootstrap().await?;
+        let mut db_lock = self.db.lock().await;
+        if db_lock.is_empty() {
+            crate::debug!("Bootstrapping peers with DNS");
+            let new_peers = bootstrap_dns(self.network, self.dns_resolver)
+                .await
+                .into_iter()
+                .map(|ip| match ip {
+                    IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+                    IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+                })
+                .collect::<Vec<AddrV2>>();
+            crate::debug!(format!("Adding {} sourced from DNS", new_peers.len()));
+            let addr_iter = new_peers
+                .into_iter()
+                .map(|ip| CombinedAddr::new(ip, default_port_from_network(&self.network)));
+            let source = AddrV2::Ipv4(Ipv4Addr::new(1, 1, 1, 1));
+            db_lock.add_gossiped(addr_iter, &source);
         }
-        let mut peer_manager = self.db.lock().await;
-        let mut tries = 0;
-        let desired_status = PeerStatus::random();
-        while tries < MAX_TRIES {
-            let peer = peer_manager.random().await?;
-            if self.net_groups.contains(&peer.addr.netgroup())
-                || desired_status.ne(&peer.status)
-                || !peer.services.has(ServiceFlags::COMPACT_FILTERS)
-            {
-                tries += 1;
-                continue;
-            } else {
-                return Ok(peer);
-            }
-        }
-        peer_manager.random().await.map_err(From::from)
-    }
-
-    // Do we need peers
-    pub async fn need_peers(&mut self) -> Result<bool, PeerManagerError> {
-        match self.target_db_size {
-            PeerStoreSizeConfig::Unbounded => Ok(true),
-            PeerStoreSizeConfig::Limit(limit) => {
-                let mut db = self.db.lock().await;
-                let num_unbanned = db.num_unbanned().await?;
-                Ok(num_unbanned < limit)
-            }
-        }
+        db_lock.select()
     }
 
     // We tried this peer and successfully connected.
     pub async fn tried(&mut self, nonce: PeerId) {
         if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
-            if let Err(e) = db
-                .update(PersistedPeer::new(
-                    peer.address.clone(),
-                    peer.port,
-                    peer.service_flags,
-                    PeerStatus::Tried,
-                ))
-                .await
-            {
-                self.dialog.send_warning(Warning::FailedPersistence {
-                    warning: format!(
-                        "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                        peer.address, peer.port, peer.service_flags
-                    ),
-                });
-            }
+            db.tried(&peer.record);
         }
     }
 
@@ -311,48 +271,7 @@ impl PeerMap {
     pub async fn ban(&mut self, nonce: PeerId) {
         if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
-            if let Err(e) = db
-                .update(PersistedPeer::new(
-                    peer.address.clone(),
-                    peer.port,
-                    peer.service_flags,
-                    PeerStatus::Ban,
-                ))
-                .await
-            {
-                self.dialog.send_warning(Warning::FailedPersistence {
-                    warning: format!(
-                        "Encountered an error adding {:?}:{} flags: {} ... {e}",
-                        peer.address, peer.port, peer.service_flags
-                    ),
-                });
-            }
+            db.ban(&peer.record);
         }
-    }
-
-    async fn bootstrap(&mut self) -> Result<(), PeerManagerError> {
-        crate::debug!("Bootstrapping peers with DNS");
-        let mut db_lock = self.db.lock().await;
-        let new_peers = bootstrap_dns(self.network, self.dns_resolver)
-            .await
-            .into_iter()
-            .map(|ip| match ip {
-                IpAddr::V4(ip) => AddrV2::Ipv4(ip),
-                IpAddr::V6(ip) => AddrV2::Ipv6(ip),
-            })
-            .collect::<Vec<AddrV2>>();
-        crate::debug!(format!("Adding {} sourced from DNS", new_peers.len()));
-        for peer in new_peers {
-            db_lock
-                .update(PersistedPeer::new(
-                    peer,
-                    default_port_from_network(&self.network),
-                    ServiceFlags::NONE,
-                    PeerStatus::Gossiped,
-                ))
-                .await
-                .map_err(PeerManagerError::Database)?;
-        }
-        Ok(())
     }
 }

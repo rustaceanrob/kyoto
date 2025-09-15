@@ -5,13 +5,9 @@ use bitcoin::Network;
 
 use super::{client::Client, config::NodeConfig, node::Node};
 use crate::chain::checkpoints::HeaderCheckpoint;
-#[cfg(feature = "rusqlite")]
-use crate::db::error::SqlInitializationError;
-#[cfg(feature = "rusqlite")]
-use crate::db::sqlite::peers::SqlitePeerDb;
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::network::ConnectionType;
-use crate::{PeerStoreSizeConfig, TrustedPeer};
+use crate::TrustedPeer;
 
 const MIN_PEERS: u8 = 1;
 const MAX_PEERS: u8 = 15;
@@ -22,7 +18,7 @@ const MAX_PEERS: u8 = 15;
 ///
 /// Nodes may be built with minimal configuration.
 ///
-/// ```rust
+/// ```no_run
 /// use std::net::{IpAddr, Ipv4Addr};
 /// use std::collections::HashSet;
 /// use bip157::{Builder, Network};
@@ -31,8 +27,7 @@ const MAX_PEERS: u8 = 15;
 /// let builder = Builder::new(Network::Regtest);
 /// let (node, client) = builder
 ///     .add_peers(vec![host.into()])
-///     .build()
-///     .unwrap();
+///     .build();
 /// ```
 pub struct Builder {
     config: NodeConfig,
@@ -78,15 +73,6 @@ impl Builder {
     /// The number of connections will be clamped to a range of 1 to 15.
     pub fn required_peers(mut self, num_peers: u8) -> Self {
         self.config.required_peers = num_peers.clamp(MIN_PEERS, MAX_PEERS);
-        self
-    }
-
-    /// Set the desired number of peers for the database to keep track of. For limited or in-memory peer storage,
-    /// this number may be small, however a sufficient margin of peers should be set so the node can try many options
-    /// when downloading compact block filters. For nodes that store peers on disk, more peers will typically result in
-    /// fewer errors. If none is provided, no limit to the size of the store will be introduced.
-    pub fn peer_db_size(mut self, target: PeerStoreSizeConfig) -> Self {
-        self.config.target_peer_size = target;
         self
     }
 
@@ -161,13 +147,7 @@ impl Builder {
     /// # Errors
     ///
     /// Building a node and client will error if a database connection is denied or cannot be found.
-    #[cfg(feature = "rusqlite")]
-    pub fn build(&mut self) -> Result<(Node, Client), SqlInitializationError> {
-        let peer_store = SqlitePeerDb::new(self.network, self.config.data_path.clone())?;
-        Ok(Node::new(
-            self.network,
-            core::mem::take(&mut self.config),
-            peer_store,
-        ))
+    pub fn build(&mut self) -> (Node, Client) {
+        Node::new(self.network, core::mem::take(&mut self.config))
     }
 }

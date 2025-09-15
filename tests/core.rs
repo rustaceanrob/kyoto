@@ -62,11 +62,7 @@ fn new_node(
     if let Some(checkpoint) = checkpoint {
         builder = builder.after_checkpoint(checkpoint);
     }
-    let (node, client) = builder
-        .add_peer(host)
-        .data_dir(tempdir_path)
-        .build()
-        .unwrap();
+    let (node, client) = builder.add_peer(host).data_dir(tempdir_path).build();
     (node, client)
 }
 

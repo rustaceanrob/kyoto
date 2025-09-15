@@ -21,8 +21,7 @@
 //!     let (node, client) = builder
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
-//!         .build()
-//!         .unwrap();
+//!         .build();
 //!     // Run the node and wait for the sync message;
 //!     tokio::task::spawn(async move { node.run().await });
 //!     // Split the client into components that send messages and listen to messages
@@ -85,7 +84,7 @@ pub use chain::checkpoints::HeaderCheckpoint;
 
 #[doc(inline)]
 #[cfg(feature = "rusqlite")]
-pub use db::sqlite::{headers::SqliteHeaderDb, peers::SqlitePeerDb};
+pub use db::sqlite::headers::SqliteHeaderDb;
 
 #[doc(inline)]
 pub use tokio::sync::mpsc::Receiver;
@@ -329,18 +328,6 @@ impl From<SocketAddr> for TrustedPeer {
     fn from(value: SocketAddr) -> Self {
         TrustedPeer::from_socket_addr(value)
     }
-}
-
-/// Configure how many peers will be stored.
-#[derive(Debug, Default, Clone)]
-pub enum PeerStoreSizeConfig {
-    /// Add new peers to the store regardless of the current size. For memory-limited [`PeerStore`]
-    /// implementations, consider using a bounded size.
-    #[default]
-    Unbounded,
-    /// Bound the size of the [`PeerStore`]. When set, no new peers will be requested if the database
-    /// has at least this amount of peers.
-    Limit(u32),
 }
 
 // The state of the node with respect to connected peers.

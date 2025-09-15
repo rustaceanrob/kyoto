@@ -1,6 +1,7 @@
 extern crate tokio;
 use std::{sync::Arc, time::Duration};
 
+use addrman::Record;
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{p2p::ServiceFlags, Network};
 use tokio::{
@@ -19,10 +20,9 @@ use crate::{
     channel_messages::{
         MainThreadMessage, PeerMessage, PeerThreadMessage, ReaderMessage, TimeSensitiveId,
     },
-    db::PersistedPeer,
     dialog::Dialog,
     messages::Warning,
-    Info, SqlitePeerDb,
+    Info,
 };
 
 use super::{
@@ -30,7 +30,7 @@ use super::{
     outbound_messages::{MessageGenerator, Transport},
     parsers::MessageParser,
     reader::Reader,
-    AddrGossipStages, MessageState, PeerId, PeerTimeoutConfig,
+    AddressBook, MessageState, PeerId, PeerTimeoutConfig,
 };
 
 const LOOP_TIMEOUT: Duration = Duration::from_secs(2);
@@ -38,12 +38,12 @@ const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer {
     nonce: PeerId,
+    source: Record,
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
-    services: ServiceFlags,
     dialog: Arc<Dialog>,
-    db: Arc<Mutex<SqlitePeerDb>>,
+    db: Arc<Mutex<AddressBook>>,
     timeout_config: PeerTimeoutConfig,
     message_state: MessageState,
     tx_queue: Arc<Mutex<BroadcastQueue>>,
@@ -51,23 +51,23 @@ pub(crate) struct Peer {
 
 impl Peer {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         nonce: PeerId,
+        source: Record,
         network: Network,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
-        services: ServiceFlags,
         dialog: Arc<Dialog>,
-        db: Arc<Mutex<SqlitePeerDb>>,
+        db: Arc<Mutex<AddressBook>>,
         timeout_config: PeerTimeoutConfig,
         tx_queue: Arc<Mutex<BroadcastQueue>>,
     ) -> Self {
         Self {
             nonce,
+            source,
             main_thread_sender,
             main_thread_recv,
             network,
-            services,
             dialog,
             db,
             timeout_config,
@@ -81,31 +81,32 @@ impl Peer {
         let (tx, mut rx) = mpsc::channel(32);
         let (mut reader, mut writer) = connection.into_split();
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
-        let (mut outbound_messages, mut peer_reader) = if self.services.has(ServiceFlags::P2P_V2) {
-            let handshake_result = tokio::time::timeout(
-                V2_HANDSHAKE_TIMEOUT,
-                self.try_handshake(&mut writer, &mut reader),
-            )
-            .await
-            .map_err(|_| PeerError::HandshakeFailed)?;
-            if handshake_result.is_err() {
-                self.dialog.send_warning(Warning::CouldNotConnect);
-            }
-            let (decryptor, encryptor) = handshake_result?;
-            let outbound_messages = MessageGenerator {
-                network: self.network,
-                transport: Transport::V2 { encryptor },
+        let (mut outbound_messages, mut peer_reader) =
+            if self.source.service_flags().has(ServiceFlags::P2P_V2) {
+                let handshake_result = tokio::time::timeout(
+                    V2_HANDSHAKE_TIMEOUT,
+                    self.try_handshake(&mut writer, &mut reader),
+                )
+                .await
+                .map_err(|_| PeerError::HandshakeFailed)?;
+                if handshake_result.is_err() {
+                    self.dialog.send_warning(Warning::CouldNotConnect);
+                }
+                let (decryptor, encryptor) = handshake_result?;
+                let outbound_messages = MessageGenerator {
+                    network: self.network,
+                    transport: Transport::V2 { encryptor },
+                };
+                let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
+                (outbound_messages, reader)
+            } else {
+                let outbound_messages = MessageGenerator {
+                    network: self.network,
+                    transport: Transport::V1,
+                };
+                let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
+                (outbound_messages, reader)
             };
-            let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
-            (outbound_messages, reader)
-        } else {
-            let outbound_messages = MessageGenerator {
-                network: self.network,
-                transport: Transport::V1,
-            };
-            let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
-            (outbound_messages, reader)
-        };
 
         let message = outbound_messages.version_message(None)?;
         self.write_bytes(&mut writer, message).await?;
@@ -113,9 +114,6 @@ impl Peer {
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
         loop {
             if read_handle.is_finished() {
-                return Ok(());
-            }
-            if self.message_state.addr_state.over_limit() {
                 return Ok(());
             }
             if let Some(nonce) = self.message_state.ping_state.send_ping() {
@@ -207,53 +205,8 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Addr(addrs) => {
-                match self.message_state.addr_state.gossip_stage {
-                    AddrGossipStages::NotReceived => {
-                        self.message_state.addr_state.received(addrs.len());
-                        let db = Arc::clone(&self.db);
-                        let dialog = Arc::clone(&self.dialog);
-                        tokio::task::spawn(async move {
-                            let mut db = db.lock().await;
-                            for peer in addrs {
-                                if let Err(e) = db
-                                    .update(PersistedPeer::gossiped(
-                                        peer.addr,
-                                        peer.port,
-                                        peer.services,
-                                    ))
-                                    .await
-                                {
-                                    dialog.send_warning(Warning::FailedPersistence {
-                                        warning: format!(
-                                            "Encountered an error adding a gossiped peer: {e}"
-                                        ),
-                                    });
-                                }
-                            }
-                        });
-                        self.message_state.addr_state.first_gossip();
-                    }
-                    AddrGossipStages::RandomGossip => {
-                        self.message_state.addr_state.received(addrs.len());
-                        let mut db = self.db.lock().await;
-                        for peer in addrs {
-                            if let Err(e) = db
-                                .update(PersistedPeer::gossiped(
-                                    peer.addr,
-                                    peer.port,
-                                    peer.services,
-                                ))
-                                .await
-                            {
-                                self.dialog.send_warning(Warning::FailedPersistence {
-                                    warning: format!(
-                                        "Encountered an error adding a gossiped peer: {e}"
-                                    ),
-                                });
-                            }
-                        }
-                    }
-                }
+                let mut db_lock = self.db.lock().await;
+                db_lock.add_gossiped(addrs.into_iter(), &self.source.network_addr().0);
                 Ok(())
             }
             ReaderMessage::Headers(headers) => {

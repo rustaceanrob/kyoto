@@ -1,9 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs::{self, File},
     net::{IpAddr, SocketAddr},
+    path::PathBuf,
     time::Duration,
 };
 
+use addrman::{io::FileExt, Record, Table};
 use bitcoin::{
     consensus::Decodable,
     io::Read,
@@ -16,7 +19,7 @@ use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
 
-use crate::channel_messages::TimeSensitiveId;
+use crate::channel_messages::{CombinedAddr, TimeSensitiveId};
 
 pub(crate) mod dns;
 pub(crate) mod error;
@@ -39,8 +42,21 @@ const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 // Ping the peer if we have not exchanged messages for two minutes
 const SEND_PING: Duration = Duration::from_secs(60 * 2);
 
-// A peer cannot send 10,000 ADDRs in one connection.
-const ADDR_HARD_LIMIT: usize = 10_000;
+// These are the parameters of the "tried" and "new" tables
+const B_TRIED: usize = 64;
+const S_TRIED: usize = 16;
+const W_TRIED: usize = 16;
+
+const B_NEW: usize = 128;
+const S_NEW: usize = 16;
+const W_NEW: usize = 16;
+
+// Maximum occurrences of a single network address
+const MAX_ADDR: usize = 4;
+// How may times a peer can fail before they are terrible
+const MAX_ATTEMPS: u8 = 2;
+// If it has been less than a week, only allow a single fail
+const MAX_WEEKLY_ATTEMPTS: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PeerId(pub(crate) u32);
@@ -176,7 +192,6 @@ struct MessageState {
     general_timeout: Duration,
     version_handshake: VersionHandshakeState,
     verack: VerackState,
-    addr_state: AddrGossipState,
     sent_txs: HashSet<Wtxid>,
     timed_message_state: HashMap<TimeSensitiveId, Instant>,
     ping_state: PingState,
@@ -188,7 +203,6 @@ impl MessageState {
             general_timeout,
             version_handshake: Default::default(),
             verack: Default::default(),
-            addr_state: Default::default(),
             sent_txs: Default::default(),
             timed_message_state: Default::default(),
             ping_state: PingState::default(),
@@ -270,37 +284,6 @@ impl VerackState {
     fn both_acks(&self) -> bool {
         self.got_ack && self.sent_ack
     }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct AddrGossipState {
-    num_advertised: usize,
-    gossip_stage: AddrGossipStages,
-}
-
-impl AddrGossipState {
-    fn received(&mut self, num_addrs: usize) {
-        self.num_advertised += num_addrs;
-    }
-
-    fn first_gossip(&mut self) {
-        self.gossip_stage = AddrGossipStages::RandomGossip;
-    }
-
-    fn over_limit(&self) -> bool {
-        self.num_advertised > ADDR_HARD_LIMIT
-    }
-}
-
-// Network address gossip occurs in multiple stages. First, we will send a `getaddr` message to
-// inform the peer that we want to know about nodes they are aware of. Oftentimes this will result
-// in a message containing 250-300 potential peers. Thereafter, the remote node will randomly send
-// 1-5 potential peers throughout the duration of the connection.
-#[derive(Debug, Clone, Copy, Default)]
-enum AddrGossipStages {
-    #[default]
-    NotReceived,
-    RandomGossip,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -385,22 +368,96 @@ impl Decodable for V1Header {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct AddressBook {
+    new: Table<B_NEW, S_NEW, W_NEW>,
+    tried: Table<B_TRIED, S_TRIED, W_TRIED>,
+}
+
+impl AddressBook {
+    fn new() -> Self {
+        Self {
+            new: Table::new(),
+            tried: Table::new(),
+        }
+    }
+
+    pub(crate) fn add_gossiped(
+        &mut self,
+        gossip: impl Iterator<Item = CombinedAddr>,
+        source: &AddrV2,
+    ) {
+        for addr in gossip {
+            let record =
+                Record::new_from_addrv2_source(addr.addr, addr.port, addr.services, source);
+            if self.new.count(&record) < MAX_ADDR {
+                if let Some(conflict) = self.new.add(&record) {
+                    if conflict.is_terrible(MAX_ATTEMPS, MAX_WEEKLY_ATTEMPTS) {
+                        self.new.remove(&conflict);
+                        self.new.add(&record);
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.new.is_empty() && self.tried.is_empty()
+    }
+
+    pub(crate) fn select(&self) -> Option<Record> {
+        if self.tried.is_empty() && self.new.is_empty() {
+            return None;
+        }
+        let use_tried: bool = rand::random();
+        if use_tried && !self.tried.is_empty() {
+            return self.tried.select();
+        }
+        self.new.select()
+    }
+
+    pub(crate) fn failed(&mut self, record: &Record) {
+        self.tried.failed_connection(record);
+    }
+
+    pub(crate) fn tried(&mut self, record: &Record) {
+        self.new.remove(record);
+        if let Some(conflict) = self.tried.add(record) {
+            self.tried.remove(&conflict);
+            self.tried.add(record);
+        }
+        self.tried.successful_connection(record);
+    }
+
+    pub(crate) fn ban(&mut self, record: &Record) {
+        self.new.remove(record);
+        self.tried.remove(record);
+    }
+
+    #[allow(unused)]
+    pub(crate) fn write_tables<P: AsRef<PathBuf>>(&self, dir: P) -> Result<(), std::io::Error> {
+        let dirname = dir.as_ref();
+        let tried_tmp_path = dirname.join("tmp_tried.book");
+        let tried_final_path = dirname.join("tried.book");
+        let new_tmp_path = dirname.join("tmp_new.book");
+        let new_final_path = dirname.join("new.book");
+        let mut tried_file = File::create(&tried_tmp_path)?;
+        tried_file.write_table(&self.tried)?;
+        fs::rename(tried_tmp_path, tried_final_path)?;
+        let mut new_file = File::create(&new_tmp_path)?;
+        new_file.write_table(&self.new)?;
+        fs::rename(new_tmp_path, new_final_path)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, time::Duration};
+    use std::time::Duration;
 
-    use bitcoin::{consensus::deserialize, p2p::address::AddrV2, Transaction};
+    use bitcoin::{consensus::deserialize, Transaction};
 
-    use crate::{
-        network::{AddrGossipStages, LastBlockMonitor, MessageState, PingState},
-        prelude::Netgroup,
-    };
-
-    #[test]
-    fn test_sixteen() {
-        let peer = AddrV2::Ipv4(Ipv4Addr::new(95, 217, 198, 121));
-        assert_eq!("95.217".to_string(), peer.netgroup());
-    }
+    use crate::network::{LastBlockMonitor, MessageState, PingState};
 
     #[tokio::test(start_paused = true)]
     async fn test_version_message_state() {
@@ -439,24 +496,6 @@ mod tests {
         message_state.sent_tx(wtxid);
         assert!(!message_state.unknown_rejection(wtxid));
         assert!(message_state.unknown_rejection(wtxid));
-    }
-
-    #[test]
-    fn test_addr_gossip_state() {
-        let mut message_state = MessageState::new(Duration::from_secs(2));
-        assert!(matches!(
-            message_state.addr_state.gossip_stage,
-            AddrGossipStages::NotReceived
-        ));
-        message_state.addr_state.received(100);
-        message_state.addr_state.first_gossip();
-        assert!(matches!(
-            message_state.addr_state.gossip_stage,
-            AddrGossipStages::RandomGossip
-        ));
-        assert!(!message_state.addr_state.over_limit());
-        message_state.addr_state.received(10_000);
-        assert!(message_state.addr_state.over_limit());
     }
 
     #[tokio::test(start_paused = true)]
