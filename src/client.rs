@@ -1,6 +1,5 @@
 use bitcoin::{Amount, Transaction};
 use bitcoin::{BlockHash, FeeRate};
-use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
@@ -187,17 +186,6 @@ impl Requester {
     pub fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::Rescan)
-            .map_err(|_| ClientError::SendError)
-    }
-
-    /// Set a new connection timeout for peers to respond to messages.
-    ///
-    /// # Errors
-    ///
-    /// If the node has stopped running.
-    pub fn set_response_timeout(&self, duration: Duration) -> Result<(), ClientError> {
-        self.ntx
-            .send(ClientMessage::SetDuration(duration))
             .map_err(|_| ClientError::SendError)
     }
 

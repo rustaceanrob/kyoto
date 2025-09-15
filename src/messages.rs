@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
@@ -154,8 +154,6 @@ pub(crate) enum ClientMessage {
     Rescan,
     /// Explicitly request a block from the node.
     GetBlock(ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>),
-    /// Set a new connection timeout.
-    SetDuration(Duration),
     /// Add another known peer to connect to.
     AddPeer(TrustedPeer),
     /// Request the broadcast minimum fee rate.
