@@ -24,6 +24,7 @@ use bitcoin::{
 };
 
 use crate::network::PeerId;
+use crate::HeaderCheckpoint;
 
 use cfheader_batch::CFHeaderBatch;
 
@@ -82,6 +83,17 @@ pub enum BlockHeaderChanges {
     },
     /// A peer proposed a block that is not on the chain of most work.
     ForkAdded(IndexedHeader),
+}
+
+/// A snapshot of the chain
+#[derive(Debug, Clone)]
+pub enum ChainState {
+    /// A summary of the chain state. The vector of headers should ideally be contiguous.
+    Snapshot(Vec<IndexedHeader>),
+    /// A single checkpoint to start a sync from.
+    ///
+    /// Note that no reorganizations can be reported.
+    Checkpoint(HeaderCheckpoint),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

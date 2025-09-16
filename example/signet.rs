@@ -1,6 +1,7 @@
 //! bip157 expects you check your scripts directly. Here is an example flow of how to query a filter
 //! and request a block be downloaded.
 
+use bip157::chain::{BlockHeaderChanges, ChainState};
 use bip157::messages::Event;
 use bip157::{builder::Builder, chain::checkpoints::HeaderCheckpoint, Client};
 use bip157::{Address, BlockHash, Network};
@@ -33,7 +34,7 @@ async fn main() {
     // Add node preferences and build the node/client
     let (node, client) = builder
         // Only scan blocks strictly after a checkpoint
-        .after_checkpoint(checkpoint)
+        .chain_state(ChainState::Checkpoint(checkpoint))
         // The number of connections we would like to maintain
         .required_peers(1)
         // Create the node and client
@@ -76,6 +77,9 @@ async fn main() {
                                 break;
                             }
                         },
+                        Event::ChainUpdate(BlockHeaderChanges::Connected(at)) => {
+                            tracing::info!("New best tip {}", at.height);
+                        }
                         Event::FiltersSynced(_) => break,
                         _ => (),
                     }

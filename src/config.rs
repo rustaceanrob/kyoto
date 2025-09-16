@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    chain::checkpoints::HeaderCheckpoint,
+    chain::ChainState,
     network::{dns::DnsResolver, ConnectionType},
     PeerTimeoutConfig, TrustedPeer,
 };
@@ -13,7 +13,7 @@ pub(crate) struct NodeConfig {
     pub white_list: Vec<TrustedPeer>,
     pub dns_resolver: DnsResolver,
     pub data_path: Option<PathBuf>,
-    pub header_checkpoint: Option<HeaderCheckpoint>,
+    pub chain_state: Option<ChainState>,
     pub connection_type: ConnectionType,
     pub peer_timeout_config: PeerTimeoutConfig,
 }
@@ -25,7 +25,7 @@ impl Default for NodeConfig {
             white_list: Default::default(),
             dns_resolver: DnsResolver::default(),
             data_path: Default::default(),
-            header_checkpoint: Default::default(),
+            chain_state: Default::default(),
             connection_type: Default::default(),
             peer_timeout_config: PeerTimeoutConfig::default(),
         }
