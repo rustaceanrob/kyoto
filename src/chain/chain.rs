@@ -14,19 +14,11 @@ use super::{
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
-    HeaderChainChanges, HeightExt, HeightMonitor, PeerId,
+    HeaderChainChanges, HeightMonitor, PeerId,
 };
-use crate::{
-    chain::header_batch::HeadersBatch,
-    db::BlockHeaderChanges,
-    dialog::Dialog,
-    error::HeaderPersistenceError,
-    messages::{Event, Warning},
-    Info, Progress,
-};
-use crate::{IndexedFilter, SqliteHeaderDb};
+use crate::IndexedFilter;
+use crate::{chain::header_batch::HeadersBatch, dialog::Dialog, messages::Event, Info, Progress};
 
-const REORG_LOOKBACK: u32 = 7;
 const FILTER_BASIC: u8 = 0x00;
 const CF_HEADER_BATCH_SIZE: u32 = 1_999;
 const FILTER_BATCH_SIZE: u32 = 999;
@@ -36,7 +28,6 @@ pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    db: SqliteHeaderDb,
     heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
 }
@@ -47,7 +38,6 @@ impl Chain {
         anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        db: SqliteHeaderDb,
         quorum_required: u8,
     ) -> Self {
         let header_chain = match anchor {
@@ -58,7 +48,6 @@ impl Chain {
             header_chain,
             request_state: FilterRequestState::new(quorum_required),
             network,
-            db,
             heights: height_monitor,
             dialog,
         }
@@ -84,81 +73,6 @@ impl Chain {
         }
     }
 
-    // Load in headers, ideally allowing the difficulty adjustment to be audited and
-    // reorganizations to be handled gracefully.
-    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
-        // The original height the user requested a scan after
-        let scan_height = self.header_chain.height();
-        // The header relevant to compute the next adjustment
-        let last_adjustment = scan_height.last_epoch_start(self.network);
-        // Seven blocks ago
-        let reorg = scan_height.saturating_sub(REORG_LOOKBACK);
-        // To handle adjustments and reorgs, we would have the minimum of each of these heights
-        let min_interesting_height = last_adjustment.min(reorg);
-        let max_interesting_height = last_adjustment.max(reorg);
-        // Get the maximum of the two interesting heights. In case the minimum is not available
-        if let Some(header) = self
-            .db
-            .header_at(max_interesting_height)
-            .await
-            .ok()
-            .flatten()
-        {
-            self.header_chain =
-                BlockTree::from_header(max_interesting_height, header, self.network);
-        }
-        // If this succeeds, both reorgs and difficulty adjustments can be handled gracefully.
-        if let Some(header) = self
-            .db
-            .header_at(min_interesting_height)
-            .await
-            .ok()
-            .flatten()
-        {
-            self.header_chain =
-                BlockTree::from_header(min_interesting_height, header, self.network);
-        }
-        // Now that the block tree is updated to the appropriate start, load in the rest of
-        // the history from this point onward. This is either: from the user start height,
-        // from the last difficulty adjustment, or seven blocks ago, depending on what the
-        // header store was able to provide.
-        let loaded_headers = self
-            .db
-            .load(self.header_chain.height().increment()..)
-            .await
-            .map_err(HeaderPersistenceError::Database)?;
-        for (height, header) in loaded_headers {
-            let apply_header_changes = self.header_chain.accept_header(header);
-            match apply_header_changes {
-                AcceptHeaderChanges::Accepted { connected_at } => {
-                    if height.ne(&connected_at.height) {
-                        self.dialog.send_warning(Warning::CorruptedHeaders);
-                        return Err(HeaderPersistenceError::HeadersDoNotLink);
-                    }
-                }
-                AcceptHeaderChanges::Rejected(reject_reason) => match reject_reason {
-                    HeaderRejection::UnknownPrevHash(_) => {
-                        return Err(HeaderPersistenceError::CannotLocateHistory);
-                    }
-                    HeaderRejection::InvalidPow {
-                        expected: _,
-                        got: _,
-                    } => {
-                        crate::debug!(
-                            "Unexpected invalid proof of work when importing a block header"
-                        );
-                    }
-                },
-                _ => (),
-            }
-        }
-        // Because the user requested a scan after the `scan_height`, the filters below this point
-        // may be assumed as checked. Note that in a reorg, filters below this height may still be
-        // retrieved, as this only considers the canonical chain as checked.
-        self.header_chain.assume_checked_to(scan_height);
-        Ok(())
-    }
-
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
     pub(crate) async fn sync_chain(
         &mut self,
@@ -182,7 +96,6 @@ impl Chain {
                         connected_at.height,
                         connected_at.header.block_hash()
                     ));
-                    self.db.stage(BlockHeaderChanges::Connected(connected_at));
                 }
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => {
@@ -201,10 +114,6 @@ impl Chain {
                         .map(|index| index.header.block_hash())
                         .collect();
                     reorged_hashes = Some(removed_hashes);
-                    self.db.stage(BlockHeaderChanges::Reorganized {
-                        accepted: accepted.clone(),
-                        reorganized: disconnected.clone(),
-                    });
                     let disconnected_event = Event::BlocksDisconnected {
                         accepted,
                         disconnected,
@@ -222,11 +131,6 @@ impl Chain {
                     }
                 },
             }
-        }
-        if let Err(e) = self.db.write().await {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: format!("Could not save headers to disk: {e}"),
-            });
         }
         match reorged_hashes {
             Some(reorgs) => {
@@ -365,6 +269,9 @@ impl Chain {
         let mut last_unchecked_cfheader = self.header_chain.height();
         let mut prev_header = None;
         for data in self.header_chain.iter_data() {
+            if data.height.eq(&0) {
+                break;
+            }
             match data.filter_commitment {
                 Some(commitment) => {
                     prev_header = Some(commitment.header);
@@ -445,6 +352,9 @@ impl Chain {
     pub(crate) fn next_filter_message(&mut self) -> GetCFilters {
         let mut last_unchecked_filter = self.header_chain.height();
         for block_data in self.header_chain.iter_data() {
+            if block_data.height.eq(&0) {
+                break;
+            }
             if block_data.filter_checked {
                 break;
             }
@@ -523,7 +433,6 @@ mod tests {
     use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
-    use crate::SqliteHeaderDb;
     use crate::{
         chain::checkpoints::HeaderCheckpoint,
         {
@@ -539,8 +448,6 @@ mod tests {
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: u8,
     ) -> Chain {
-        let binding = tempfile::tempdir().unwrap();
-        let path = binding.path();
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -549,7 +456,6 @@ mod tests {
             Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
-            SqliteHeaderDb::new(bitcoin::Network::Regtest, Some(path.to_path_buf())).unwrap(),
             peers,
         )
     }

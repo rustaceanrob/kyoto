@@ -112,31 +112,7 @@ impl BlockTree {
             height,
             next_work_required: Some(genesis.header.bits),
         };
-        let mut headers = HashMap::with_capacity(20_000);
-        let block_node = BlockNode::new(height, genesis.header, genesis.header.work());
-        headers.insert(hash, block_node);
-        let mut canonical_hashes = BTreeMap::new();
-        canonical_hashes.insert(0, hash);
-        Self {
-            canonical_hashes,
-            headers,
-            active_tip: tip,
-            candidate_forks: Vec::with_capacity(2),
-            network,
-        }
-    }
-
-    pub(crate) fn from_header(height: impl Into<Height>, header: Header, network: Network) -> Self {
-        let height = height.into();
-        let hash = header.block_hash();
-        let tip = Tip {
-            hash,
-            height,
-            next_work_required: Some(header.bits),
-        };
-        let mut headers = HashMap::with_capacity(20_000);
-        let block_node = BlockNode::new(height, header, header.work());
-        headers.insert(hash, block_node);
+        let headers = HashMap::with_capacity(20_000);
         Self {
             canonical_hashes: BTreeMap::new(),
             headers,
@@ -428,7 +404,7 @@ impl BlockTree {
 
     pub(crate) fn reset_all_filters(&mut self) {
         let mut curr = self.tip_hash();
-        while let Some(node) = self.headers.get_mut(&curr) {
+        while self.headers.get_mut(&curr).is_some() {
             match self.headers.get_mut(&curr) {
                 Some(node) => {
                     node.filter_checked = false;
@@ -439,7 +415,7 @@ impl BlockTree {
         }
         for fork in &self.candidate_forks {
             curr = fork.hash;
-            while let Some(node) = self.headers.get_mut(&curr) {
+            while self.headers.get_mut(&curr).is_some() {
                 match self.headers.get_mut(&curr) {
                     Some(node) => {
                         if !node.filter_checked {
@@ -679,68 +655,6 @@ mod tests {
         assert_eq!(chain.header_at_height(3), Some(stale[0].0));
         assert_eq!(chain.header_at_height(2), Some(base[1].0));
         assert_eq!(chain.header_at_height(1), Some(base[0].0));
-    }
-
-    #[test]
-    fn test_reorg_to_root() {
-        let GraphScenario {
-            base: _,
-            stale,
-            new,
-        } = get_graph_scenario(2);
-        let mut chain = BlockTree::from_genesis(Network::Regtest);
-        for header in &stale {
-            let accept = chain.accept_header(header.0);
-            assert!(matches!(
-                accept,
-                AcceptHeaderChanges::Accepted { connected_at: _ }
-            ));
-        }
-        assert_eq!(chain.height(), 2);
-        let mut new_header_iter = new.into_iter().map(|hex| hex.0);
-        let new_block_1 = new_header_iter.next().unwrap();
-        let fork_1 = chain.accept_header(new_block_1);
-        assert!(matches!(
-            fork_1,
-            AcceptHeaderChanges::ExtendedFork { connected_at: _ }
-        ));
-        let new_block_2 = new_header_iter.next().unwrap();
-        let fork_2 = chain.accept_header(new_block_2);
-        assert!(matches!(
-            fork_2,
-            AcceptHeaderChanges::ExtendedFork { connected_at: _ }
-        ));
-        let block_3 = new_header_iter.next().unwrap();
-        let reorg_1 = chain.accept_header(block_3);
-        match reorg_1 {
-            AcceptHeaderChanges::Reorganization {
-                accepted,
-                disconnected,
-            } => {
-                assert_eq!(
-                    accepted,
-                    vec![
-                        IndexedHeader::new(3, block_3),
-                        IndexedHeader::new(2, new_block_2),
-                        IndexedHeader::new(1, new_block_1),
-                    ]
-                );
-                assert_eq!(
-                    disconnected,
-                    vec![
-                        IndexedHeader::new(2, stale[1].0),
-                        IndexedHeader::new(1, stale[0].0),
-                    ]
-                );
-            }
-            _ => panic!("reorganization should have been accepted"),
-        }
-        let block_4 = new_header_iter.next().unwrap();
-        let accept_4 = chain.accept_header(block_4);
-        assert!(matches!(
-            accept_4,
-            AcceptHeaderChanges::Accepted { connected_at: _ }
-        ));
     }
 
     #[test]

@@ -31,7 +31,7 @@ use crate::{
     },
     error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    IndexedBlock, NodeState, SqliteHeaderDb, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
+    IndexedBlock, NodeState, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
 };
 
 use super::{
@@ -66,7 +66,6 @@ impl Node {
         network: Network,
         config: NodeConfig,
         peer_store: SqlitePeerDb,
-        header_store: SqliteHeaderDb,
     ) -> (Self, Client) {
         let NodeConfig {
             required_peers,
@@ -109,7 +108,6 @@ impl Node {
             header_checkpoint,
             Arc::clone(&dialog),
             height_monitor,
-            header_store,
             required_peers,
         );
         (
@@ -138,7 +136,6 @@ impl Node {
             "Configured connection requirement: {} peers",
             self.required_peers
         ));
-        self.fetch_headers().await?;
         let mut last_block = LastBlockMonitor::new();
         let mut interval = tokio::time::interval(LOOP_TIMEOUT);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -642,14 +639,5 @@ impl Node {
                 ))
             }
         }
-    }
-
-    // When the application starts, fetch any headers we know about from the database.
-    async fn fetch_headers(&mut self) -> Result<(), NodeError> {
-        crate::debug!("Attempting to load headers from the database");
-        self.chain
-            .load_headers()
-            .await
-            .map_err(NodeError::HeaderDatabase)
     }
 }
