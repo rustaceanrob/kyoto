@@ -37,8 +37,7 @@ async fn main() {
         // The number of connections we would like to maintain
         .required_peers(1)
         // Create the node and client
-        .build()
-        .unwrap();
+        .build();
 
     tokio::task::spawn(async move { node.run().await });
 

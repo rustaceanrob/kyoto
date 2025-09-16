@@ -1,24 +1,23 @@
 use std::fmt::Debug;
 
-use crate::{
-    db::error::{SqlHeaderStoreError, SqlPeerStoreError},
-    impl_sourceless_error,
-};
+use crate::impl_sourceless_error;
 
 /// Errors that prevent the node from running.
 #[derive(Debug)]
 pub enum NodeError {
     /// The persistence layer experienced a critical error.
     HeaderDatabase(HeaderPersistenceError),
-    /// The persistence layer experienced a critical error.
-    PeerDatabase(PeerManagerError),
+    /// The node has exhausted all possible options for peers.
+    NoReachablePeers,
 }
 
 impl core::fmt::Display for NodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
-            NodeError::PeerDatabase(e) => write!(f, "peer manager: {e}"),
+            NodeError::NoReachablePeers => {
+                write!(f, "the node has exhausted all possible options for peers")
+            }
         }
     }
 }
@@ -31,37 +30,6 @@ impl From<HeaderPersistenceError> for NodeError {
     }
 }
 
-impl From<PeerManagerError> for NodeError {
-    fn from(value: PeerManagerError) -> Self {
-        NodeError::PeerDatabase(value)
-    }
-}
-
-/// Errors when managing persisted peers.
-#[derive(Debug)]
-pub enum PeerManagerError {
-    /// Reading or writing from the database failed.
-    Database(SqlPeerStoreError),
-}
-
-impl core::fmt::Display for PeerManagerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PeerManagerError::Database(e) => {
-                write!(f, "database: {e}")
-            }
-        }
-    }
-}
-
-impl_sourceless_error!(PeerManagerError);
-
-impl From<SqlPeerStoreError> for PeerManagerError {
-    fn from(value: SqlPeerStoreError) -> Self {
-        PeerManagerError::Database(value)
-    }
-}
-
 /// Errors with the block header representation that prevent the node from operating.
 #[derive(Debug)]
 pub enum HeaderPersistenceError {
@@ -71,8 +39,6 @@ pub enum HeaderPersistenceError {
     MismatchedCheckpoints,
     /// A user tried to retrieve headers too far in the past for what is in their database.
     CannotLocateHistory,
-    /// A database error.
-    Database(SqlHeaderStoreError),
 }
 
 impl core::fmt::Display for HeaderPersistenceError {
@@ -81,7 +47,6 @@ impl core::fmt::Display for HeaderPersistenceError {
             HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
             HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
             HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
-            HeaderPersistenceError::Database(e) => write!(f, "database: {e}"),
         }
     }
 }

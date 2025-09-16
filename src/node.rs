@@ -31,7 +31,7 @@ use crate::{
     },
     error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
-    IndexedBlock, NodeState, SqlitePeerDb, TxBroadcast, TxBroadcastPolicy,
+    IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
 
 use super::{
@@ -62,11 +62,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub(crate) fn new(
-        network: Network,
-        config: NodeConfig,
-        peer_store: SqlitePeerDb,
-    ) -> (Self, Client) {
+    pub(crate) fn new(network: Network, config: NodeConfig) -> (Self, Client) {
         let NodeConfig {
             required_peers,
             white_list,
@@ -74,7 +70,6 @@ impl Node {
             data_path: _,
             header_checkpoint,
             connection_type,
-            target_peer_size,
             peer_timeout_config,
         } = config;
         // Set up a communication channel between the node and client
@@ -93,11 +88,9 @@ impl Node {
         let peer_map = PeerMap::new(
             mtx,
             network,
-            peer_store,
             white_list,
             Arc::clone(&dialog),
             connection_type,
-            target_peer_size,
             peer_timeout_config,
             Arc::clone(&height_monitor),
             dns_resolver,
@@ -267,7 +260,11 @@ impl Node {
                 connected: live,
                 required,
             });
-            let address = self.peer_map.next_peer().await?;
+            let address = self
+                .peer_map
+                .next_peer()
+                .await
+                .ok_or(NodeError::NoReachablePeers)?;
             if self.peer_map.dispatch(address).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect);
             }
@@ -394,7 +391,6 @@ impl Node {
             }
         }
         self.peer_map.tried(nonce).await;
-        let needs_peers = self.peer_map.need_peers().await?;
         // First we signal for ADDRV2 support
         self.peer_map
             .send_message(nonce, MainThreadMessage::GetAddrV2)
@@ -407,12 +403,10 @@ impl Node {
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
         // Now we may request peers if required
-        if needs_peers {
-            crate::debug!("Requesting new addresses");
-            self.peer_map
-                .send_message(nonce, MainThreadMessage::GetAddr)
-                .await;
-        }
+        crate::debug!("Requesting new addresses");
+        self.peer_map
+            .send_message(nonce, MainThreadMessage::GetAddr)
+            .await;
         // Inform the user we are connected to all required peers
         if self.peer_map.live().eq(&self.required_peers) {
             self.dialog.send_info(Info::ConnectionsMet).await;

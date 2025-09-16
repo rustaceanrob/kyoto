@@ -1,4 +1,4 @@
-use bitcoin::{hex::DisplayHex, p2p::address::AddrV2, Network, Work};
+use bitcoin::{Network, Work};
 
 #[allow(dead_code)]
 pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
@@ -16,41 +16,6 @@ macro_rules! impl_sourceless_error {
 }
 
 pub(crate) use impl_sourceless_error;
-
-pub trait Netgroup {
-    fn netgroup(&self) -> String;
-}
-
-impl Netgroup for AddrV2 {
-    fn netgroup(&self) -> String {
-        match self {
-            AddrV2::Ipv4(ip) => ip
-                .to_string()
-                .split('.')
-                .take(2)
-                .collect::<Vec<&str>>()
-                .join("."),
-            AddrV2::Ipv6(ip) => ip
-                .to_string()
-                .replace("::", ".")
-                .split('.')
-                .take(4)
-                .collect::<Vec<&str>>()
-                .join("::"),
-            AddrV2::TorV2(t) => t.to_lower_hex_string(),
-            AddrV2::TorV3(t) => t.to_lower_hex_string(),
-            AddrV2::I2p(t) => t.to_lower_hex_string(),
-            AddrV2::Cjdns(cj) => cj
-                .to_string()
-                .replace("::", ".")
-                .split('.')
-                .take(4)
-                .collect::<Vec<&str>>()
-                .join("::"),
-            AddrV2::Unknown(_, _) => "UNKNOWN".to_owned(),
-        }
-    }
-}
 
 pub(crate) fn default_port_from_network(network: &Network) -> u16 {
     match network {

@@ -33,8 +33,7 @@ async fn main() {
         // Add some initial peers
         .add_peers(seeds.into_iter().map(From::from))
         // Create the node and client
-        .build()
-        .unwrap();
+        .build();
     // Run the node on a separate task
     tokio::task::spawn(async move { node.run().await });
     // Split the client into components that send messages and listen to messages.
