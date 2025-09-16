@@ -6,6 +6,6 @@
 
 /// Errors a database backend may produce.
 pub mod error;
-/// Persistence traits defined with SQL Lite to store data between sessions.
+/// Persistence defined with SQL Lite to store data between sessions.
 #[cfg(feature = "rusqlite")]
 pub mod sqlite;
