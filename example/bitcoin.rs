@@ -2,6 +2,7 @@
 //! expected sync time on your machine and in your region.
 
 use bip157::builder::Builder;
+use bip157::chain::BlockHeaderChanges;
 use bip157::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
@@ -62,8 +63,8 @@ async fn main() {
                             tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
                             break;
                         },
-                        Event::BlocksDisconnected { accepted: _, disconnected: _} => {
-                            tracing::warn!("Some blocks were reorganized")
+                        Event::ChainUpdate(BlockHeaderChanges::Connected(header)) => {
+                            tracing::info!("New best tip {}", header.height);
                         },
                         _ => (),
                     }

@@ -68,12 +68,20 @@ impl IndexedHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum HeaderChainChanges {
-    Extended(u32),
-    Reorg { height: u32, hashes: Vec<BlockHash> },
-    ForkAdded { tip: IndexedHeader },
-    Duplicate,
+/// Changes applied to the chain of block headers.
+#[derive(Debug, Clone)]
+pub enum BlockHeaderChanges {
+    /// A block was connected to the tip of the chain.
+    Connected(IndexedHeader),
+    /// Blocks were reorganized and a new chain of most work was selected.
+    Reorganized {
+        /// Newly accepted blocks from the chain of most work.
+        accepted: Vec<IndexedHeader>,
+        /// Blocks that were removed from the chain.
+        reorganized: Vec<IndexedHeader>,
+    },
+    /// A peer proposed a block that is not on the chain of most work.
+    ForkAdded(IndexedHeader),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -14,10 +14,15 @@ use super::{
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
-    HeaderChainChanges, HeightMonitor, PeerId,
+    HeightMonitor, PeerId,
 };
 use crate::IndexedFilter;
-use crate::{chain::header_batch::HeadersBatch, dialog::Dialog, messages::Event, Info, Progress};
+use crate::{
+    chain::{header_batch::HeadersBatch, BlockHeaderChanges},
+    dialog::Dialog,
+    messages::Event,
+    Info, Progress,
+};
 
 const FILTER_BASIC: u8 = 0x00;
 const CF_HEADER_BATCH_SIZE: u32 = 1_999;
@@ -74,33 +79,34 @@ impl Chain {
     }
 
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
-    pub(crate) async fn sync_chain(
+    pub(crate) fn sync_chain(
         &mut self,
         message: Vec<Header>,
-    ) -> Result<HeaderChainChanges, HeaderSyncError> {
+    ) -> Result<Vec<BlockHash>, HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // If our chain already has the last header in the message there is no new information
         if self.header_chain.contains(header_batch.last().block_hash()) {
-            return Ok(HeaderChainChanges::Duplicate);
+            return Ok(Vec::new());
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
-        let mut reorged_hashes = None;
-        let mut fork_added = None;
+        let mut reorgs = Vec::new();
         for header in header_batch.into_iter() {
             let changes = self.header_chain.accept_header(header);
             match changes {
                 AcceptHeaderChanges::Accepted { connected_at } => {
-                    crate::debug!(format!(
-                        "Chain updated {} -> {}",
-                        connected_at.height,
-                        connected_at.header.block_hash()
-                    ));
+                    self.dialog
+                        .send_event(Event::ChainUpdate(BlockHeaderChanges::Connected(
+                            connected_at,
+                        )));
                 }
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => {
-                    fork_added = Some(connected_at);
-                    crate::debug!(format!("Fork created or extended {}", connected_at.height))
+                    crate::debug!(format!("Fork created or extended {}", connected_at.height));
+                    self.dialog
+                        .send_event(Event::ChainUpdate(BlockHeaderChanges::ForkAdded(
+                            connected_at,
+                        )));
                 }
                 AcceptHeaderChanges::Reorganization {
                     mut accepted,
@@ -109,15 +115,16 @@ impl Chain {
                     crate::debug!("Valid reorganization found");
                     accepted.sort();
                     disconnected.sort();
-                    let removed_hashes: Vec<BlockHash> = disconnected
-                        .iter()
-                        .map(|index| index.header.block_hash())
-                        .collect();
-                    reorged_hashes = Some(removed_hashes);
-                    let disconnected_event = Event::BlocksDisconnected {
+                    reorgs = disconnected
+                        .clone()
+                        .into_iter()
+                        .map(|header| header.block_hash())
+                        .collect::<Vec<BlockHash>>();
+                    self.clear_compact_filter_queue();
+                    let disconnected_event = Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                         accepted,
-                        disconnected,
-                    };
+                        reorganized: disconnected,
+                    });
                     self.dialog.send_event(disconnected_event);
                 }
                 AcceptHeaderChanges::Rejected(rejected_header) => match rejected_header {
@@ -132,19 +139,7 @@ impl Chain {
                 },
             }
         }
-        match reorged_hashes {
-            Some(reorgs) => {
-                self.clear_compact_filter_queue();
-                Ok(HeaderChainChanges::Reorg {
-                    height: self.header_chain.height(),
-                    hashes: reorgs,
-                })
-            }
-            None => match fork_added {
-                Some(fork) => Ok(HeaderChainChanges::ForkAdded { tip: fork }),
-                None => Ok(HeaderChainChanges::Extended(self.header_chain.height())),
-            },
-        }
+        Ok(reorgs)
     }
 
     // These are invariants in all batches of headers we receive
@@ -585,10 +580,10 @@ mod tests {
         let new_block_4 = canonical_iter.next().unwrap().header.0;
         let block_5 = canonical_iter.next().unwrap().header.0;
         let batch_2 = vec![block_1, block_2, block_3, new_block_4, block_5];
-        let chain_sync = chain.sync_chain(batch_1).await;
+        let chain_sync = chain.sync_chain(batch_1);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        let chain_sync = chain.sync_chain(batch_2).await;
+        let chain_sync = chain.sync_chain(batch_2);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         let block_iter = chain
@@ -610,7 +605,7 @@ mod tests {
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let block_5 = scenario.last_block_header();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -642,7 +637,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 1);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -679,7 +674,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -741,7 +736,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -794,7 +789,7 @@ mod tests {
         let mut stale_headers = scenario.n_most_work_headers(3);
         let stale_block_data = scenario.stale_chain.first().unwrap();
         stale_headers.push(stale_block_data.header.0);
-        let chain_sync = chain.sync_chain(stale_headers).await;
+        let chain_sync = chain.sync_chain(stale_headers);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -803,7 +798,7 @@ mod tests {
         // Reorganize the blocks
         let most_work = scenario.most_work_headers();
         let header_batch = vec![most_work[3], most_work[4]];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.next_cf_header_message();
@@ -858,7 +853,7 @@ mod tests {
             .map(|data| data.header.0)
             .unwrap();
         header_batch.push(stale);
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -884,7 +879,7 @@ mod tests {
         let new_block_4 = new_chain[3];
         let block_5 = new_chain[4];
         let header_batch = vec![new_block_4, block_5];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         // Request the CF headers again
@@ -922,7 +917,7 @@ mod tests {
         let new_block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
         let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
         let header_batch = vec![block_1, block_2, block_3, block_4];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -980,7 +975,7 @@ mod tests {
         assert!(sync_filter_1.is_ok());
         // Reorganize the blocks
         let header_batch = vec![new_block_4, block_5];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         height_monitor.lock().await.increment(1.into());
         assert!(chain.is_synced().await);
@@ -1037,14 +1032,14 @@ mod tests {
             .last()
             .map(|header| header.block_hash())
             .unwrap();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let block_5 = scenario.last_block_header();
-        let chain_sync = chain.sync_chain(vec![block_5]).await;
+        let chain_sync = chain.sync_chain(vec![block_5]);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         assert!(chain.is_synced().await);
@@ -1084,7 +1079,7 @@ mod tests {
         let scenario = load_scenario();
         let first_four = scenario.n_most_work_headers(4);
         let block_4 = first_four.last().copied().unwrap();
-        let chain_sync = chain.sync_chain(first_four).await;
+        let chain_sync = chain.sync_chain(first_four);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -1101,7 +1096,7 @@ mod tests {
         assert!(cf_header_sync_res.is_ok());
         let last_header = scenario.last_block_header();
         let all_filter_hashes = scenario.n_most_work_filter_hashes(5);
-        let chain_sync = chain.sync_chain(vec![last_header]).await;
+        let chain_sync = chain.sync_chain(vec![last_header]);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.clear_compact_filter_queue();

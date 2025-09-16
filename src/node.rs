@@ -27,7 +27,7 @@ use crate::{
         chain::Chain,
         checkpoints::HeaderCheckpoint,
         error::HeaderSyncError,
-        CFHeaderChanges, FilterCheck, HeaderChainChanges, HeightMonitor,
+        CFHeaderChanges, FilterCheck, HeightMonitor,
     },
     error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
@@ -432,25 +432,12 @@ impl Node {
         headers: Vec<Header>,
     ) -> Option<MainThreadMessage> {
         let chain = &mut self.chain;
-        match chain.sync_chain(headers).await {
-            Ok(changes) => match changes {
-                HeaderChainChanges::Extended(height) => {
-                    self.dialog.send_info(Info::NewChainHeight(height)).await;
+        match chain.sync_chain(headers) {
+            Ok(reorgs) => {
+                if !reorgs.is_empty() {
+                    self.block_queue.remove(&reorgs);
                 }
-                HeaderChainChanges::Reorg { height: _, hashes } => {
-                    self.block_queue.remove(&hashes);
-                    crate::debug!(format!("{} blocks reorganized", hashes.len()));
-                }
-                HeaderChainChanges::ForkAdded { tip } => {
-                    crate::debug!(format!(
-                        "Candidate fork {} -> {}",
-                        tip.height,
-                        tip.block_hash()
-                    ));
-                    self.dialog.send_info(Info::NewFork { tip }).await;
-                }
-                HeaderChainChanges::Duplicate => (),
-            },
+            }
             Err(e) => match e {
                 HeaderSyncError::EmptyMessage => {
                     if !chain.is_synced().await {

@@ -2,11 +2,9 @@ use std::collections::BTreeMap;
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
+use crate::chain::BlockHeaderChanges;
 use crate::IndexedFilter;
-use crate::{
-    chain::{checkpoints::HeaderCheckpoint, IndexedHeader},
-    IndexedBlock, TrustedPeer, TxBroadcast,
-};
+use crate::{chain::checkpoints::HeaderCheckpoint, IndexedBlock, TrustedPeer, TxBroadcast};
 
 use super::error::FetchBlockError;
 
@@ -19,13 +17,6 @@ pub enum Info {
     ConnectionsMet,
     /// The progress of the node during the block filter download process.
     Progress(Progress),
-    /// There was an update to the header chain.
-    NewChainHeight(u32),
-    /// A peer served a new fork.
-    NewFork {
-        /// The tip of the new fork.
-        tip: IndexedHeader,
-    },
     /// A transaction was sent to a peer. The `wtxid` was advertised to the
     /// peer, and the peer responded with `getdata`. The transaction was then serialized and sent
     /// over the wire. This is a strong indication the transaction will propagate, but not
@@ -46,8 +37,6 @@ impl core::fmt::Display for Info {
                 let progress_percent = p.percentage_complete();
                 write!(f, "Percent complete: {progress_percent}")
             }
-            Info::NewChainHeight(height) => write!(f, "New chain height: {height}"),
-            Info::NewFork { tip } => write!(f, "New fork {} -> {}", tip.height, tip.block_hash()),
             Info::BlockReceived(hash) => write!(f, "Received block {hash}"),
         }
     }
@@ -60,15 +49,10 @@ pub enum Event {
     /// Note that the block may not contain any transactions contained in the script set.
     /// This is due to block filters having a non-zero false-positive rate when compressing data.
     Block(IndexedBlock),
+    /// The chain of most work has been altered in some way.
+    ChainUpdate(BlockHeaderChanges),
     /// The node is fully synced, having scanned the requested range.
     FiltersSynced(SyncUpdate),
-    /// Blocks were reorganized out of the chain.
-    BlocksDisconnected {
-        /// Blocks that were accepted to the chain of most work in ascending order by height.
-        accepted: Vec<IndexedHeader>,
-        /// Blocks that were disconnected from the chain of most work in ascending order by height.
-        disconnected: Vec<IndexedHeader>,
-    },
     /// A compact block filter with associated height and block hash.
     IndexedFilter(IndexedFilter),
 }
