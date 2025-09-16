@@ -186,11 +186,6 @@ pub enum Warning {
     PotentialStaleTip,
     /// A peer sent us a peer-to-peer message the node did not request.
     UnsolicitedMessage,
-    /// The provided anchor is deeper than the database history.
-    /// Recoverable by deleting the headers from the database or starting from a higher point in the chain.
-    InvalidStartHeight,
-    /// The headers in the database do not link together. Recoverable by deleting the database.
-    CorruptedHeaders,
     /// A transaction got rejected, likely for being an insufficient fee or non-standard transaction.
     TransactionRejected {
         /// The transaction ID and reject reason, if it exists.
@@ -221,10 +216,6 @@ impl core::fmt::Display for Warning {
                     "Looking for connections to peers. Connected: {connected}, Required: {required}"
                 )
             }
-            Warning::InvalidStartHeight => write!(
-                f,
-                "The provided anchor is deeper than the database history."
-            ),
             Warning::CouldNotConnect => {
                 write!(f, "An attempted connection failed or timed out.")
             }
@@ -244,9 +235,6 @@ impl core::fmt::Display for Warning {
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
             Warning::UnexpectedSyncError { warning } => {
                 write!(f, "Error handling a P2P message: {warning}")
-            }
-            Warning::CorruptedHeaders => {
-                write!(f, "The headers in the database do not link together.")
             }
             Warning::PeerTimedOut => {
                 write!(f, "A connection to a peer timed out.")
