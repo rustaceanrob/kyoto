@@ -196,11 +196,6 @@ pub enum Warning {
         /// The transaction ID and reject reason, if it exists.
         payload: RejectPayload,
     },
-    /// A database failed to persist some data.
-    FailedPersistence {
-        /// Additional context for the persistence failure.
-        warning: String,
-    },
     /// The peer sent us a potential fork.
     EvaluatingFork,
     /// The peer database has no values.
@@ -244,9 +239,6 @@ impl core::fmt::Display for Warning {
             }
             Warning::TransactionRejected { payload } => {
                 write!(f, "A transaction got rejected: WTXID {}", payload.wtxid)
-            }
-            Warning::FailedPersistence { warning } => {
-                write!(f, "A database failed to persist some data: {warning}")
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
             Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),

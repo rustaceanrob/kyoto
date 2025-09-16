@@ -5,8 +5,6 @@ use crate::impl_sourceless_error;
 /// Errors that prevent the node from running.
 #[derive(Debug)]
 pub enum NodeError {
-    /// The persistence layer experienced a critical error.
-    HeaderDatabase(HeaderPersistenceError),
     /// The node has exhausted all possible options for peers.
     NoReachablePeers,
 }
@@ -14,7 +12,6 @@ pub enum NodeError {
 impl core::fmt::Display for NodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeError::HeaderDatabase(e) => write!(f, "block headers: {e}"),
             NodeError::NoReachablePeers => {
                 write!(f, "the node has exhausted all possible options for peers")
             }
@@ -23,35 +20,6 @@ impl core::fmt::Display for NodeError {
 }
 
 impl_sourceless_error!(NodeError);
-
-impl From<HeaderPersistenceError> for NodeError {
-    fn from(value: HeaderPersistenceError) -> Self {
-        NodeError::HeaderDatabase(value)
-    }
-}
-
-/// Errors with the block header representation that prevent the node from operating.
-#[derive(Debug)]
-pub enum HeaderPersistenceError {
-    /// The block headers do not point to each other in a list.
-    HeadersDoNotLink,
-    /// Some predefined checkpoint does not match.
-    MismatchedCheckpoints,
-    /// A user tried to retrieve headers too far in the past for what is in their database.
-    CannotLocateHistory,
-}
-
-impl core::fmt::Display for HeaderPersistenceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HeaderPersistenceError::HeadersDoNotLink => write!(f, "the headers loaded from persistence do not link together."),
-            HeaderPersistenceError::MismatchedCheckpoints => write!(f, "the headers loaded do not match a known checkpoint."),
-            HeaderPersistenceError::CannotLocateHistory => write!(f, "the configured checkpoint is too far in the past compared to previous syncs. The database cannot reconstruct the chain."),
-        }
-    }
-}
-
-impl_sourceless_error!(HeaderPersistenceError);
 
 /// Errors occurring when the client is talking to the node.
 #[derive(Debug)]
@@ -78,11 +46,6 @@ pub enum FetchBlockError {
     /// The channel to the node was likely closed and dropped from memory.
     /// This implies the node is not running.
     SendError,
-    /// The database operation failed while attempting to find the header.
-    DatabaseOptFailed {
-        /// The message from the backend describing the failure.
-        error: String,
-    },
     /// The channel to the client was likely closed by the node and dropped from memory.
     RecvError,
     /// The hash is not a member of the chain of most work.
@@ -94,12 +57,6 @@ impl core::fmt::Display for FetchBlockError {
         match self {
             FetchBlockError::SendError => {
                 write!(f, "the receiver of this message was dropped from memory.")
-            }
-            FetchBlockError::DatabaseOptFailed { error } => {
-                write!(
-                    f,
-                    "the database operation failed while attempting to find the header: {error}"
-                )
             }
             FetchBlockError::RecvError => write!(
                 f,
