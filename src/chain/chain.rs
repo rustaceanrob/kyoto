@@ -10,11 +10,10 @@ use tokio::sync::Mutex;
 
 use super::{
     cfheader_batch::CFHeaderBatch,
-    checkpoints::HeaderCheckpoint,
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
-    CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
-    HeightMonitor, PeerId,
+    CFHeaderChanges, ChainState, Filter, FilterCheck, FilterHeaderRequest, FilterRequest,
+    FilterRequestState, HeightMonitor, PeerId,
 };
 use crate::IndexedFilter;
 use crate::{
@@ -40,14 +39,26 @@ pub(crate) struct Chain {
 impl Chain {
     pub(crate) fn new(
         network: Network,
-        anchor: Option<HeaderCheckpoint>,
+        chain_state: ChainState,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
         quorum_required: u8,
     ) -> Self {
-        let header_chain = match anchor {
-            Some(header) => BlockTree::new(header, network),
-            None => BlockTree::from_genesis(network),
+        let header_chain = match chain_state {
+            ChainState::Snapshot(headers) => {
+                let mut header_iter = headers.into_iter();
+                match header_iter.next() {
+                    Some(header) => {
+                        let mut block_tree = BlockTree::new(header, network);
+                        for rest in header_iter {
+                            let _ = block_tree.accept_header(rest.header);
+                        }
+                        block_tree
+                    }
+                    None => BlockTree::from_genesis(network),
+                }
+            }
+            ChainState::Checkpoint(cp) => BlockTree::new(cp, network),
         };
         Chain {
             header_chain,
@@ -428,6 +439,7 @@ mod tests {
     use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
+    use crate::chain::ChainState;
     use crate::{
         chain::checkpoints::HeaderCheckpoint,
         {
@@ -448,7 +460,7 @@ mod tests {
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         Chain::new(
             bitcoin::Network::Regtest,
-            Some(anchor),
+            ChainState::Checkpoint(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
             peers,

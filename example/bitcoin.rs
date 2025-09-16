@@ -2,7 +2,7 @@
 //! expected sync time on your machine and in your region.
 
 use bip157::builder::Builder;
-use bip157::chain::BlockHeaderChanges;
+use bip157::chain::{BlockHeaderChanges, ChainState};
 use bip157::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
@@ -29,7 +29,9 @@ async fn main() {
         // The number of connections we would like to maintain
         .required_peers(2)
         // Only scan for taproot scripts
-        .after_checkpoint(HeaderCheckpoint::taproot_activation())
+        .chain_state(ChainState::Checkpoint(
+            HeaderCheckpoint::taproot_activation(),
+        ))
         // Add some initial peers
         .add_peers(seeds.into_iter().map(From::from))
         // Create the node and client

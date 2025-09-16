@@ -60,6 +60,13 @@ impl From<HeaderCheckpoint> for Tip {
     }
 }
 
+impl From<IndexedHeader> for Tip {
+    fn from(value: IndexedHeader) -> Self {
+        let hash = value.block_hash();
+        Tip::from_checkpoint(value.height, hash)
+    }
+}
+
 #[derive(Debug, Clone, Hash)]
 pub(crate) struct BlockNode {
     pub height: Height,

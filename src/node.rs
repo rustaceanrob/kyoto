@@ -27,7 +27,7 @@ use crate::{
         chain::Chain,
         checkpoints::HeaderCheckpoint,
         error::HeaderSyncError,
-        CFHeaderChanges, FilterCheck, HeightMonitor,
+        CFHeaderChanges, ChainState, FilterCheck, HeightMonitor,
     },
     error::FetchBlockError,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
@@ -68,7 +68,7 @@ impl Node {
             white_list,
             dns_resolver,
             data_path: _,
-            header_checkpoint,
+            chain_state,
             connection_type,
             peer_timeout_config,
         } = config;
@@ -96,9 +96,12 @@ impl Node {
             dns_resolver,
         );
         // Build the chain
+        let chain_state = chain_state.unwrap_or(ChainState::Checkpoint(
+            HeaderCheckpoint::from_genesis(network),
+        ));
         let chain = Chain::new(
             network,
-            header_checkpoint,
+            chain_state,
             Arc::clone(&dialog),
             height_monitor,
             required_peers,

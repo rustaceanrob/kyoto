@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use bitcoin::BlockHash;
+use bitcoin::{constants::genesis_block, params::Params, BlockHash};
 
 type Height = u32;
 
@@ -17,6 +17,13 @@ impl HeaderCheckpoint {
     /// Create a new checkpoint from a known checkpoint of significant work.
     pub fn new(height: Height, hash: BlockHash) -> Self {
         HeaderCheckpoint { height, hash }
+    }
+
+    /// Build a checkpoint from the genesis block for a given network.
+    pub fn from_genesis(params: impl AsRef<Params>) -> Self {
+        let genesis_block = genesis_block(params);
+        let hash = genesis_block.block_hash();
+        HeaderCheckpoint { height: 0, hash }
     }
 
     /// One block before the activation of the taproot softfork.

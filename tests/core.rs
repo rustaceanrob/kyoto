@@ -5,7 +5,7 @@ use std::{
 };
 
 use bip157::{
-    chain::{checkpoints::HeaderCheckpoint, BlockHeaderChanges},
+    chain::{checkpoints::HeaderCheckpoint, BlockHeaderChanges, ChainState},
     client::Client,
     lookup_host,
     node::Node,
@@ -53,15 +53,13 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
 fn new_node(
     socket_addr: SocketAddrV4,
     tempdir_path: PathBuf,
-    checkpoint: Option<HeaderCheckpoint>,
+    chain_state: ChainState,
 ) -> (Node, Client) {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
-    let mut builder = bip157::builder::Builder::new(bitcoin::Network::Regtest);
-    if let Some(checkpoint) = checkpoint {
-        builder = builder.after_checkpoint(checkpoint);
-    }
+    let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest);
+    let builder = builder.chain_state(chain_state);
     let (node, client) = builder.add_peer(host).data_dir(tempdir_path).build();
     (node, client)
 }
@@ -130,7 +128,11 @@ async fn live_reorg() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir, None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -178,7 +180,11 @@ async fn live_reorg_additional_sync() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir, None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -228,7 +234,11 @@ async fn various_client_methods() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 500, 15).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir, None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -253,7 +263,11 @@ async fn stop_reorg_resync() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -271,7 +285,11 @@ async fn stop_reorg_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Spin up the node on a cold start
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -305,7 +323,11 @@ async fn stop_reorg_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node(socket_addr, tempdir, None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -329,7 +351,11 @@ async fn stop_reorg_two_resync() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -350,7 +376,11 @@ async fn stop_reorg_two_resync() {
     let best = best_hash(rpc);
     drop(handle);
     // Make sure the reorganization is caught after a cold start
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -383,7 +413,11 @@ async fn stop_reorg_two_resync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node(socket_addr, tempdir, None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -406,7 +440,11 @@ async fn stop_reorg_start_on_orphan() {
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 17, 3).await;
     let best = best_hash(rpc);
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -428,7 +466,7 @@ async fn stop_reorg_start_on_orphan() {
     let (node, client) = new_node(
         socket_addr,
         tempdir.clone(),
-        Some(HeaderCheckpoint::new(old_height as u32, old_best)),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -438,9 +476,13 @@ async fn stop_reorg_start_on_orphan() {
         event_rx: mut channel,
     } = client;
     let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let mut headers = Vec::new();
     // Ensure SQL is able to catch the fork by loading in headers from the database
     while let Some(message) = channel.recv().await {
         match message {
+            bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Connected(header)) => {
+                headers.push(header);
+            }
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                 accepted: _,
                 reorganized: blocks,
@@ -459,15 +501,11 @@ async fn stop_reorg_start_on_orphan() {
     }
     drop(handle);
     requester.shutdown().unwrap();
-    // Don't do anything, but reload the node from the checkpoint
-    let cp = best_hash(rpc);
-    let old_height = num_blocks(rpc);
     let best = best_hash(rpc);
-    // Make sure the node does not have any corrupted headers
     let (node, client) = new_node(
         socket_addr,
         tempdir.clone(),
-        Some(HeaderCheckpoint::new(old_height as u32, cp)),
+        ChainState::Snapshot(headers.clone()),
     );
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -481,17 +519,10 @@ async fn stop_reorg_start_on_orphan() {
     sync_assert(&best, &mut channel).await;
     drop(handle);
     requester.shutdown().unwrap();
-    // Mine more blocks and reload from the checkpoint
-    let cp = best_hash(rpc);
-    let old_height = num_blocks(rpc);
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
-    let (node, client) = new_node(
-        socket_addr,
-        tempdir,
-        Some(HeaderCheckpoint::new(old_height as u32, cp)),
-    );
+    let (node, client) = new_node(socket_addr, tempdir, ChainState::Snapshot(headers.clone()));
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
@@ -581,7 +612,11 @@ async fn tx_can_broadcast() {
     let tx = sighasher.into_transaction().to_owned();
     println!("Signed transaction");
     // Build a node to broadcast the transaction
-    let (node, client) = new_node(socket_addr, tempdir.clone(), None);
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,

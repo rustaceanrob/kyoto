@@ -4,7 +4,7 @@ use std::{path::PathBuf, time::Duration};
 use bitcoin::Network;
 
 use super::{client::Client, config::NodeConfig, node::Node};
-use crate::chain::checkpoints::HeaderCheckpoint;
+use crate::chain::ChainState;
 use crate::network::dns::{DnsResolver, DNS_RESOLVER_PORT};
 use crate::network::ConnectionType;
 use crate::TrustedPeer;
@@ -76,13 +76,11 @@ impl Builder {
         self
     }
 
-    /// Add a checkpoint for the node to look for relevant blocks _strictly after_ the given height.
-    /// This may be from the same [`HeaderCheckpoint`] every time the node is ran, or from the last known sync height.
-    /// In the case of a block reorganization, the node may scan for blocks below the given block height
-    /// to accurately reflect which relevant blocks are in the best chain.
-    /// If none is provided, the _most recent_ checkpoint will be used.
-    pub fn after_checkpoint(mut self, checkpoint: impl Into<HeaderCheckpoint>) -> Self {
-        self.config.header_checkpoint = Some(checkpoint.into());
+    /// Initialize the chain state of the node with previous information or a starting checkpoint.
+    /// This information will be used to inform the client of any block reorganizations and to
+    /// enforce consensus rules on proof of work.
+    pub fn chain_state(mut self, state: ChainState) -> Self {
+        self.config.chain_state = Some(state);
         self
     }
 
