@@ -9,8 +9,8 @@ use bitcoin::{consensus, BlockHash, Network};
 use rusqlite::{params, params_from_iter, Connection, Result};
 use tokio::sync::Mutex;
 
+use crate::chain::BlockHeaderChanges;
 use crate::db::error::{SqlHeaderStoreError, SqlInitializationError};
-use crate::db::BlockHeaderChanges;
 
 use super::{DATA_DIR, DEFAULT_CWD};
 
@@ -158,6 +158,7 @@ impl SqliteHeaderDb {
                         .insert(indexed_header.height, indexed_header.header);
                 }
             }
+            BlockHeaderChanges::ForkAdded(_) => (),
         }
     }
 

@@ -14,19 +14,16 @@ use super::{
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderChanges, Filter, FilterCheck, FilterHeaderRequest, FilterRequest, FilterRequestState,
-    HeaderChainChanges, HeightExt, HeightMonitor, PeerId,
+    HeightMonitor, PeerId,
 };
+use crate::IndexedFilter;
 use crate::{
-    chain::header_batch::HeadersBatch,
-    db::BlockHeaderChanges,
+    chain::{header_batch::HeadersBatch, BlockHeaderChanges},
     dialog::Dialog,
-    error::HeaderPersistenceError,
-    messages::{Event, Warning},
+    messages::Event,
     Info, Progress,
 };
-use crate::{IndexedFilter, SqliteHeaderDb};
 
-const REORG_LOOKBACK: u32 = 7;
 const FILTER_BASIC: u8 = 0x00;
 const CF_HEADER_BATCH_SIZE: u32 = 1_999;
 const FILTER_BATCH_SIZE: u32 = 999;
@@ -36,7 +33,6 @@ pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    db: SqliteHeaderDb,
     heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
 }
@@ -47,7 +43,6 @@ impl Chain {
         anchor: Option<HeaderCheckpoint>,
         dialog: Arc<Dialog>,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        db: SqliteHeaderDb,
         quorum_required: u8,
     ) -> Self {
         let header_chain = match anchor {
@@ -58,7 +53,6 @@ impl Chain {
             header_chain,
             request_state: FilterRequestState::new(quorum_required),
             network,
-            db,
             heights: height_monitor,
             dialog,
         }
@@ -84,110 +78,35 @@ impl Chain {
         }
     }
 
-    // Load in headers, ideally allowing the difficulty adjustment to be audited and
-    // reorganizations to be handled gracefully.
-    pub(crate) async fn load_headers(&mut self) -> Result<(), HeaderPersistenceError> {
-        // The original height the user requested a scan after
-        let scan_height = self.header_chain.height();
-        // The header relevant to compute the next adjustment
-        let last_adjustment = scan_height.last_epoch_start(self.network);
-        // Seven blocks ago
-        let reorg = scan_height.saturating_sub(REORG_LOOKBACK);
-        // To handle adjustments and reorgs, we would have the minimum of each of these heights
-        let min_interesting_height = last_adjustment.min(reorg);
-        let max_interesting_height = last_adjustment.max(reorg);
-        // Get the maximum of the two interesting heights. In case the minimum is not available
-        if let Some(header) = self
-            .db
-            .header_at(max_interesting_height)
-            .await
-            .ok()
-            .flatten()
-        {
-            self.header_chain =
-                BlockTree::from_header(max_interesting_height, header, self.network);
-        }
-        // If this succeeds, both reorgs and difficulty adjustments can be handled gracefully.
-        if let Some(header) = self
-            .db
-            .header_at(min_interesting_height)
-            .await
-            .ok()
-            .flatten()
-        {
-            self.header_chain =
-                BlockTree::from_header(min_interesting_height, header, self.network);
-        }
-        // Now that the block tree is updated to the appropriate start, load in the rest of
-        // the history from this point onward. This is either: from the user start height,
-        // from the last difficulty adjustment, or seven blocks ago, depending on what the
-        // header store was able to provide.
-        let loaded_headers = self
-            .db
-            .load(self.header_chain.height().increment()..)
-            .await
-            .map_err(HeaderPersistenceError::Database)?;
-        for (height, header) in loaded_headers {
-            let apply_header_changes = self.header_chain.accept_header(header);
-            match apply_header_changes {
-                AcceptHeaderChanges::Accepted { connected_at } => {
-                    if height.ne(&connected_at.height) {
-                        self.dialog.send_warning(Warning::CorruptedHeaders);
-                        return Err(HeaderPersistenceError::HeadersDoNotLink);
-                    }
-                }
-                AcceptHeaderChanges::Rejected(reject_reason) => match reject_reason {
-                    HeaderRejection::UnknownPrevHash(_) => {
-                        return Err(HeaderPersistenceError::CannotLocateHistory);
-                    }
-                    HeaderRejection::InvalidPow {
-                        expected: _,
-                        got: _,
-                    } => {
-                        crate::debug!(
-                            "Unexpected invalid proof of work when importing a block header"
-                        );
-                    }
-                },
-                _ => (),
-            }
-        }
-        // Because the user requested a scan after the `scan_height`, the filters below this point
-        // may be assumed as checked. Note that in a reorg, filters below this height may still be
-        // retrieved, as this only considers the canonical chain as checked.
-        self.header_chain.assume_checked_to(scan_height);
-        Ok(())
-    }
-
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
-    pub(crate) async fn sync_chain(
+    pub(crate) fn sync_chain(
         &mut self,
         message: Vec<Header>,
-    ) -> Result<HeaderChainChanges, HeaderSyncError> {
+    ) -> Result<Vec<BlockHash>, HeaderSyncError> {
         let header_batch = HeadersBatch::new(message).map_err(|_| HeaderSyncError::EmptyMessage)?;
         // If our chain already has the last header in the message there is no new information
         if self.header_chain.contains(header_batch.last().block_hash()) {
-            return Ok(HeaderChainChanges::Duplicate);
+            return Ok(Vec::new());
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
-        let mut reorged_hashes = None;
-        let mut fork_added = None;
+        let mut reorgs = Vec::new();
         for header in header_batch.into_iter() {
             let changes = self.header_chain.accept_header(header);
             match changes {
                 AcceptHeaderChanges::Accepted { connected_at } => {
-                    crate::debug!(format!(
-                        "Chain updated {} -> {}",
-                        connected_at.height,
-                        connected_at.header.block_hash()
-                    ));
-                    self.db.stage(BlockHeaderChanges::Connected(connected_at));
+                    self.dialog
+                        .send_event(Event::ChainUpdate(BlockHeaderChanges::Connected(
+                            connected_at,
+                        )));
                 }
                 AcceptHeaderChanges::Duplicate => (),
                 AcceptHeaderChanges::ExtendedFork { connected_at } => {
-                    fork_added = Some(connected_at);
-                    crate::debug!(format!("Fork created or extended {}", connected_at.height))
+                    crate::debug!(format!("Fork created or extended {}", connected_at.height));
+                    self.dialog
+                        .send_event(Event::ChainUpdate(BlockHeaderChanges::ForkAdded(
+                            connected_at,
+                        )));
                 }
                 AcceptHeaderChanges::Reorganization {
                     mut accepted,
@@ -196,19 +115,16 @@ impl Chain {
                     crate::debug!("Valid reorganization found");
                     accepted.sort();
                     disconnected.sort();
-                    let removed_hashes: Vec<BlockHash> = disconnected
-                        .iter()
-                        .map(|index| index.header.block_hash())
-                        .collect();
-                    reorged_hashes = Some(removed_hashes);
-                    self.db.stage(BlockHeaderChanges::Reorganized {
-                        accepted: accepted.clone(),
-                        reorganized: disconnected.clone(),
-                    });
-                    let disconnected_event = Event::BlocksDisconnected {
+                    reorgs = disconnected
+                        .clone()
+                        .into_iter()
+                        .map(|header| header.block_hash())
+                        .collect::<Vec<BlockHash>>();
+                    self.clear_compact_filter_queue();
+                    let disconnected_event = Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                         accepted,
-                        disconnected,
-                    };
+                        reorganized: disconnected,
+                    });
                     self.dialog.send_event(disconnected_event);
                 }
                 AcceptHeaderChanges::Rejected(rejected_header) => match rejected_header {
@@ -223,24 +139,7 @@ impl Chain {
                 },
             }
         }
-        if let Err(e) = self.db.write().await {
-            self.dialog.send_warning(Warning::FailedPersistence {
-                warning: format!("Could not save headers to disk: {e}"),
-            });
-        }
-        match reorged_hashes {
-            Some(reorgs) => {
-                self.clear_compact_filter_queue();
-                Ok(HeaderChainChanges::Reorg {
-                    height: self.header_chain.height(),
-                    hashes: reorgs,
-                })
-            }
-            None => match fork_added {
-                Some(fork) => Ok(HeaderChainChanges::ForkAdded { tip: fork }),
-                None => Ok(HeaderChainChanges::Extended(self.header_chain.height())),
-            },
-        }
+        Ok(reorgs)
     }
 
     // These are invariants in all batches of headers we receive
@@ -365,6 +264,9 @@ impl Chain {
         let mut last_unchecked_cfheader = self.header_chain.height();
         let mut prev_header = None;
         for data in self.header_chain.iter_data() {
+            if data.height.eq(&0) {
+                break;
+            }
             match data.filter_commitment {
                 Some(commitment) => {
                     prev_header = Some(commitment.header);
@@ -445,6 +347,9 @@ impl Chain {
     pub(crate) fn next_filter_message(&mut self) -> GetCFilters {
         let mut last_unchecked_filter = self.header_chain.height();
         for block_data in self.header_chain.iter_data() {
+            if block_data.height.eq(&0) {
+                break;
+            }
             if block_data.filter_checked {
                 break;
             }
@@ -523,7 +428,6 @@ mod tests {
     use corepc_node::serde_json;
     use tokio::sync::Mutex;
 
-    use crate::SqliteHeaderDb;
     use crate::{
         chain::checkpoints::HeaderCheckpoint,
         {
@@ -539,8 +443,6 @@ mod tests {
         height_monitor: Arc<Mutex<HeightMonitor>>,
         peers: u8,
     ) -> Chain {
-        let binding = tempfile::tempdir().unwrap();
-        let path = binding.path();
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -549,7 +451,6 @@ mod tests {
             Some(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             height_monitor,
-            SqliteHeaderDb::new(bitcoin::Network::Regtest, Some(path.to_path_buf())).unwrap(),
             peers,
         )
     }
@@ -679,10 +580,10 @@ mod tests {
         let new_block_4 = canonical_iter.next().unwrap().header.0;
         let block_5 = canonical_iter.next().unwrap().header.0;
         let batch_2 = vec![block_1, block_2, block_3, new_block_4, block_5];
-        let chain_sync = chain.sync_chain(batch_1).await;
+        let chain_sync = chain.sync_chain(batch_1);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        let chain_sync = chain.sync_chain(batch_2).await;
+        let chain_sync = chain.sync_chain(batch_2);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         let block_iter = chain
@@ -704,7 +605,7 @@ mod tests {
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let block_5 = scenario.last_block_header();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -736,7 +637,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 1);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -773,7 +674,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -835,7 +736,7 @@ mod tests {
         let mut chain = new_regtest(gen, height_monitor.clone(), 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         height_monitor.lock().await.insert(1.into(), 2501);
@@ -888,7 +789,7 @@ mod tests {
         let mut stale_headers = scenario.n_most_work_headers(3);
         let stale_block_data = scenario.stale_chain.first().unwrap();
         stale_headers.push(stale_block_data.header.0);
-        let chain_sync = chain.sync_chain(stale_headers).await;
+        let chain_sync = chain.sync_chain(stale_headers);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -897,7 +798,7 @@ mod tests {
         // Reorganize the blocks
         let most_work = scenario.most_work_headers();
         let header_batch = vec![most_work[3], most_work[4]];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.next_cf_header_message();
@@ -952,7 +853,7 @@ mod tests {
             .map(|data| data.header.0)
             .unwrap();
         header_batch.push(stale);
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -978,7 +879,7 @@ mod tests {
         let new_block_4 = new_chain[3];
         let block_5 = new_chain[4];
         let header_batch = vec![new_block_4, block_5];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         // Request the CF headers again
@@ -1016,7 +917,7 @@ mod tests {
         let new_block_4: Header = deserialize(&hex::decode("0000002004a138485264fdcec8abcd044e26a97b501649f941b9eed342ae26c51bfde134fdb874f33a34f746f688c148583d90fe9c5512790a2c0891bb99c7595a7891b52f84c366ffff7f2002000000").unwrap()).unwrap();
         let block_5: Header = deserialize(&hex::decode("0000002085e2486fdb11997b8ecec9f765da62ee5b4c457f6b7903103bcaaeb6149ffe5e2e35eae749a0fa88c203757b8df4c797f71d0d4728389694c405d029a9ad96eb2f84c366ffff7f2000000000").unwrap()).unwrap();
         let header_batch = vec![block_1, block_2, block_3, block_4];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -1074,7 +975,7 @@ mod tests {
         assert!(sync_filter_1.is_ok());
         // Reorganize the blocks
         let header_batch = vec![new_block_4, block_5];
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         height_monitor.lock().await.increment(1.into());
         assert!(chain.is_synced().await);
@@ -1131,14 +1032,14 @@ mod tests {
             .last()
             .map(|header| header.block_hash())
             .unwrap();
-        let chain_sync = chain.sync_chain(header_batch).await;
+        let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
         assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let block_5 = scenario.last_block_header();
-        let chain_sync = chain.sync_chain(vec![block_5]).await;
+        let chain_sync = chain.sync_chain(vec![block_5]);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         assert!(chain.is_synced().await);
@@ -1178,7 +1079,7 @@ mod tests {
         let scenario = load_scenario();
         let first_four = scenario.n_most_work_headers(4);
         let block_4 = first_four.last().copied().unwrap();
-        let chain_sync = chain.sync_chain(first_four).await;
+        let chain_sync = chain.sync_chain(first_four);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
         height_monitor.lock().await.insert(1.into(), 2500);
@@ -1195,7 +1096,7 @@ mod tests {
         assert!(cf_header_sync_res.is_ok());
         let last_header = scenario.last_block_header();
         let all_filter_hashes = scenario.n_most_work_filter_hashes(5);
-        let chain_sync = chain.sync_chain(vec![last_header]).await;
+        let chain_sync = chain.sync_chain(vec![last_header]);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
         chain.clear_compact_filter_queue();

@@ -12,7 +12,6 @@ pub(crate) enum HeaderSyncError {
     MiscalculatedDifficulty,
     InvalidBits,
     FloatingHeaders,
-    DbError,
 }
 
 impl Display for HeaderSyncError {
@@ -38,7 +37,6 @@ impl Display for HeaderSyncError {
                 f,
                 "the peer sent us a chain that does not connect to any header of ours."
             ),
-            HeaderSyncError::DbError => write!(f, "the database could not load a fork."),
             HeaderSyncError::InvalidBits => write!(
                 f,
                 "the target work does not adhere to basic transition requirements."
