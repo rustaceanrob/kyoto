@@ -85,12 +85,12 @@ pub enum BlockHeaderChanges {
     ForkAdded(IndexedHeader),
 }
 
-/// A snapshot of the chain
+/// A previous chain state to start the sync from.
 #[derive(Debug, Clone)]
 pub enum ChainState {
     /// A summary of the chain state. The vector of headers should ideally be contiguous.
     Snapshot(Vec<IndexedHeader>),
-    /// A single checkpoint to start a sync from.
+    /// A single checkpoint to start the sync _strictly after_.
     ///
     /// Note that no reorganizations can be reported.
     Checkpoint(HeaderCheckpoint),

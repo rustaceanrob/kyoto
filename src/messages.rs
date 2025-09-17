@@ -45,11 +45,9 @@ impl core::fmt::Display for Info {
 /// Data and structures useful for a consumer, such as a wallet.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// A relevant [`Block`](crate).
-    /// Note that the block may not contain any transactions contained in the script set.
-    /// This is due to block filters having a non-zero false-positive rate when compressing data.
+    /// A [`Block`](crate) that was requested.
     Block(IndexedBlock),
-    /// The chain of most work has been altered in some way.
+    /// The chain of block headers has been altered in some way.
     ChainUpdate(BlockHeaderChanges),
     /// The node is fully synced, having scanned the requested range.
     FiltersSynced(SyncUpdate),
@@ -86,7 +84,6 @@ impl SyncUpdate {
 }
 
 /// The progress of the node during the block filter download process.
-
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Progress {
     /// The number of filter headers that have been assumed checked and downloaded.
@@ -193,8 +190,6 @@ pub enum Warning {
     },
     /// The peer sent us a potential fork.
     EvaluatingFork,
-    /// The peer database has no values.
-    EmptyPeerDatabase,
     /// An unexpected error occurred processing a peer-to-peer message.
     UnexpectedSyncError {
         /// Additional context as to why block syncing failed.
@@ -232,7 +227,6 @@ impl core::fmt::Display for Warning {
                 write!(f, "A transaction got rejected: WTXID {}", payload.wtxid)
             }
             Warning::EvaluatingFork => write!(f, "Peer sent us a potential fork."),
-            Warning::EmptyPeerDatabase => write!(f, "The peer database has no values."),
             Warning::UnexpectedSyncError { warning } => {
                 write!(f, "Error handling a P2P message: {warning}")
             }
