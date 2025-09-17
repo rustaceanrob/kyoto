@@ -47,7 +47,6 @@
 
 #![warn(missing_docs)]
 pub mod chain;
-pub mod db;
 
 mod network;
 mod prelude;
@@ -81,10 +80,6 @@ use std::net::{IpAddr, SocketAddr};
 // Re-exports
 #[doc(inline)]
 pub use chain::checkpoints::HeaderCheckpoint;
-
-#[doc(inline)]
-#[cfg(feature = "rusqlite")]
-pub use db::sqlite::headers::SqliteHeaderDb;
 
 #[doc(inline)]
 pub use tokio::sync::mpsc::Receiver;
