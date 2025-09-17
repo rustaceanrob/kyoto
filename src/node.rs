@@ -125,7 +125,7 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// A node will cease running if a fatal error is encountered with either the [`PeerStore`] or [`HeaderStore`].
+    /// If the node has exhausted all options to find connections.
     pub async fn run(mut self) -> Result<(), NodeError> {
         crate::debug!("Starting node");
         crate::debug!(format!(
