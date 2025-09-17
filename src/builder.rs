@@ -141,11 +141,7 @@ impl Builder {
     }
 
     /// Consume the node builder and receive a [`Node`] and [`Client`].
-    ///
-    /// # Errors
-    ///
-    /// Building a node and client will error if a database connection is denied or cannot be found.
-    pub fn build(&mut self) -> (Node, Client) {
+    pub fn build(mut self) -> (Node, Client) {
         Node::new(self.network, core::mem::take(&mut self.config))
     }
 }
