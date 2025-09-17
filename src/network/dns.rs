@@ -1,5 +1,4 @@
 extern crate alloc;
-use crate::prelude::encode_qname;
 use bitcoin::{
     key::rand::{thread_rng, RngCore},
     Network,
@@ -205,4 +204,18 @@ impl DnsQuery {
         }
         Ok(ips)
     }
+}
+
+fn encode_qname(domain: &str, filter: Option<&str>) -> Vec<u8> {
+    let mut qname = Vec::new();
+    if let Some(filter) = filter {
+        qname.push(filter.len() as u8);
+        qname.extend(filter.as_bytes());
+    }
+    for label in domain.split('.') {
+        qname.push(label.len() as u8);
+        qname.extend(label.as_bytes());
+    }
+    qname.push(0x00);
+    qname
 }
