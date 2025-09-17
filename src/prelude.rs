@@ -1,9 +1,4 @@
-use bitcoin::{Network, Work};
-
-#[allow(dead_code)]
-pub const MAX_FUTURE_BLOCK_TIME: i64 = 60 * 60 * 2;
-#[allow(unused)]
-pub const MEDIAN_TIME_PAST: usize = 11;
+use bitcoin::Network;
 
 macro_rules! impl_sourceless_error {
     ($e:ident) => {
@@ -24,30 +19,6 @@ pub(crate) fn default_port_from_network(network: &Network) -> u16 {
         Network::Testnet4 => 48333,
         Network::Signet => 38333,
         Network::Regtest => 18444,
-    }
-}
-
-pub(crate) fn encode_qname(domain: &str, filter: Option<&str>) -> Vec<u8> {
-    let mut qname = Vec::new();
-    if let Some(filter) = filter {
-        qname.push(filter.len() as u8);
-        qname.extend(filter.as_bytes());
-    }
-    for label in domain.split('.') {
-        qname.push(label.len() as u8);
-        qname.extend(label.as_bytes());
-    }
-    qname.push(0x00);
-    qname
-}
-
-pub(crate) trait ZerolikeExt {
-    fn zero() -> Self;
-}
-
-impl ZerolikeExt for Work {
-    fn zero() -> Self {
-        Self::from_be_bytes([0; 32])
     }
 }
 

@@ -20,7 +20,7 @@ use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::Amount;
 use bitcoin::{
     bip158::BlockFilter, block::Header, params::Params, BlockHash, FilterHash, FilterHeader,
-    ScriptBuf,
+    ScriptBuf, Work,
 };
 
 use crate::network::PeerId;
@@ -271,6 +271,16 @@ impl HeightExt for u32 {
 
     fn from_u64_checked(height: u64) -> Option<Self> {
         height.try_into().ok()
+    }
+}
+
+trait ZerolikeExt {
+    fn zero() -> Self;
+}
+
+impl ZerolikeExt for Work {
+    fn zero() -> Self {
+        Self::from_be_bytes([0; 32])
     }
 }
 

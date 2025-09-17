@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{prelude::ZerolikeExt, HeaderCheckpoint};
+use crate::HeaderCheckpoint;
 
 use bitcoin::{
     block::Header, constants::genesis_block, BlockHash, CompactTarget, FilterHash, Network, Work,
 };
 
-use super::{FilterCommitment, HeightExt, IndexedHeader};
+use super::{FilterCommitment, HeightExt, IndexedHeader, ZerolikeExt};
 
 type Height = u32;
 
