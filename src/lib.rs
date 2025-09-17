@@ -97,11 +97,9 @@ pub use {
 };
 
 #[doc(inline)]
-pub use bitcoin::bip158::BlockFilter;
-#[doc(inline)]
 pub use bitcoin::{
-    block::Header, p2p::address::AddrV2, p2p::message_network::RejectReason, p2p::ServiceFlags,
-    Address, Block, BlockHash, FeeRate, Network, ScriptBuf, Transaction, Txid,
+    bip158::BlockFilter, block::Header, p2p::address::AddrV2, p2p::message_network::RejectReason,
+    p2p::ServiceFlags, Address, Block, BlockHash, FeeRate, Network, ScriptBuf, Transaction, Wtxid,
 };
 
 pub extern crate tokio;
@@ -325,34 +323,16 @@ impl From<SocketAddr> for TrustedPeer {
     }
 }
 
-// The state of the node with respect to connected peers.
 #[derive(Debug, Clone, Copy)]
 enum NodeState {
-    /// We are behind on block headers according to our peers.
+    // We are behind on block headers according to our peers.
     Behind,
-    /// We may start downloading compact block filter headers.
+    // We may start downloading compact block filter headers.
     HeadersSynced,
-    /// We may start scanning compact block filters.
+    // We may start scanning compact block filters.
     FilterHeadersSynced,
-    /// We may start asking for blocks with matches.
+    // We may start asking for blocks with matches.
     FiltersSynced,
-}
-
-impl core::fmt::Display for NodeState {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            NodeState::Behind => {
-                write!(f, "Requesting block headers.")
-            }
-            NodeState::HeadersSynced => {
-                write!(f, "Requesting compact filter headers.")
-            }
-            NodeState::FilterHeadersSynced => {
-                write!(f, "Requesting compact block filters.")
-            }
-            NodeState::FiltersSynced => write!(f, "Downloading blocks with relevant transactions."),
-        }
-    }
 }
 
 /// Query a Bitcoin DNS seeder using the configured resolver.
