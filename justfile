@@ -34,7 +34,6 @@ _test-features:
   # Build and test with all features, no features, and some combinations.
   cargo test --lib --all-features
   cargo test --lib --no-default-features
-  cargo test --lib --no-default-features --features rusqlite
 
 # Test that minimum versions of dependency contraints are still valid.
 _test-min-versions:

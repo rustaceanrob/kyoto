@@ -28,13 +28,6 @@ tokio = { version = "1.19", default-features = false, features = [
     "macros",
 ] }
 
-# Optional dependencies
-rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
-
-[features]
-default = ["rusqlite"]
-rusqlite = ["dep:rusqlite"]
-
 [dev-dependencies]
 corepc-node = { version = "0.7.1", default-features = false, features = [
     "28_0", "download"
