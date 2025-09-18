@@ -5,7 +5,29 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.12.0
+## 0.2.0
+
+## Added
+
+- `ChainState` may be configured to initialize the `Builder`
+- `bitcoin-address-book` `0.1.0` added as a dependency
+
+## Changed
+
+- MSRV changed to `1.84`
+- `rusqlite` dependency removed, along with the underlying header and peer stores
+- Generics removed from `Node`
+- `Header` emitted as `Event` when the block header chain updates
+- `Requester` no longer fetches `Header` data
+- `NodeError` has a single variant
+- `Builder::build` consumes `Self`
+- Some `Warning` variants removed
+
+## Fixes
+
+- Internal `Filter` is infallible
+
+## 0.1.0
 
 ## Added
 
@@ -36,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Fixes
 
 - Remove all unused data and methods on `PeerMap`
-- Use static test varibles in unit tests
+- Use static test variables in unit tests
 
 ## 0.13.2
 

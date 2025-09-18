@@ -161,9 +161,7 @@ fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
         receiver: from_and_recv.clone(),
         sender: from_and_recv,
         nonce: 1,
-        user_agent: format!(
-            "Kyoto Light Client / {KYOTO_VERSION} / rust-bitcoin {RUST_BITCOIN_VERSION}"
-        ),
+        user_agent: format!("/Rust BIP-157:{KYOTO_VERSION}/rust-bitcoin:{RUST_BITCOIN_VERSION}/"),
         start_height: 0,
         relay: false,
     }
