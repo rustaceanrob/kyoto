@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use crate::{
     chain::ChainState,
-    network::{dns::DnsResolver, ConnectionType},
-    PeerTimeoutConfig, TrustedPeer,
+    network::{dns::DnsResolver, ConnectionType, PeerTimeoutConfig},
+    TrustedPeer,
 };
 
 const REQUIRED_PEERS: u8 = 1;
