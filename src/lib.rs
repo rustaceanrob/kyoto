@@ -92,7 +92,6 @@ pub use {
     crate::client::{Client, Requester},
     crate::error::{ClientError, NodeError},
     crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
-    crate::network::PeerTimeoutConfig,
     crate::node::Node,
 };
 

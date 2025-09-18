@@ -79,30 +79,15 @@ impl std::fmt::Display for PeerId {
     }
 }
 
-/// Configuration for peer connection timeouts
+// Configuration for peer connection timeouts
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct PeerTimeoutConfig {
-    /// How long to wait for a peer to respond to a request
+pub(crate) struct PeerTimeoutConfig {
+    // How long to wait for a peer to respond to a request
     pub(crate) response_timeout: Duration,
-    /// Maximum time to maintain a connection with a peer
+    // Maximum time to maintain a connection with a peer
     pub(crate) max_connection_time: Duration,
-    /// How much time does the peer have to make the initial TCP handshake
+    // How much time does the peer have to make the initial TCP handshake
     pub(crate) handshake_timeout: Duration,
-}
-
-impl PeerTimeoutConfig {
-    /// Create a new peer timeout configuration
-    pub fn new(
-        response_timeout: Duration,
-        max_connection_time: Duration,
-        handshake_timeout: Duration,
-    ) -> Self {
-        Self {
-            response_timeout,
-            max_connection_time,
-            handshake_timeout,
-        }
-    }
 }
 
 impl Default for PeerTimeoutConfig {
