@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, SocketAddrV4},
     path::PathBuf,
     time::Duration,
 };
@@ -7,7 +7,6 @@ use std::{
 use bip157::{
     chain::{checkpoints::HeaderCheckpoint, BlockHeaderChanges, ChainState},
     client::Client,
-    lookup_host,
     node::Node,
     Address, BlockHash, Event, Info, ServiceFlags, Transaction, TrustedPeer, Warning,
 };
@@ -656,8 +655,7 @@ async fn tx_can_broadcast() {
 }
 
 #[tokio::test]
-async fn dns_fn_works() {
-    let cloudflare = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-    let addrs = lookup_host("seed.bitcoin.sipa.be", cloudflare).await;
-    assert!(!addrs.is_empty());
+async fn dns_works() {
+    let hostname = bip157::lookup_host("seed.bitcoin.sipa.be").await;
+    assert!(!hostname.is_empty());
 }

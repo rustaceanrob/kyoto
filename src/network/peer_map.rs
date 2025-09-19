@@ -25,12 +25,7 @@ use crate::{
     chain::HeightMonitor,
     channel_messages::{CombinedAddr, MainThreadMessage, PeerThreadMessage},
     dialog::Dialog,
-    network::{
-        dns::{bootstrap_dns, DnsResolver},
-        error::PeerError,
-        peer::Peer,
-        PeerId, PeerTimeoutConfig,
-    },
+    network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
     prelude::default_port_from_network,
     TrustedPeer,
 };
@@ -65,7 +60,6 @@ pub(crate) struct PeerMap {
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
-    dns_resolver: DnsResolver,
 }
 
 impl PeerMap {
@@ -78,7 +72,6 @@ impl PeerMap {
         connection_type: ConnectionType,
         timeout_config: PeerTimeoutConfig,
         height_monitor: Arc<Mutex<HeightMonitor>>,
-        dns_resolver: DnsResolver,
     ) -> Self {
         Self {
             tx_queue: Arc::new(Mutex::new(BroadcastQueue::new())),
@@ -92,7 +85,6 @@ impl PeerMap {
             whitelist,
             dialog,
             timeout_config,
-            dns_resolver,
         }
     }
 
@@ -241,7 +233,7 @@ impl PeerMap {
         let mut db_lock = self.db.lock().await;
         if db_lock.is_empty() {
             crate::debug!("Bootstrapping peers with DNS");
-            let new_peers = bootstrap_dns(self.network, self.dns_resolver)
+            let new_peers = bootstrap_dns(self.network)
                 .await
                 .into_iter()
                 .map(|ip| match ip {
