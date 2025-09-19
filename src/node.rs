@@ -66,7 +66,6 @@ impl Node {
         let NodeConfig {
             required_peers,
             white_list,
-            dns_resolver,
             data_path: _,
             chain_state,
             connection_type,
@@ -93,7 +92,6 @@ impl Node {
             connection_type,
             peer_timeout_config,
             Arc::clone(&height_monitor),
-            dns_resolver,
         );
         // Build the chain
         let chain_state = chain_state.unwrap_or(ChainState::Checkpoint(

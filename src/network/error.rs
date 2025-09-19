@@ -163,35 +163,3 @@ impl From<std::io::Error> for Socks5Error {
         Socks5Error::Io(value)
     }
 }
-
-#[derive(Debug)]
-pub(crate) enum DNSQueryError {
-    MessageId,
-    Question,
-    MalformedHeader,
-    Io(io::Error),
-}
-
-impl core::fmt::Display for DNSQueryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DNSQueryError::MalformedHeader => write!(f, "the DNS response header was too short."),
-            DNSQueryError::Io(err) => {
-                write!(
-                    f,
-                    "the end of the response was reached before we expected: {err}"
-                )
-            }
-            DNSQueryError::MessageId => write!(f, "mismatch of message ID."),
-            DNSQueryError::Question => write!(f, "the question of the message does not match."),
-        }
-    }
-}
-
-impl_sourceless_error!(DNSQueryError);
-
-impl From<io::Error> for DNSQueryError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}

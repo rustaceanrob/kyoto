@@ -50,8 +50,6 @@ pub mod chain;
 
 mod network;
 mod prelude;
-use network::dns::CBF_SERVICE_BIT_PREFIX;
-use network::dns::CBF_V2T_SERVICE_BIT_PREFIX;
 pub(crate) use prelude::impl_sourceless_error;
 
 mod broadcaster;
@@ -71,9 +69,6 @@ pub mod messages;
 pub mod node;
 
 use chain::Filter;
-
-use network::dns::DnsQuery;
-use network::dns::DNS_RESOLVER_PORT;
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -334,7 +329,7 @@ enum NodeState {
     FiltersSynced,
 }
 
-/// Query a Bitcoin DNS seeder using the configured resolver.
+/// Query a Bitcoin DNS seeder.
 ///
 /// This is **not** a generic DNS implementation. It is specifically tailored to query and parse DNS for Bitcoin seeders.
 /// Iternally, three queries will be made with varying filters for the requested service flags.
@@ -349,25 +344,11 @@ enum NodeState {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     // Use cloudflare's DNS resolver
-///     let resolver = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-///     let addrs = lookup_host("seed.bitcoin.sipa.be", resolver).await;
+///     let addrs = lookup_host("seed.bitcoin.sipa.be").await;
 /// }
 /// ```
-pub async fn lookup_host<S: AsRef<str>>(hostname: S, resolver: impl Into<IpAddr>) -> Vec<IpAddr> {
-    let ip_addr = resolver.into();
-    let socket_addr = SocketAddr::new(ip_addr, DNS_RESOLVER_PORT);
-    let mut responses = Vec::new();
-    let dns_query = DnsQuery::new(hostname.as_ref(), None);
-    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
-    responses.extend(no_filter);
-    let dns_query = DnsQuery::new(hostname.as_ref(), Some(CBF_V2T_SERVICE_BIT_PREFIX));
-    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
-    responses.extend(no_filter);
-    let dns_query = DnsQuery::new(hostname.as_ref(), Some(CBF_SERVICE_BIT_PREFIX));
-    let no_filter = dns_query.lookup(socket_addr).await.unwrap_or(Vec::new());
-    responses.extend(no_filter);
-    responses
+pub async fn lookup_host<S: AsRef<str>>(hostname: S) -> Vec<IpAddr> {
+    crate::network::dns::lookup_hostname(hostname.as_ref()).await
 }
 
 macro_rules! debug {

@@ -5,11 +5,9 @@ use bip157::builder::Builder;
 use bip157::chain::{BlockHeaderChanges, ChainState};
 use bip157::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
-use std::net::Ipv4Addr;
 use tokio::time::Instant;
 
 const NETWORK: Network = Network::Bitcoin;
-const HOST_ADDR: Ipv4Addr = Ipv4Addr::new(1, 1, 1, 1);
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +19,7 @@ async fn main() {
     let address = ScriptBuf::new_op_return(b"Kyoto light client");
     let mut addresses = HashSet::new();
     addresses.insert(address);
-    let seeds = lookup_host("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us", HOST_ADDR).await;
+    let seeds = lookup_host("seed.bitcoin.sipa.be").await;
     // Create a new node builder
     let builder = Builder::new(NETWORK);
     // Add node preferences and build the node/client
