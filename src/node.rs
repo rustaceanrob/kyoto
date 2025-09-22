@@ -432,6 +432,7 @@ impl Node {
         let chain = &mut self.chain;
         match chain.sync_chain(headers) {
             Ok(reorgs) => {
+                self.chain.send_chain_update().await;
                 if !reorgs.is_empty() {
                     self.block_queue.remove(&reorgs);
                 }
