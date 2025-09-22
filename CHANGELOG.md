@@ -5,6 +5,19 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0
+
+## Changed
+
+- Broadcasting a transaction waits for the transaction to be gossiped
+- DNS resolver no longer configurable (determined by OS)
+- `Progress` now includes chain height, removes public fields
+
+## Fixes
+
+- Interal DNS implementation removed in favor of `tokio`
+- `Builder` derives `Debug`
+
 ## 0.2.0
 
 ## Added
