@@ -1,7 +1,7 @@
 [package]
 name = "bip157"
 version = "0.3.1"
-authors = ["Rob <rustaceanrob@protonmail.com>"]
+authors = ["Rob <rob@2140.dev>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A Bitcoin light-client according to the BIP-157/BIP-158 specifications"
