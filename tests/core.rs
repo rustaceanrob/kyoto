@@ -619,39 +619,14 @@ async fn tx_can_broadcast() {
     tokio::task::spawn(async move { node.run().await });
     let Client {
         requester,
-        mut info_rx,
-        mut warn_rx,
-        mut event_rx,
+        info_rx: _,
+        warn_rx: _,
+        event_rx: _,
     } = client;
-    requester.broadcast_random(tx).unwrap();
-    tokio::time::timeout(tokio::time::Duration::from_secs(60), async move {
-        loop {
-            tokio::select! {
-                info = info_rx.recv() => {
-                    if let Some(info) = info {
-                        match info {
-                            Info::TxGossiped(_) => { break; },
-                            _ => println!("{info}"),
-                        }
-                    }
-                }
-                event = event_rx.recv() => { drop(event); }
-                warn = warn_rx.recv() => {
-                    if let Some(warn) = warn {
-                        match warn {
-                            Warning::TransactionRejected { payload: _ } => {
-                                panic!("Transaction should be valid");
-                            }
-                            _ => println!("{warn}")
-                        }
-                    }
-
-                }
-            }
-        }
-    })
-    .await
-    .unwrap();
+    tokio::time::timeout(Duration::from_secs(60), requester.broadcast_random(tx))
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

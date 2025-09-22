@@ -1,23 +1,25 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bitcoin::{Transaction, Wtxid};
+use tokio::sync::oneshot;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub(crate) struct BroadcastQueue {
-    pending: HashSet<Wtxid>,
+    pending: HashMap<Wtxid, oneshot::Sender<Wtxid>>,
     data: HashMap<Wtxid, Transaction>,
 }
 
 impl BroadcastQueue {
     pub(crate) fn new() -> Self {
         Self {
-            ..Default::default()
+            pending: HashMap::new(),
+            data: HashMap::new(),
         }
     }
 
-    pub(crate) fn add_to_queue(&mut self, tx: Transaction) {
+    pub(crate) fn add_to_queue(&mut self, tx: Transaction, oneshot: oneshot::Sender<Wtxid>) {
         let wtxid = tx.compute_wtxid();
-        self.pending.insert(wtxid);
+        self.pending.insert(wtxid, oneshot);
         self.data.insert(wtxid, tx);
     }
 
@@ -26,11 +28,13 @@ impl BroadcastQueue {
     }
 
     pub(crate) fn successful(&mut self, wtxid: Wtxid) {
-        self.pending.remove(&wtxid);
+        if let Some(pending) = self.pending.remove(&wtxid) {
+            let _ = pending.send(wtxid);
+        }
     }
 
     pub(crate) fn pending_wtxid(&self) -> Vec<Wtxid> {
-        self.pending.iter().copied().collect()
+        self.pending.keys().copied().collect()
     }
 }
 
@@ -60,8 +64,10 @@ mod tests {
         let transaction_1: Transaction = tx_data.transactions[0].clone().0;
         let transaction_2: Transaction = tx_data.transactions[1].clone().0;
         let mut queue = BroadcastQueue::new();
-        queue.add_to_queue(transaction_1.clone());
-        queue.add_to_queue(transaction_2.clone());
+        let (tx, _) = tokio::sync::oneshot::channel();
+        queue.add_to_queue(transaction_1.clone(), tx);
+        let (tx, _) = tokio::sync::oneshot::channel();
+        queue.add_to_queue(transaction_2.clone(), tx);
         assert_eq!(queue.pending_wtxid().len(), 2);
         queue.successful(transaction_1.compute_wtxid());
         assert_eq!(queue.pending_wtxid().len(), 1);

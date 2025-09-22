@@ -17,12 +17,6 @@ pub enum Info {
     ConnectionsMet,
     /// The progress of the node during the block filter download process.
     Progress(Progress),
-    /// A transaction was sent to a peer. The `wtxid` was advertised to the
-    /// peer, and the peer responded with `getdata`. The transaction was then serialized and sent
-    /// over the wire. This is a strong indication the transaction will propagate, but not
-    /// guaranteed. You may receive duplicate messages for a given `wtxid` given your broadcast
-    /// policy.
-    TxGossiped(Wtxid),
     /// A requested block has been received and is being processed.
     BlockReceived(BlockHash),
 }
@@ -31,7 +25,6 @@ impl core::fmt::Display for Info {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Info::SuccessfulHandshake => write!(f, "Successful version handshake with a peer"),
-            Info::TxGossiped(txid) => write!(f, "Transaction gossiped: {txid}"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
             Info::Progress(p) => {
                 let progress_percent = p.percentage_complete();
@@ -130,7 +123,7 @@ pub(crate) enum ClientMessage {
     /// Stop the node.
     Shutdown,
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
-    Broadcast(TxBroadcast),
+    Broadcast(ClientRequest<TxBroadcast, Wtxid>),
     /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan,
     /// Explicitly request a block from the node.

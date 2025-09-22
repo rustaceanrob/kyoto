@@ -263,7 +263,6 @@ impl Peer {
                         self.write_bytes(writer, msg).await?;
                         self.message_state.sent_tx(wtxid);
                         tx_queue.successful(wtxid);
-                        self.dialog.send_info(Info::TxGossiped(wtxid)).await;
                     }
                 }
                 Ok(())

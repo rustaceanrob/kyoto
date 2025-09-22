@@ -7,7 +7,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, Network,
+    Block, BlockHash, Network, Wtxid,
 };
 use tokio::{
     select,
@@ -30,6 +30,7 @@ use crate::{
         CFHeaderChanges, ChainState, FilterCheck, HeightMonitor,
     },
     error::FetchBlockError,
+    messages::ClientRequest,
     network::{peer_map::PeerMap, LastBlockMonitor, PeerId},
     IndexedBlock, NodeState, TxBroadcast, TxBroadcastPolicy,
 };
@@ -282,11 +283,13 @@ impl Node {
     }
 
     // Broadcast transactions according to the configured policy
-    async fn broadcast_transaction(&self, broadcast: TxBroadcast) {
+    async fn broadcast_transaction(&self, broadcast: ClientRequest<TxBroadcast, Wtxid>) {
         let mut queue = self.peer_map.tx_queue.lock().await;
-        queue.add_to_queue(broadcast.tx);
+        let (data, oneshot) = broadcast.into_values();
+        let policy = data.broadcast_policy;
+        queue.add_to_queue(data.tx, oneshot);
         drop(queue);
-        match broadcast.broadcast_policy {
+        match policy {
             TxBroadcastPolicy::AllPeers => {
                 crate::debug!(format!(
                     "Sending transaction to {} connected peers",
