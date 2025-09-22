@@ -405,6 +405,7 @@ impl Chain {
                 self.header_chain.total_filter_headers_synced(),
                 self.header_chain.total_filters_synced(),
                 self.header_chain.internal_chain_len() as u32,
+                self.header_chain.height(),
             )))
             .await;
         crate::debug!(format!(

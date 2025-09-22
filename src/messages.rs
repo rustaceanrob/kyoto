@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::Div;
 
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
@@ -79,21 +80,34 @@ impl SyncUpdate {
 /// The progress of the node during the block filter download process.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Progress {
-    /// The number of filter headers that have been assumed checked and downloaded.
-    pub filter_headers: u32,
-    /// The number of block filters that have been assumed checked and downloaded.
-    pub filters: u32,
-    /// The number of filters to check.
-    pub total_to_check: u32,
+    // The number of filter headers that have been assumed checked and downloaded.
+    filter_headers: u32,
+    // The number of block filters that have been assumed checked and downloaded.
+    filters: u32,
+    // The number of filters to check.
+    total_to_check: u32,
+    // The total number of headers.
+    chain_height: u32,
 }
 
 impl Progress {
-    pub(crate) fn new(filter_headers: u32, filters: u32, total_to_check: u32) -> Self {
+    pub(crate) fn new(
+        filter_headers: u32,
+        filters: u32,
+        total_to_check: u32,
+        chain_height: u32,
+    ) -> Self {
         Self {
             filter_headers,
             filters,
             total_to_check,
+            chain_height,
         }
+    }
+
+    /// The height of the block chain.
+    pub fn chain_height(&self) -> u32 {
+        self.chain_height
     }
 
     /// The total progress represented as a percent.
@@ -103,8 +117,9 @@ impl Progress {
 
     /// The total progress represented as a fraction.
     pub fn fraction_complete(&self) -> f32 {
-        let total = (2 * self.total_to_check) as f32;
-        (self.filter_headers + self.filters) as f32 / total
+        // This is a weighted estimated. Here we assume filters are 3x more expensive to download.
+        let total = (4 * self.total_to_check) as f32;
+        ((self.filter_headers + 3 * self.filters) as f32).div(total)
     }
 }
 
