@@ -176,7 +176,7 @@ impl Node {
                                 PeerMessage::Filter(filter) => {
                                     match self.handle_filter(peer_thread.nonce, filter).await {
                                         Some(response) => {
-                                            self.peer_map.broadcast(response).await;
+                                            self.peer_map.send_message(peer_thread.nonce, response).await;
                                         }
                                         None => continue,
                                     }

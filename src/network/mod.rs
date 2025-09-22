@@ -12,7 +12,7 @@ use bitcoin::{
     io::Read,
     key::rand,
     p2p::{address::AddrV2, message::CommandString, Magic},
-    Wtxid,
+    BlockHash, Wtxid,
 };
 use socks::create_socks5;
 use tokio::{net::TcpStream, time::Instant};
@@ -41,6 +41,8 @@ const TWO_HOUR: Duration = Duration::from_secs(60 * 60 * 2);
 const TCP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 // Ping the peer if we have not exchanged messages for two minutes
 const SEND_PING: Duration = Duration::from_secs(60 * 2);
+// An absolute maximum timeout to respond to a batch filter request
+const MAX_FILTER_RESPONSE_TIME_SEC: Duration = Duration::from_secs(20);
 
 // These are the parameters of the "tried" and "new" tables
 const B_TRIED: usize = 64;
@@ -180,6 +182,7 @@ struct MessageState {
     sent_txs: HashSet<Wtxid>,
     timed_message_state: HashMap<TimeSensitiveId, Instant>,
     ping_state: PingState,
+    filter_rate: FilterRate,
 }
 
 impl MessageState {
@@ -191,6 +194,7 @@ impl MessageState {
             sent_txs: Default::default(),
             timed_message_state: Default::default(),
             ping_state: PingState::default(),
+            filter_rate: FilterRate::default(),
         }
     }
 
@@ -329,6 +333,35 @@ impl Default for PingState {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct FilterRate {
+    waiting_for: Option<(BlockHash, Instant)>,
+}
+
+impl FilterRate {
+    fn batch_requested(&mut self, stop_hash: BlockHash) {
+        self.waiting_for = Some((stop_hash, Instant::now()))
+    }
+
+    fn filter_received(&mut self, block_hash: BlockHash) {
+        if let Some((hash, _)) = self.waiting_for {
+            if hash.eq(&block_hash) {
+                self.waiting_for = None;
+            }
+        }
+    }
+
+    fn slow_peer(&self) -> bool {
+        if let Some((_, then)) = self.waiting_for {
+            let elapsed = then.elapsed();
+            if elapsed > MAX_FILTER_RESPONSE_TIME_SEC {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 pub(crate) struct V1Header {
     magic: Magic,
     _command: CommandString,
@@ -440,9 +473,11 @@ impl AddressBook {
 mod tests {
     use std::time::Duration;
 
-    use bitcoin::{consensus::deserialize, Transaction};
+    use bitcoin::{consensus::deserialize, hashes::Hash, BlockHash, Transaction};
 
     use crate::network::{LastBlockMonitor, MessageState, PingState};
+
+    use super::FilterRate;
 
     #[tokio::test(start_paused = true)]
     async fn test_version_message_state() {
@@ -535,5 +570,18 @@ mod tests {
         assert!(last_block.stale());
         last_block.reset();
         assert!(!last_block.stale());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_filter_rate_stale() {
+        let mut filter_rate = FilterRate::default();
+        let block_hash_bytes = [1; 32];
+        let block_hash = BlockHash::from_byte_array(block_hash_bytes);
+        filter_rate.batch_requested(block_hash);
+        assert!(!filter_rate.slow_peer());
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        assert!(!filter_rate.slow_peer());
+        tokio::time::sleep(Duration::from_secs(21)).await;
+        assert!(filter_rate.slow_peer());
     }
 }
