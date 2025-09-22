@@ -8,6 +8,7 @@ use crate::{
 
 const REQUIRED_PEERS: u8 = 1;
 
+#[derive(Debug)]
 pub(crate) struct NodeConfig {
     pub required_peers: u8,
     pub white_list: Vec<TrustedPeer>,

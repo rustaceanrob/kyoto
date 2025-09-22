@@ -28,6 +28,7 @@ const MAX_PEERS: u8 = 15;
 ///     .add_peers(vec![host.into()])
 ///     .build();
 /// ```
+#[derive(Debug)]
 pub struct Builder {
     config: NodeConfig,
     network: Network,
