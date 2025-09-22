@@ -26,6 +26,8 @@ impl_sourceless_error!(NodeError);
 pub enum ClientError {
     /// The channel to the node was likely closed and dropped from memory.
     SendError,
+    /// A channel was dropped before sending its value back.
+    RecvError,
 }
 
 impl core::fmt::Display for ClientError {
@@ -33,6 +35,9 @@ impl core::fmt::Display for ClientError {
         match self {
             ClientError::SendError => {
                 write!(f, "the receiver of this message was dropped from memory.")
+            }
+            ClientError::RecvError => {
+                write!(f, "the sender of data was dropped from memory.")
             }
         }
     }
@@ -70,29 +75,3 @@ impl core::fmt::Display for FetchBlockError {
 }
 
 impl_sourceless_error!(FetchBlockError);
-
-/// Errors that occur when fetching the minimum fee rate to broadcast a transaction.
-#[derive(Debug)]
-pub enum FetchFeeRateError {
-    /// The channel to the node was likely closed and dropped from memory.
-    /// This implies the node is not running.
-    SendError,
-    /// The channel to the client was likely closed by the node and dropped from memory.
-    RecvError,
-}
-
-impl core::fmt::Display for FetchFeeRateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FetchFeeRateError::SendError => {
-                write!(f, "the receiver of this message was dropped from memory.")
-            }
-            FetchFeeRateError::RecvError => write!(
-                f,
-                "the channel to the client was likely closed by the node and dropped from memory."
-            ),
-        }
-    }
-}
-
-impl_sourceless_error!(FetchFeeRateError);

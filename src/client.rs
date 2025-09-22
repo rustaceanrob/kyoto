@@ -1,4 +1,4 @@
-use bitcoin::{Amount, Transaction};
+use bitcoin::{Amount, Transaction, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -8,11 +8,8 @@ use crate::chain::block_subsidy;
 use crate::messages::ClientRequest;
 use crate::{Event, Info, TrustedPeer, TxBroadcast, Warning};
 
+use super::{error::ClientError, messages::ClientMessage};
 use super::{error::FetchBlockError, IndexedBlock};
-use super::{
-    error::{ClientError, FetchFeeRateError},
-    messages::ClientMessage,
-};
 
 /// A [`Client`] allows for communication with a running node.
 #[derive(Debug)]
@@ -65,7 +62,7 @@ impl Requester {
             .map_err(|_| ClientError::SendError)
     }
 
-    /// Broadcast a new transaction to the network.
+    /// Broadcast a new transaction to the network, waiting for at least one peer to request it.
     ///
     /// # Note
     ///
@@ -79,22 +76,29 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub fn broadcast_tx(&self, tx: TxBroadcast) -> Result<(), ClientError> {
+    pub async fn broadcast_tx(&self, tx_broadcast: TxBroadcast) -> Result<Wtxid, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Wtxid>();
+        let client_request = ClientRequest::new(tx_broadcast, tx);
         self.ntx
-            .send(ClientMessage::Broadcast(tx))
-            .map_err(|_| ClientError::SendError)
+            .send(ClientMessage::Broadcast(client_request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
     }
 
-    /// Broadcast a new transaction to the network to a random peer.
+    /// Broadcast a new transaction to the network to a random peer, waiting for the peer to
+    /// request the data.
     ///
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub fn broadcast_random(&self, tx: Transaction) -> Result<(), ClientError> {
+    pub async fn broadcast_random(&self, tx: Transaction) -> Result<Wtxid, ClientError> {
         let tx_broadcast = TxBroadcast::random_broadcast(tx);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Wtxid>();
+        let client_request = ClientRequest::new(tx_broadcast, tx);
         self.ntx
-            .send(ClientMessage::Broadcast(tx_broadcast))
-            .map_err(|_| ClientError::SendError)
+            .send(ClientMessage::Broadcast(client_request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
     }
 
     /// A connection has a minimum transaction fee requirement to enter its mempool. For proper transaction propagation,
@@ -106,13 +110,13 @@ impl Requester {
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn broadcast_min_feerate(&self) -> Result<FeeRate, FetchFeeRateError> {
+    pub async fn broadcast_min_feerate(&self) -> Result<FeeRate, ClientError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<FeeRate>();
         let request = ClientRequest::new((), tx);
         self.ntx
             .send(ClientMessage::GetBroadcastMinFeeRate(request))
-            .map_err(|_| FetchFeeRateError::SendError)?;
-        rx.await.map_err(|_| FetchFeeRateError::RecvError)
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
     }
 
     /// Request a block be fetched. Note that this method will request a block
@@ -209,36 +213,5 @@ impl Requester {
 impl<T> From<mpsc::error::SendError<T>> for ClientError {
     fn from(_: mpsc::error::SendError<T>) -> Self {
         ClientError::SendError
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bitcoin::{consensus::deserialize, Transaction};
-    use tokio::sync::mpsc;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_client_works() {
-        let transaction: Transaction = deserialize(&hex::decode("0200000001aad73931018bd25f84ae400b68848be09db706eac2ac18298babee71ab656f8b0000000048473044022058f6fc7c6a33e1b31548d481c826c015bd30135aad42cd67790dab66d2ad243b02204a1ced2604c6735b6393e5b41691dd78b00f0c5942fb9f751856faa938157dba01feffffff0280f0fa020000000017a9140fb9463421696b82c833af241c78c17ddbde493487d0f20a270100000017a91429ca74f8a08f81999428185c97b5d852e4063f618765000000").unwrap()).unwrap();
-        let (_, info_rx) = tokio::sync::mpsc::channel::<Info>(1);
-        let (_, warn_rx) = tokio::sync::mpsc::unbounded_channel::<Warning>();
-        let (_, event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-        let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
-        let Client {
-            requester,
-            info_rx: _,
-            warn_rx: _,
-            event_rx: _,
-        } = Client::new(info_rx, warn_rx, event_rx, ctx);
-        let broadcast = requester.broadcast_tx(TxBroadcast::new(
-            transaction.clone(),
-            crate::TxBroadcastPolicy::AllPeers,
-        ));
-        assert!(broadcast.is_ok());
-        drop(crx);
-        let broadcast = requester.shutdown();
-        assert!(broadcast.is_err());
     }
 }
