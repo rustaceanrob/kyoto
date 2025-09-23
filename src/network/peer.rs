@@ -12,7 +12,7 @@ use tokio::{
         mpsc::{self, Receiver, Sender},
         Mutex,
     },
-    time::Instant,
+    time::{Instant, MissedTickBehavior},
 };
 
 use crate::{
@@ -33,7 +33,7 @@ use super::{
     AddressBook, MessageState, PeerId, PeerTimeoutConfig,
 };
 
-const LOOP_TIMEOUT: Duration = Duration::from_secs(2);
+const LOOP_TIMEOUT: Duration = Duration::from_millis(500);
 const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer {
@@ -112,6 +112,8 @@ impl Peer {
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
+        let mut interval = tokio::time::interval(LOOP_TIMEOUT);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             if read_handle.is_finished() {
                 return Ok(());
@@ -128,6 +130,10 @@ impl Peer {
                 self.dialog.send_warning(Warning::PeerTimedOut);
                 return Ok(());
             }
+            if self.message_state.filter_rate.slow_peer() {
+                self.dialog.send_warning(Warning::PeerTimedOut);
+                return Ok(());
+            }
             if Instant::now().duration_since(start_time) > self.timeout_config.max_connection_time {
                 crate::debug!(format!(
                     "The connection to peer {} has been maintained for over {} seconds, finding a new peer",
@@ -137,23 +143,21 @@ impl Peer {
             }
             select! {
                 // The peer sent us a message
-                peer_message = tokio::time::timeout(LOOP_TIMEOUT, rx.recv()) => {
-                    if let Ok(peer_message) = peer_message {
-                        match peer_message {
-                            Some(message) => {
-                                match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
-                                    Ok(()) => continue,
-                                    Err(e) => {
-                                        match e {
-                                            // We were told by the reader thread to disconnect from this peer
-                                            PeerError::DisconnectCommand => return Ok(()),
-                                            _ => continue,
-                                        }
-                                    },
-                                }
-                            },
-                            None => continue,
-                        }
+                peer_message = rx.recv() => {
+                    match peer_message {
+                        Some(message) => {
+                            match self.handle_peer_message(message, &mut writer, &mut outbound_messages).await {
+                                Ok(()) => continue,
+                                Err(e) => {
+                                    match e {
+                                        // We were told by the reader thread to disconnect from this peer
+                                        PeerError::DisconnectCommand => return Ok(()),
+                                        _ => continue,
+                                    }
+                                },
+                            }
+                        },
+                        None => continue,
                     }
                 }
                 // The main thread sent us a message
@@ -174,6 +178,7 @@ impl Peer {
                         None => continue,
                     }
                 }
+                _ = interval.tick() => continue,
             }
         }
     }
@@ -228,6 +233,9 @@ impl Peer {
                 Ok(())
             }
             ReaderMessage::Filter(filter) => {
+                self.message_state
+                    .filter_rate
+                    .filter_received(filter.block_hash);
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
@@ -355,6 +363,9 @@ impl Peer {
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::GetFilters(config) => {
+                self.message_state
+                    .filter_rate
+                    .batch_requested(config.stop_hash);
                 let message = message_generator.filters(config)?;
                 self.write_bytes(writer, message).await?;
             }
