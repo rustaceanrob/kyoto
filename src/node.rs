@@ -31,6 +31,7 @@ use crate::{
         error::HeaderSyncError,
         CFHeaderChanges, ChainState, FilterCheck, HeightMonitor,
     },
+    client::Idle,
     error::FetchBlockError,
     messages::ClientRequest,
     network::{
@@ -66,7 +67,7 @@ pub(crate) struct Node {
 }
 
 impl Node {
-    pub(crate) fn build(network: Network, config: Config) -> Client {
+    pub(crate) fn build(network: Network, config: Config) -> Client<Idle> {
         let Config {
             required_peers,
             white_list,

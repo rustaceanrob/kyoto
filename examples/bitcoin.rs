@@ -3,7 +3,8 @@
 
 use bip157::builder::Builder;
 use bip157::chain::{BlockHeaderChanges, ChainState};
-use bip157::{lookup_host, Client, Event, HeaderCheckpoint, Network, ScriptBuf};
+use bip157::client::EventListeners;
+use bip157::{lookup_host, Event, HeaderCheckpoint, Network, ScriptBuf};
 use std::collections::HashSet;
 use tokio::time::Instant;
 
@@ -35,17 +36,16 @@ async fn main() {
         // Create the node and client
         .build();
 
-    let client = client.run();
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
-    let Client {
-        requester,
+    let (client, events) = client.run();
+    let EventListeners {
         mut info_rx,
         mut warn_rx,
         mut event_rx,
-        ..
-    } = client;
+    } = events;
+
     // Continually listen for events until the node is synced to its peers.
     loop {
         tokio::select! {
@@ -55,11 +55,11 @@ async fn main() {
                         Event::FiltersSynced(update) => {
                             tracing::info!("Chain tip: {}",update.tip().hash);
                             // Request information from the node
-                            let fee = requester.broadcast_min_feerate().await.unwrap();
+                            let fee = client.broadcast_min_feerate().await.unwrap();
                             tracing::info!("Minimum transaction broadcast fee rate: {:#}", fee);
                             let sync_time = now.elapsed().as_secs_f32();
                             tracing::info!("Total sync time: {sync_time} seconds");
-                            let avg_fee_rate = requester.average_fee_rate(update.tip().hash).await.unwrap();
+                            let avg_fee_rate = client.average_fee_rate(update.tip().hash).await.unwrap();
                             tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
                             break;
                         },
@@ -82,6 +82,6 @@ async fn main() {
             }
         }
     }
-    let _ = requester.shutdown();
+    let _ = client.shutdown();
     tracing::info!("Shutting down");
 }

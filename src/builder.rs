@@ -5,6 +5,7 @@ use bitcoin::Network;
 
 use super::{client::Client, node::Node};
 use crate::chain::ChainState;
+use crate::client::Idle;
 use crate::network::ConnectionType;
 use crate::TrustedPeer;
 use crate::{Config, FilterType};
@@ -139,7 +140,7 @@ impl Builder {
     }
 
     /// Consume the node builder and receive a [`Client`].
-    pub fn build(mut self) -> Client {
+    pub fn build(mut self) -> Client<Idle> {
         Node::build(self.network, core::mem::take(&mut self.config))
     }
 }

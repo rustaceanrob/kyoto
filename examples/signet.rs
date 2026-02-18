@@ -3,8 +3,8 @@
 
 use bip157::chain::{BlockHeaderChanges, ChainState};
 use bip157::messages::Event;
-use bip157::{builder::Builder, chain::checkpoints::HeaderCheckpoint, Client};
-use bip157::{Address, BlockHash, Network};
+use bip157::{builder::Builder, chain::checkpoints::HeaderCheckpoint};
+use bip157::{Address, BlockHash, EventListeners, Network};
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -40,15 +40,12 @@ async fn main() {
         // Create the node and client
         .build();
 
-    let client = client.run();
-
-    let Client {
-        requester,
+    let (client, events) = client.run();
+    let EventListeners {
         mut info_rx,
         mut warn_rx,
         mut event_rx,
-        ..
-    } = client;
+    } = events;
 
     // Continually listen for events until the node is synced to its peers.
     loop {
@@ -72,7 +69,7 @@ async fn main() {
                             if filter.contains_any(addresses.iter()) {
                                 let hash = filter.block_hash();
                                 tracing::info!("Found script at {}!", hash);
-                                let indexed_block = requester.get_block(hash).await.unwrap();
+                                let indexed_block = client.get_block(hash).await.unwrap();
                                 let coinbase = indexed_block.block.txdata.first().unwrap().compute_txid();
                                 tracing::info!("Coinbase transaction ID: {}", coinbase);
                                 break;
@@ -88,6 +85,6 @@ async fn main() {
             }
         }
     }
-    let _ = requester.shutdown();
+    let _ = client.shutdown();
     tracing::info!("Shutting down");
 }
