@@ -8,7 +8,7 @@
 //! # Example usage
 //!
 //! ```no_run
-//! use bip157::{Builder, Event, Client, Network, BlockHash};
+//! use bip157::{Builder, Event, EventListeners, Client, Network, BlockHash};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -22,10 +22,12 @@
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
 //!         .build();
-//!     // Run the node and wait for the sync message;
-//!     let client = client.run();
+//!     // Start the node
+//!     let (client, events) = client.subscribe();
+//!     let client = client.start();
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, info_rx: _, warn_rx: _, mut event_rx, .. } = client;
+//!     let EventListeners { info_rx: _, warn_rx: _, mut event_rx } = events;
+//!     // Wait for the sync message;
 //!     loop {
 //!         if let Some(event) = event_rx.recv().await {
 //!             match event {
@@ -37,7 +39,7 @@
 //!             }
 //!         }
 //!     }
-//!     requester.shutdown();
+//!     client.shutdown();
 //! }
 //! ```
 
@@ -81,7 +83,7 @@ use tokio::sync::mpsc::UnboundedSender;
 pub use {
     crate::builder::Builder,
     crate::chain::ChainState,
-    crate::client::{Client, Requester},
+    crate::client::{Client, EventListeners},
     crate::error::{ClientError, NodeError},
     crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
     crate::node::Node,

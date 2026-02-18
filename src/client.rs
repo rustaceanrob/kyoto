@@ -12,58 +12,135 @@ use crate::{Event, Info, TrustedPeer, Warning};
 use super::{error::ClientError, messages::ClientMessage};
 use super::{error::FetchBlockError, IndexedBlock};
 
-/// A [`Client`] allows for communication with a running node.
+/// Client state when idle.
+pub struct Idle;
+/// Client state when subscribed to events.
+pub struct Subscribed;
+/// Client state when active.
+pub struct Active;
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+impl sealed::Sealed for Idle {}
+impl sealed::Sealed for Subscribed {}
+impl sealed::Sealed for Active {}
+
+/// State of the client.
+pub trait State: sealed::Sealed {}
+
+impl State for Idle {}
+impl State for Subscribed {}
+impl State for Active {}
+
+/// Wrapper type for the channels that will receive events.
 #[derive(Debug)]
-pub struct Client {
-    /// Send events to a node, such as broadcasting a transaction.
-    pub requester: Requester,
+pub struct EventListeners {
     /// Receive informational messages from the node.
     pub info_rx: mpsc::Receiver<Info>,
     /// Receive warning messages from a node.
     pub warn_rx: mpsc::UnboundedReceiver<Warning>,
     /// Receive [`Event`] from a node to act on.
     pub event_rx: mpsc::UnboundedReceiver<Event>,
-    /// Internal node structure.
-    node: Option<Node>,
 }
 
-impl Client {
+impl EventListeners {
+    fn new(
+        info_rx: mpsc::Receiver<Info>,
+        warn_rx: mpsc::UnboundedReceiver<Warning>,
+        event_rx: mpsc::UnboundedReceiver<Event>,
+    ) -> Self {
+        Self {
+            info_rx,
+            warn_rx,
+            event_rx,
+        }
+    }
+}
+
+/// A [`Client`] allows for communication with a running node.
+///
+/// The [`Client`] is generic over 3 states:
+/// - [`Idle`]: the client is not running and event handling has not been initialized.
+/// - [`Subscribed`]: events have been subscribed to in the program, but the client has not started.
+/// - [`Active`]: data is actively being fetched and the [`Client`] may perform actions.
+///
+#[derive(Debug)]
+pub struct Client<S: State> {
+    /// Send events to a node, such as broadcasting a transaction.
+    ntx: UnboundedSender<ClientMessage>,
+    /// Receive informational messages from the node.
+    events: Option<EventListeners>,
+    /// Internal node structure.
+    node: Option<Node>,
+    /// Marker for state.
+    _marker: core::marker::PhantomData<S>,
+}
+
+impl Client<Idle> {
     pub(crate) fn new(
         info_rx: mpsc::Receiver<Info>,
         warn_rx: mpsc::UnboundedReceiver<Warning>,
         event_rx: mpsc::UnboundedReceiver<Event>,
         ntx: UnboundedSender<ClientMessage>,
         node: Node,
-    ) -> Self {
-        Self {
-            requester: Requester::new(ntx),
-            info_rx,
-            warn_rx,
-            event_rx,
+    ) -> Client<Idle> {
+        Client {
+            ntx,
+            events: Some(EventListeners::new(info_rx, warn_rx, event_rx)),
             node: Some(node),
+            _marker: core::marker::PhantomData,
         }
     }
 
-    /// Start the underlying node on a [`tokio::task`]. This assumes there is a runtime present to
-    /// execute the task.
-    pub fn run(mut self) -> Self {
+    /// Subscribe to the events published by the light client. Applications may perform arbitrary behavior
+    /// when receiving these events, such as logging or applying the effect of a block to a wallet.
+    /// The client is not yet running after this step.
+    pub fn subscribe(mut self) -> (Client<Subscribed>, EventListeners) {
+        let events = core::mem::take(&mut self.events).expect("cannot call run twice.");
+        (
+            Client {
+                ntx: self.ntx,
+                events: None,
+                node: self.node,
+                _marker: core::marker::PhantomData,
+            },
+            events,
+        )
+    }
+}
+
+impl Client<Subscribed> {
+    /// Start the client, which will begin publishing events to subscribers. This will implicitly
+    /// spawn a [`tokio::task`] to fetch data for the client.
+    pub fn start(mut self) -> Client<Active> {
         let node = core::mem::take(&mut self.node).expect("cannot call run twice.");
         tokio::task::spawn(async move { node.run().await });
-        self
+        Client {
+            ntx: self.ntx,
+            events: None,
+            node: None,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Receive a [`Node`] to run on a dedicated resource, likely with a custom [`tokio::runtime::Runtime`].
+    pub fn start_managed(mut self) -> (Client<Active>, Node) {
+        let node = core::mem::take(&mut self.node).expect("cannot call run twice.");
+        (
+            Client {
+                ntx: self.ntx,
+                events: None,
+                node: None,
+                _marker: core::marker::PhantomData,
+            },
+            node,
+        )
     }
 }
 
-/// Send messages to a node that is running so the node may complete a task.
-#[derive(Debug, Clone)]
-pub struct Requester {
-    ntx: UnboundedSender<ClientMessage>,
-}
-
-impl Requester {
-    fn new(ntx: UnboundedSender<ClientMessage>) -> Self {
-        Self { ntx }
-    }
-
+impl Client<Active> {
     /// Tell the node to shut down.
     ///
     /// # Errors

@@ -6,7 +6,7 @@ use std::{
 
 use bip157::{
     chain::{checkpoints::HeaderCheckpoint, BlockHeaderChanges, ChainState},
-    client::Client,
+    client::{Client, EventListeners, Idle},
     Address, BlockHash, Event, Info, ServiceFlags, Transaction, TrustedPeer, Warning,
 };
 use bitcoin::{
@@ -48,7 +48,11 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     Ok((bitcoind, socket_addr))
 }
 
-fn new_node(socket_addr: SocketAddrV4, tempdir_path: PathBuf, chain_state: ChainState) -> Client {
+fn new_node(
+    socket_addr: SocketAddrV4,
+    tempdir_path: PathBuf,
+    chain_state: ChainState,
+) -> Client<Idle> {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
     let mut trusted: TrustedPeer = host.into();
     trusted.set_services(ServiceFlags::P2P_V2);
@@ -81,10 +85,10 @@ async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) 
     tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
-async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<Event>) {
+async fn sync_assert(best: &bitcoin::BlockHash, event_rx: &mut UnboundedReceiver<Event>) {
     loop {
         tokio::select! {
-            event = channel.recv() => {
+            event = event_rx.recv() => {
                 if let Some(Event::FiltersSynced(update)) = event {
                     assert_eq!(update.tip().hash, *best);
                     println!("Correct sync");
@@ -126,16 +130,15 @@ async fn live_reorg() {
         tempdir,
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
+    let client = client.start();
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
+    sync_assert(&best, &mut event_rx).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -143,7 +146,7 @@ async fn live_reorg() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the reorg was caught
-    while let Some(message) = channel.recv().await {
+    while let Some(message) = event_rx.recv().await {
         match message {
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                 accepted: _,
@@ -155,13 +158,13 @@ async fn live_reorg() {
             }
             bip157::messages::Event::FiltersSynced(update) => {
                 assert_eq!(update.tip().hash, best);
-                requester.shutdown().unwrap();
+                client.shutdown().unwrap();
                 break;
             }
             _ => {}
         }
     }
-    requester.shutdown().unwrap();
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -179,16 +182,15 @@ async fn live_reorg_additional_sync() {
         tempdir,
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
+    let client = client.start();
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
+    sync_assert(&best, &mut event_rx).await;
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -196,7 +198,7 @@ async fn live_reorg_additional_sync() {
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the reorg was caught
-    while let Some(message) = channel.recv().await {
+    while let Some(message) = event_rx.recv().await {
         match message {
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                 accepted: _,
@@ -215,8 +217,8 @@ async fn live_reorg_additional_sync() {
     }
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -234,19 +236,18 @@ async fn various_client_methods() {
         tempdir,
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
+    let client = client.start();
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
-    let _ = requester.broadcast_min_feerate().await.unwrap();
-    assert!(requester.is_running());
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    let _ = client.broadcast_min_feerate().await.unwrap();
+    assert!(client.is_running());
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -264,17 +265,16 @@ async fn stop_reorg_resync() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
+    let client = client.start();
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -287,17 +287,16 @@ async fn stop_reorg_resync() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
     // Make sure the reorganization is caught after a cold start
-    while let Some(message) = channel.recv().await {
+    while let Some(message) = event_rx.recv().await {
         match message {
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                 accepted: _,
@@ -315,8 +314,7 @@ async fn stop_reorg_resync() {
             _ => {}
         }
     }
-    requester.shutdown().unwrap();
-    drop(handle);
+    client.shutdown().unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -326,18 +324,17 @@ async fn stop_reorg_resync() {
         tempdir,
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -355,17 +352,16 @@ async fn stop_reorg_two_resync() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     // Reorganize the blocks
     let old_height = num_blocks(rpc);
     let old_best = best;
@@ -374,23 +370,21 @@ async fn stop_reorg_two_resync() {
     invalidate_block(rpc, &best).await;
     mine_blocks(rpc, &miner, 3, 1).await;
     let best = best_hash(rpc);
-    drop(handle);
     // Make sure the reorganization is caught after a cold start
     let client = new_node(
         socket_addr,
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    while let Some(message) = channel.recv().await {
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
+    while let Some(message) = event_rx.recv().await {
         match message {
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Reorganized {
                 accepted: _,
@@ -408,8 +402,7 @@ async fn stop_reorg_two_resync() {
             _ => {}
         }
     }
-    drop(handle);
-    requester.shutdown().unwrap();
+    client.shutdown().unwrap();
     // Mine more blocks
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
@@ -419,18 +412,17 @@ async fn stop_reorg_two_resync() {
         tempdir,
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let client = client.start();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -447,18 +439,16 @@ async fn stop_reorg_start_on_orphan() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
-    sync_assert(&best, &mut channel).await;
-    drop(handle);
-    requester.shutdown().unwrap();
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     // Reorganize the blocks
     let old_best = best;
     let old_height = num_blocks(rpc);
@@ -471,18 +461,17 @@ async fn stop_reorg_start_on_orphan() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
     let mut headers = Vec::new();
     // Ensure SQL is able to catch the fork by loading in headers from the database
-    while let Some(message) = channel.recv().await {
+    while let Some(message) = event_rx.recv().await {
         match message {
             bip157::messages::Event::ChainUpdate(BlockHeaderChanges::Connected(header)) => {
                 headers.push(header);
@@ -503,43 +492,39 @@ async fn stop_reorg_start_on_orphan() {
             _ => {}
         }
     }
-    drop(handle);
-    requester.shutdown().unwrap();
+    client.shutdown().unwrap();
     let best = best_hash(rpc);
     let client = new_node(
         socket_addr,
         tempdir.clone(),
         ChainState::Snapshot(headers.clone()),
     );
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
-    let handle = tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+        mut event_rx,
+    } = events;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel).await;
-    drop(handle);
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     mine_blocks(rpc, &miner, 2, 1).await;
     let best = best_hash(rpc);
     // Make sure the node does not have any corrupted headers
     let client = new_node(socket_addr, tempdir, ChainState::Snapshot(headers.clone()));
-    let client = client.run();
-    let Client {
-        requester,
+    let (client, events) = client.subscribe();
+    let EventListeners {
         info_rx,
         warn_rx,
-        event_rx: mut channel,
-        ..
-    } = client;
+        mut event_rx,
+    } = events;
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let client = client.start();
     // The node properly syncs after persisting a reorg
-    sync_assert(&best, &mut channel).await;
-    requester.shutdown().unwrap();
+    sync_assert(&best, &mut event_rx).await;
+    client.shutdown().unwrap();
     rpc.stop().unwrap();
 }
 
@@ -623,15 +608,10 @@ async fn tx_can_broadcast() {
         tempdir.clone(),
         ChainState::Checkpoint(HeaderCheckpoint::from_genesis(bitcoin::Network::Regtest)),
     );
-    let client = client.run();
-    let Client {
-        requester,
-        info_rx: _,
-        warn_rx: _,
-        event_rx: _,
-        ..
-    } = client;
-    tokio::time::timeout(Duration::from_secs(60), requester.broadcast_tx(tx))
+
+    let (client, _events) = client.subscribe();
+    let client = client.start();
+    tokio::time::timeout(Duration::from_secs(60), client.broadcast_tx(tx))
         .await
         .unwrap()
         .unwrap();
