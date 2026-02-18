@@ -18,14 +18,14 @@
 //!     // Create a new node builder
 //!     let builder = Builder::new(Network::Signet);
 //!     // Add node preferences and build the node/client
-//!     let (node, client) = builder
+//!     let client = builder
 //!         // The number of connections we would like to maintain
 //!         .required_peers(2)
 //!         .build();
 //!     // Run the node and wait for the sync message;
-//!     tokio::task::spawn(async move { node.run().await });
+//!     let client = client.run();
 //!     // Split the client into components that send messages and listen to messages
-//!     let Client { requester, info_rx: _, warn_rx: _, mut event_rx } = client;
+//!     let Client { requester, info_rx: _, warn_rx: _, mut event_rx, .. } = client;
 //!     loop {
 //!         if let Some(event) = event_rx.recv().await {
 //!             match event {

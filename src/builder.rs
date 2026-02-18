@@ -25,7 +25,7 @@ const MAX_PEERS: u8 = 15;
 ///
 /// let host = (IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), None);
 /// let builder = Builder::new(Network::Regtest);
-/// let (node, client) = builder
+/// let client = builder
 ///     .add_peers(vec![host.into()])
 ///     .build();
 /// ```
@@ -138,8 +138,8 @@ impl Builder {
         self
     }
 
-    /// Consume the node builder and receive a [`Node`] and [`Client`].
-    pub fn build(mut self) -> (Node, Client) {
-        Node::new(self.network, core::mem::take(&mut self.config))
+    /// Consume the node builder and receive a [`Client`].
+    pub fn build(mut self) -> Client {
+        Node::build(self.network, core::mem::take(&mut self.config))
     }
 }

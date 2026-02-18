@@ -66,7 +66,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub(crate) fn new(network: Network, config: Config) -> (Self, Client) {
+    pub(crate) fn build(network: Network, config: Config) -> Client {
         let Config {
             required_peers,
             white_list,
@@ -81,7 +81,6 @@ impl Node {
         let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
-        let client = Client::new(info_rx, warn_rx, event_rx, ctx);
         // A structured way to talk to the client
         let dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
         // We always assume we are behind
@@ -110,19 +109,17 @@ impl Node {
             required_peers,
             filter_type,
         );
-        (
-            Self {
-                state,
-                chain,
-                peer_map,
-                required_peers: required_peers.into(),
-                dialog,
-                block_queue: BlockQueue::new(),
-                client_recv: crx,
-                peer_recv: mrx,
-            },
-            client,
-        )
+        let node = Self {
+            state,
+            chain,
+            peer_map,
+            required_peers: required_peers.into(),
+            dialog,
+            block_queue: BlockQueue::new(),
+            client_recv: crx,
+            peer_recv: mrx,
+        };
+        Client::new(info_rx, warn_rx, event_rx, ctx, node)
     }
 
     /// Run the node continuously. Typically run on a separate thread than the underlying application.
