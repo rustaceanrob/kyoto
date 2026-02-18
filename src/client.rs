@@ -51,6 +51,32 @@ impl Client {
         tokio::task::spawn(async move { node.run().await });
         self
     }
+
+    /// Run on a detached operating system thread. This method is useful in the case where the
+    /// majority of your application code is blocking, and you do not have a
+    /// [`tokio::runtime::Runtime`] available. This method will implicitly create a runtime which
+    /// runs the data fetching process.
+    pub fn run_detached(mut self) -> Self {
+        let node = core::mem::take(&mut self.node).expect("cannot call run twice.");
+        std::thread::spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    let _ = node.run().await;
+                })
+        });
+        self
+    }
+
+    /// Run the node with an existing [`tokio::runtime::Runtime`].
+    pub fn run_with_runtime(mut self, rt: impl AsRef<tokio::runtime::Runtime>) -> Self {
+        let rt = rt.as_ref();
+        let node = core::mem::take(&mut self.node).expect("cannot call run twice.");
+        rt.spawn(async move { node.run().await });
+        self
+    }
 }
 
 /// Send messages to a node that is running so the node may complete a task.
