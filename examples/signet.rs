@@ -32,7 +32,7 @@ async fn main() {
     // Create a new node builder
     let builder = Builder::new(NETWORK);
     // Add node preferences and build the node/client
-    let (node, client) = builder
+    let client = builder
         // Only scan blocks strictly after a checkpoint
         .chain_state(ChainState::Checkpoint(checkpoint))
         // The number of connections we would like to maintain
@@ -40,13 +40,14 @@ async fn main() {
         // Create the node and client
         .build();
 
-    tokio::task::spawn(async move { node.run().await });
+    let client = client.run();
 
     let Client {
         requester,
         mut info_rx,
         mut warn_rx,
         mut event_rx,
+        ..
     } = client;
 
     // Continually listen for events until the node is synced to its peers.

@@ -6,6 +6,7 @@ use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
 use crate::messages::ClientRequest;
+use crate::node::Node;
 use crate::{Event, Info, TrustedPeer, Warning};
 
 use super::{error::ClientError, messages::ClientMessage};
@@ -22,6 +23,8 @@ pub struct Client {
     pub warn_rx: mpsc::UnboundedReceiver<Warning>,
     /// Receive [`Event`] from a node to act on.
     pub event_rx: mpsc::UnboundedReceiver<Event>,
+    /// Internal node structure.
+    node: Option<Node>,
 }
 
 impl Client {
@@ -30,13 +33,23 @@ impl Client {
         warn_rx: mpsc::UnboundedReceiver<Warning>,
         event_rx: mpsc::UnboundedReceiver<Event>,
         ntx: UnboundedSender<ClientMessage>,
+        node: Node,
     ) -> Self {
         Self {
             requester: Requester::new(ntx),
             info_rx,
             warn_rx,
             event_rx,
+            node: Some(node),
         }
+    }
+
+    /// Start the underlying node on a [`tokio::task`]. This assumes there is a runtime present to
+    /// execute the task.
+    pub fn run(mut self) -> Self {
+        let node = core::mem::take(&mut self.node).expect("cannot call run twice.");
+        tokio::task::spawn(async move { node.run().await });
+        self
     }
 }
 

@@ -23,7 +23,7 @@ async fn main() {
     // Create a new node builder
     let builder = Builder::new(NETWORK);
     // Add node preferences and build the node/client
-    let (node, client) = builder
+    let client = builder
         // The number of connections we would like to maintain
         .required_peers(2)
         // Only scan for taproot scripts
@@ -34,8 +34,8 @@ async fn main() {
         .add_peers(seeds.into_iter().map(From::from))
         // Create the node and client
         .build();
-    // Run the node on a separate task
-    tokio::task::spawn(async move { node.run().await });
+
+    let client = client.run();
     // Split the client into components that send messages and listen to messages.
     // With this construction, different parts of the program can take ownership of
     // specific tasks.
@@ -44,6 +44,7 @@ async fn main() {
         mut info_rx,
         mut warn_rx,
         mut event_rx,
+        ..
     } = client;
     // Continually listen for events until the node is synced to its peers.
     loop {
