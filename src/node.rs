@@ -54,7 +54,7 @@ type PeerRequirement = usize;
 
 /// A compact block filter node. Nodes download Bitcoin block headers, block filters, and blocks to send relevant events to a client.
 #[derive(Debug)]
-pub struct Node {
+pub(crate) struct Node {
     state: NodeState,
     chain: Chain,
     peer_map: PeerMap,
@@ -127,7 +127,7 @@ impl Node {
     /// # Errors
     ///
     /// If the node has exhausted all options to find connections.
-    pub async fn run(mut self) -> Result<(), NodeError> {
+    pub(crate) async fn run(mut self) -> Result<(), NodeError> {
         crate::debug!("Starting node");
         crate::debug!(format!(
             "Configured connection requirement: {} peers",

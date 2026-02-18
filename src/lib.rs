@@ -57,8 +57,8 @@ pub mod client;
 pub mod error;
 /// Messages the node may send a client.
 pub mod messages;
-/// The structure that communicates with the Bitcoin P2P network and collects data.
-pub mod node;
+// The structure that communicates with the Bitcoin P2P network and collects data.
+mod node;
 
 use chain::Filter;
 
@@ -84,7 +84,6 @@ pub use {
     crate::client::{Client, Requester},
     crate::error::{ClientError, NodeError},
     crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
-    crate::node::Node,
 };
 
 #[doc(inline)]
