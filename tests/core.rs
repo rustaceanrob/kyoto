@@ -248,6 +248,8 @@ async fn various_client_methods() {
     tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
     sync_assert(&best, &mut channel).await;
     let _ = requester.broadcast_min_feerate().await.unwrap();
+    let cp = requester.chain_tip().await.unwrap();
+    assert_eq!(cp.hash, best);
     assert!(requester.is_running());
     requester.shutdown().unwrap();
     rpc.stop().unwrap();

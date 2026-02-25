@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
 use crate::messages::ClientRequest;
-use crate::{Event, Info, TrustedPeer, Warning};
+use crate::{Event, HeaderCheckpoint, Info, TrustedPeer, Warning};
 
 use super::{error::ClientError, messages::ClientMessage};
 use super::{error::FetchBlockError, IndexedBlock};
@@ -186,6 +186,20 @@ impl Requester {
         self.ntx
             .send(ClientMessage::AddPeer(peer.into()))
             .map_err(|_| ClientError::SendError)
+    }
+
+    /// The height and hash of the block in the chain of most work.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn chain_tip(&self) -> Result<HeaderCheckpoint, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<HeaderCheckpoint>();
+        let request = ClientRequest::new((), tx);
+        self.ntx
+            .send(ClientMessage::BestBlock(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
     }
 
     /// Check if the node is running.

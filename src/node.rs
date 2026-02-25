@@ -236,6 +236,17 @@ impl Node {
                                     self.block_queue.add(request);
                                 }
                             },
+                            ClientMessage::BestBlock(request) => {
+                                let (_, oneshot) = request.into_values();
+                                let block_tree = &self.chain.header_chain;
+                                let hash = block_tree.tip_hash();
+                                let height = block_tree.height();
+                                let checkpoint = HeaderCheckpoint::new(height, hash);
+                                let send_result = oneshot.send(checkpoint);
+                                if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            },
                             ClientMessage::AddPeer(peer) => {
                                 self.peer_map.add_trusted_peer(peer);
                             },
