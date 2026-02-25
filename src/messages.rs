@@ -145,6 +145,8 @@ pub(crate) enum ClientMessage {
     Rescan,
     /// Explicitly request a block from the node.
     GetBlock(ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>),
+    /// Get the chain tip.
+    BestBlock(ClientRequest<(), HeaderCheckpoint>),
     /// Add another known peer to connect to.
     AddPeer(TrustedPeer),
     /// Request the broadcast minimum fee rate.
