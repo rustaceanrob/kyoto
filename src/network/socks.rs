@@ -22,6 +22,7 @@ const CMD_CONNECT: u8 = 1;
 const RESPONSE_SUCCESS: u8 = 0;
 const RSV: u8 = 0;
 const ADDR_TYPE_IPV4: u8 = 1;
+const ADDR_TYPE_DOMAIN: u8 = 3;
 const ADDR_TYPE_IPV6: u8 = 4;
 // Tor constants
 const SALT: &[u8] = b".onion checksum";
@@ -69,9 +70,56 @@ fn base32_encode(data: &[u8]) -> String {
     result
 }
 
+#[derive(Debug)]
+pub(crate) enum SocksConnection {
+    ClearNet(IpAddr),
+    OnionService([u8; 32]),
+}
+
+impl SocksConnection {
+    fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::ClearNet(net) => match net {
+                IpAddr::V4(ipv4) => ipv4.octets().to_vec(),
+                IpAddr::V6(ipv6) => ipv6.octets().to_vec(),
+            },
+            Self::OnionService(onion) => {
+                let service = pubkey_to_service(*onion);
+                let enc = service.as_bytes();
+                let mut buf = Vec::with_capacity(enc.len() + 1);
+                buf.push(enc.len() as u8);
+                buf.extend_from_slice(enc);
+                buf
+            }
+        }
+    }
+
+    fn type_byte(&self) -> u8 {
+        match self {
+            Self::ClearNet(net) => match net {
+                IpAddr::V4(_) => ADDR_TYPE_IPV4,
+                IpAddr::V6(_) => ADDR_TYPE_IPV6,
+            },
+            Self::OnionService(_) => ADDR_TYPE_DOMAIN,
+        }
+    }
+}
+
+impl From<IpAddr> for SocksConnection {
+    fn from(value: IpAddr) -> Self {
+        Self::ClearNet(value)
+    }
+}
+
+impl From<[u8; 32]> for SocksConnection {
+    fn from(value: [u8; 32]) -> Self {
+        Self::OnionService(value)
+    }
+}
+
 pub(crate) async fn create_socks5(
     proxy: SocketAddr,
-    ip_addr: IpAddr,
+    addr: SocksConnection,
     port: u16,
 ) -> Result<TcpStream, Socks5Error> {
     // Connect to the proxy, likely a local Tor daemon.
@@ -79,15 +127,9 @@ pub(crate) async fn create_socks5(
         .await
         .map_err(|_| Socks5Error::ConnectionTimeout)?;
     // Format the destination IP address and port according to the Socks5 spec
-    let dest_ip_bytes = match ip_addr {
-        IpAddr::V4(ipv4) => ipv4.octets().to_vec(),
-        IpAddr::V6(ipv6) => ipv6.octets().to_vec(),
-    };
+    let dest_ip_bytes = addr.encode();
     let dest_port_bytes = port.to_be_bytes();
-    let ip_type_byte = match ip_addr {
-        IpAddr::V4(_) => ADDR_TYPE_IPV4,
-        IpAddr::V6(_) => ADDR_TYPE_IPV6,
-    };
+    let ip_type_byte = addr.type_byte();
     // Begin the handshake by requesting a connection to the proxy.
     let mut tcp_stream = timeout.map_err(|_| Socks5Error::ConnectionFailed)?;
     tcp_stream.write_all(&[VERSION, METHODS, NOAUTH]).await?;
@@ -125,6 +167,12 @@ pub(crate) async fn create_socks5(
         ADDR_TYPE_IPV6 => {
             // Read the IPv6 address and additional two bytes for the port
             let mut buf = [0_u8; 18];
+            tcp_stream.read_exact(&mut buf).await?;
+        }
+        ADDR_TYPE_DOMAIN => {
+            let mut len = [0_u8; 1];
+            tcp_stream.read_exact(&mut len).await?;
+            let mut buf = vec![0_u8; u8::from_le_bytes(len) as usize];
             tcp_stream.read_exact(&mut buf).await?;
         }
         _ => return Err(Socks5Error::ConnectionFailed),

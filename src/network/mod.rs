@@ -170,7 +170,7 @@ impl ConnectionType {
             Self::Socks5Proxy(proxy) => {
                 let socks5_timeout = tokio::time::timeout(
                     handshake_timeout,
-                    create_socks5(*proxy, socket_addr, port),
+                    create_socks5(*proxy, socket_addr.into(), port),
                 )
                 .await
                 .map_err(|_| PeerError::ConnectionFailed)?;
