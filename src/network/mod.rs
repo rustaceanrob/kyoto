@@ -23,7 +23,7 @@ use bitcoin::{
     },
     Block, BlockHash, FeeRate, Wtxid,
 };
-use socks::create_socks5;
+use socks::{create_socks5, SocksConnection};
 use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
@@ -141,7 +141,9 @@ impl ConnectionType {
     pub(crate) fn can_connect(&self, addr: &AddrV2) -> bool {
         match &self {
             Self::ClearNet => matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_)),
-            Self::Socks5Proxy(_) => matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_)),
+            Self::Socks5Proxy(_) => {
+                matches!(addr, AddrV2::Ipv4(_) | AddrV2::Ipv6(_) | AddrV2::TorV3(_))
+            }
         }
     }
 
@@ -151,13 +153,13 @@ impl ConnectionType {
         port: u16,
         handshake_timeout: Duration,
     ) -> Result<TcpStream, PeerError> {
-        let socket_addr = match addr {
-            AddrV2::Ipv4(ip) => IpAddr::V4(ip),
-            AddrV2::Ipv6(ip) => IpAddr::V6(ip),
-            _ => return Err(PeerError::UnreachableSocketAddr),
-        };
         match &self {
             Self::ClearNet => {
+                let socket_addr = match addr {
+                    AddrV2::Ipv4(ip) => IpAddr::V4(ip),
+                    AddrV2::Ipv6(ip) => IpAddr::V6(ip),
+                    _ => return Err(PeerError::UnreachableSocketAddr),
+                };
                 let timeout = tokio::time::timeout(
                     handshake_timeout,
                     TcpStream::connect((socket_addr, port)),
@@ -168,12 +170,16 @@ impl ConnectionType {
                 Ok(tcp_stream)
             }
             Self::Socks5Proxy(proxy) => {
-                let socks5_timeout = tokio::time::timeout(
-                    handshake_timeout,
-                    create_socks5(*proxy, socket_addr.into(), port),
-                )
-                .await
-                .map_err(|_| PeerError::ConnectionFailed)?;
+                let addr = match addr {
+                    AddrV2::Ipv4(ipv4) => SocksConnection::ClearNet(IpAddr::V4(ipv4)),
+                    AddrV2::Ipv6(ipv6) => SocksConnection::ClearNet(IpAddr::V6(ipv6)),
+                    AddrV2::TorV3(onion) => SocksConnection::OnionService(onion),
+                    _ => return Err(PeerError::UnreachableSocketAddr),
+                };
+                let socks5_timeout =
+                    tokio::time::timeout(handshake_timeout, create_socks5(*proxy, addr, port))
+                        .await
+                        .map_err(|_| PeerError::ConnectionFailed)?;
                 let tcp_stream = socks5_timeout.map_err(PeerError::Socks5)?;
                 Ok(tcp_stream)
             }
