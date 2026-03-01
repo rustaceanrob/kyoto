@@ -72,14 +72,18 @@ impl Peer {
         }
     }
 
-    pub async fn run(&mut self, connection: TcpStream) -> Result<(), PeerError> {
+    pub async fn run(
+        &mut self,
+        connection: TcpStream,
+        is_proxy_connection: bool,
+    ) -> Result<(), PeerError> {
         let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
         let (reader, mut writer) = connection.into_split();
         let mut reader = BufReader::new(reader);
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
         let (mut outbound_messages, mut peer_reader) =
-            if self.source.service_flags().has(ServiceFlags::P2P_V2) {
+            if self.source.service_flags().has(ServiceFlags::P2P_V2) && !is_proxy_connection {
                 let handshake_result = tokio::time::timeout(
                     V2_HANDSHAKE_TIMEOUT,
                     self.try_handshake(&mut writer, &mut reader),

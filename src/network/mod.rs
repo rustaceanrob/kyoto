@@ -187,6 +187,10 @@ impl ConnectionType {
             }
         }
     }
+
+    fn is_proxy(&self) -> bool {
+        matches!(self, ConnectionType::Socks5Proxy(_))
+    }
 }
 
 #[derive(Debug, Clone)]
