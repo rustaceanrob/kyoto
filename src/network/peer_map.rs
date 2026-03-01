@@ -141,7 +141,8 @@ impl PeerMap {
                 return Err(e);
             }
         };
-        let handle = tokio::spawn(async move { peer.run(connection).await });
+        let is_proxy = self.connector.is_proxy();
+        let handle = tokio::spawn(async move { peer.run(connection, is_proxy).await });
         self.map.insert(
             self.current_id,
             ManagedPeer {
