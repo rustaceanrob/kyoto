@@ -62,7 +62,7 @@ pub mod node;
 
 use chain::Filter;
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
 // Re-exports
@@ -291,6 +291,26 @@ impl From<IpAddr> for TrustedPeer {
 impl From<SocketAddr> for TrustedPeer {
     fn from(value: SocketAddr) -> Self {
         TrustedPeer::from_socket_addr(value)
+    }
+}
+
+/// Route network traffic through a Socks5 proxy, typically used by a Tor daemon.
+#[derive(Debug, Clone)]
+pub struct Socks5Proxy(SocketAddr);
+
+impl Socks5Proxy {
+    /// Connect to the default local Socks5 proxy hosted at `127.0.0.1:9050`.
+    pub const fn local() -> Self {
+        Socks5Proxy(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            9050,
+        ))
+    }
+}
+
+impl From<SocketAddr> for Socks5Proxy {
+    fn from(value: SocketAddr) -> Self {
+        Self(value)
     }
 }
 
