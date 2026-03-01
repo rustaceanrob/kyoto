@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::{path::PathBuf, time::Duration};
 
 use bitcoin::Network;
@@ -6,8 +5,8 @@ use bitcoin::Network;
 use super::{client::Client, node::Node};
 use crate::chain::ChainState;
 use crate::network::ConnectionType;
-use crate::TrustedPeer;
 use crate::{Config, FilterType};
+use crate::{Socks5Proxy, TrustedPeer};
 
 const MIN_PEERS: u8 = 1;
 const MAX_PEERS: u8 = 15;
@@ -125,7 +124,7 @@ impl Builder {
 
     /// Route network traffic through a Tor daemon using a Socks5 proxy. Currently, proxies
     /// must be reachable by IP address.
-    pub fn socks5_proxy(mut self, proxy: impl Into<SocketAddr>) -> Self {
+    pub fn socks5_proxy(mut self, proxy: impl Into<Socks5Proxy>) -> Self {
         let ip_addr = proxy.into();
         let connection = ConnectionType::Socks5Proxy(ip_addr);
         self.config.connection_type = connection;

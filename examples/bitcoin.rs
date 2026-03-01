@@ -32,6 +32,8 @@ async fn main() {
         ))
         // Add some initial peers
         .add_peers(seeds.into_iter().map(From::from))
+        // Connections over Tor are supported by Socks5 proxy
+        // .socks5_proxy(bip157::Socks5Proxy::local())
         // Create the node and client
         .build();
     // Run the node on a separate task

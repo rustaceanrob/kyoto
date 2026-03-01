@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
     path::PathBuf,
     time::Duration,
 };
@@ -27,6 +27,8 @@ use socks::{create_socks5, SocksConnection};
 use tokio::{net::TcpStream, time::Instant};
 
 use error::PeerError;
+
+use crate::Socks5Proxy;
 
 pub(crate) mod dns;
 pub(crate) mod error;
@@ -130,11 +132,11 @@ impl LastBlockMonitor {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) enum ConnectionType {
     #[default]
     ClearNet,
-    Socks5Proxy(SocketAddr),
+    Socks5Proxy(Socks5Proxy),
 }
 
 impl ConnectionType {
@@ -177,7 +179,7 @@ impl ConnectionType {
                     _ => return Err(PeerError::UnreachableSocketAddr),
                 };
                 let socks5_timeout =
-                    tokio::time::timeout(handshake_timeout, create_socks5(*proxy, addr, port))
+                    tokio::time::timeout(handshake_timeout, create_socks5(proxy.0, addr, port))
                         .await
                         .map_err(|_| PeerError::ConnectionFailed)?;
                 let tcp_stream = socks5_timeout.map_err(PeerError::Socks5)?;
