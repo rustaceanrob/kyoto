@@ -1,3 +1,5 @@
+use bitcoin::p2p::address::AddrV2;
+use bitcoin::p2p::ServiceFlags;
 use bitcoin::{Amount, Transaction, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
@@ -164,6 +166,20 @@ impl Requester {
         let block_fees = revenue.checked_sub(subsidy).unwrap_or(Amount::ZERO);
         let fee_rate = block_fees.to_sat() / weight.to_kwu_floor();
         Ok(FeeRate::from_sat_per_kwu(fee_rate))
+    }
+
+    /// Get the current peer connections.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn peer_info(&self) -> Result<Vec<(AddrV2, ServiceFlags)>, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<(AddrV2, ServiceFlags)>>();
+        let request = ClientRequest::new((), tx);
+        self.ntx
+            .send(ClientMessage::GetPeerInfo(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
     }
 
     /// Starting after the configured checkpoint, re-emit all block filters.

@@ -250,6 +250,8 @@ async fn various_client_methods() {
     let _ = requester.broadcast_min_feerate().await.unwrap();
     let cp = requester.chain_tip().await.unwrap();
     assert_eq!(cp.hash, best);
+    let peers = requester.peer_info().await.unwrap();
+    assert_eq!(peers.len(), 1);
     assert!(requester.is_running());
     requester.shutdown().unwrap();
     rpc.stop().unwrap();

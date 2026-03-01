@@ -258,6 +258,14 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::GetPeerInfo(request) => {
+                                let (_, oneshot) = request.into_values();
+                                let peers = self.peer_map.peer_info();
+                                let send_result = oneshot.send(peers);
+                                if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }
