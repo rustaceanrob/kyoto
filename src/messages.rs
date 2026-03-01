@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::ops::Div;
 
+use bitcoin::p2p::address::AddrV2;
+use bitcoin::p2p::ServiceFlags;
 use bitcoin::{
     block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Transaction, Wtxid,
 };
@@ -151,6 +153,8 @@ pub(crate) enum ClientMessage {
     AddPeer(TrustedPeer),
     /// Request the broadcast minimum fee rate.
     GetBroadcastMinFeeRate(ClientRequest<(), FeeRate>),
+    /// Get info on connections
+    GetPeerInfo(ClientRequest<(), Vec<(AddrV2, ServiceFlags)>>),
     /// Send an empty message to see if the node is running.
     NoOp,
 }

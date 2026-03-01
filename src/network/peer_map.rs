@@ -190,6 +190,13 @@ impl PeerMap {
             .unwrap_or(FeeRate::BROADCAST_MIN)
     }
 
+    pub fn peer_info(&self) -> Vec<(AddrV2, ServiceFlags)> {
+        self.map
+            .values()
+            .map(|peer| (peer.record.network_addr().0, peer.record.service_flags()))
+            .collect()
+    }
+
     // Send a message to the specified peer
     pub async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
