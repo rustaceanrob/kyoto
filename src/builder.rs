@@ -5,7 +5,7 @@ use bitcoin::Network;
 use super::{client::Client, node::Node};
 use crate::chain::ChainState;
 use crate::network::ConnectionType;
-use crate::{Config, FilterType};
+use crate::{BlockType, Config, FilterType};
 use crate::{Socks5Proxy, TrustedPeer};
 
 const MIN_PEERS: u8 = 1;
@@ -134,6 +134,12 @@ impl Builder {
     /// Request a specific compact sketch type.
     pub fn filter_type(mut self, filter_type: FilterType) -> Self {
         self.config.filter_type = filter_type;
+        self
+    }
+
+    /// Request witness data when requesting blocks.
+    pub fn fetch_witness_data(mut self) -> Self {
+        self.config.block_type = BlockType::Witness;
         self
     }
 

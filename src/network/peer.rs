@@ -18,7 +18,7 @@ use tokio::{
     time::{Instant, MissedTickBehavior},
 };
 
-use crate::{broadcaster::BroadcastQueue, messages::Warning, Dialog, Info};
+use crate::{broadcaster::BroadcastQueue, messages::Warning, BlockType, Dialog, Info};
 
 use super::{
     error::PeerError,
@@ -38,6 +38,7 @@ pub(crate) struct Peer {
     main_thread_sender: Sender<PeerThreadMessage>,
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
+    block_type: BlockType,
     dialog: Arc<Dialog>,
     db: Arc<Mutex<AddressBook>>,
     timeout_config: PeerTimeoutConfig,
@@ -51,6 +52,7 @@ impl Peer {
         nonce: PeerId,
         source: Record,
         network: Network,
+        block_type: BlockType,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
         dialog: Arc<Dialog>,
@@ -64,6 +66,7 @@ impl Peer {
             main_thread_sender,
             main_thread_recv,
             network,
+            block_type,
             dialog,
             db,
             timeout_config,
@@ -97,6 +100,7 @@ impl Peer {
                 let outbound_messages = MessageGenerator {
                     network: self.network,
                     transport: Transport::V2 { encryptor },
+                    block_type: self.block_type,
                 };
                 let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
                 (outbound_messages, reader)
@@ -104,6 +108,7 @@ impl Peer {
                 let outbound_messages = MessageGenerator {
                     network: self.network,
                     transport: Transport::V1,
+                    block_type: self.block_type,
                 };
                 let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
                 (outbound_messages, reader)

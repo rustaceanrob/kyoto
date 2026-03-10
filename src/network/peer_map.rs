@@ -25,7 +25,7 @@ use crate::{
     chain::HeightMonitor,
     default_port_from_network,
     network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
-    Dialog, TrustedPeer,
+    BlockType, Dialog, TrustedPeer,
 };
 
 use super::{AddressBook, ConnectionType, MainThreadMessage, PeerThreadMessage};
@@ -51,6 +51,7 @@ pub(crate) struct PeerMap {
     current_id: PeerId,
     heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
+    block_type: BlockType,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
     db: Arc<Mutex<AddressBook>>,
@@ -65,6 +66,7 @@ impl PeerMap {
     pub fn new(
         mtx: Sender<PeerThreadMessage>,
         network: Network,
+        block_type: BlockType,
         whitelist: Whitelist,
         dialog: Arc<Dialog>,
         connection_type: ConnectionType,
@@ -76,6 +78,7 @@ impl PeerMap {
             current_id: PeerId(0),
             heights: height_monitor,
             network,
+            block_type,
             mtx,
             map: HashMap::new(),
             db: Arc::new(Mutex::new(AddressBook::new())),
@@ -122,6 +125,7 @@ impl PeerMap {
             self.current_id,
             loaded_peer.clone(),
             self.network,
+            self.block_type,
             self.mtx.clone(),
             prx,
             Arc::clone(&self.dialog),

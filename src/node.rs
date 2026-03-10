@@ -75,6 +75,7 @@ impl Node {
             connection_type,
             peer_timeout_config,
             filter_type,
+            block_type,
         } = config;
         // Set up a communication channel between the node and client
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
@@ -92,6 +93,7 @@ impl Node {
         let peer_map = PeerMap::new(
             mtx,
             network,
+            block_type,
             white_list,
             Arc::clone(&dialog),
             connection_type,
