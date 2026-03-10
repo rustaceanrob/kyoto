@@ -87,6 +87,35 @@ impl Requester {
         rx.await.map_err(|_| ClientError::RecvError)
     }
 
+    /// Broadcast a one-parent one-child (1P1C) package to the network.
+    ///
+    /// The child transaction is broadcast first, followed by the parent.
+    /// This method waits until both transactions are confirmed broadcast
+    /// (ie. shared with at least one peer) before returning the parent's wtxid.
+    ///
+    /// # Note
+    ///
+    /// For TRUC policy packages, always broadcast the child first, then the parent.
+    /// This ensures peers receive the child first and can request the parent.
+    ///
+    /// For more information, see BIP-431 and BIP-331.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn broadcast_1p1c(
+        &self,
+        child: Transaction,
+        parent: Transaction,
+    ) -> Result<Wtxid, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Wtxid>();
+        let client_request = ClientRequest::new((child, parent), tx);
+        self.ntx
+            .send(ClientMessage::Broadcast1p1c(client_request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
+    }
+
     /// A connection has a minimum transaction fee requirement to enter its mempool. For proper transaction propagation,
     /// transactions should have a fee rate at least as high as the maximum fee filter received.
     /// This method returns the maximum fee rate requirement of all connected peers.

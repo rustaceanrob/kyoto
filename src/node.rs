@@ -218,6 +218,9 @@ impl Node {
                             ClientMessage::Broadcast(transaction) => {
                                 self.broadcast_transaction(transaction).await;
                             },
+                            ClientMessage::Broadcast1p1c(request) => {
+                                self.broadcast_1p1c(request).await;
+                            },
                             ClientMessage::Rescan => {
                                 if let Some(response) = self.rescan() {
                                     self.peer_map.broadcast(response).await;
@@ -315,6 +318,18 @@ impl Node {
         queue.add_to_queue(transaction, oneshot);
         drop(queue);
         crate::debug!("Sending transaction to a random peer");
+        self.peer_map
+            .send_random(MainThreadMessage::BroadcastPending)
+            .await;
+    }
+
+    // Broadcast a 1P1C package (child first, then parent)
+    async fn broadcast_1p1c(&self, broadcast: ClientRequest<(Transaction, Transaction), Wtxid>) {
+        let mut queue = self.peer_map.tx_queue.lock().await;
+        let ((child, parent), oneshot) = broadcast.into_values();
+        queue.add_1p1c(child, parent, oneshot);
+        drop(queue);
+        crate::debug!("Sending 1P1C package to random peer");
         self.peer_map
             .send_random(MainThreadMessage::BroadcastPending)
             .await;

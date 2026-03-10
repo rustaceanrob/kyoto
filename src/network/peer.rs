@@ -276,7 +276,11 @@ impl Peer {
                         let msg = message_generator.broadcast_transaction(transaction);
                         self.write_bytes(writer, msg).await?;
                         self.message_state.sent_tx(wtxid);
-                        tx_queue.successful(wtxid);
+                        // Check if a 1P1C package was completed
+                        if let Some(child_wtxid) = tx_queue.successful(wtxid) {
+                            // Clean up the completed 1P1C package
+                            tx_queue.successful_completed(child_wtxid);
+                        }
                     }
                 }
                 Ok(())

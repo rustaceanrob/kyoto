@@ -143,6 +143,8 @@ pub(crate) enum ClientMessage {
     Shutdown,
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(ClientRequest<Transaction, Wtxid>),
+    /// Broadcast a one-parent one-child (1P1C) package.
+    Broadcast1p1c(ClientRequest<(Transaction, Transaction), Wtxid>),
     /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan,
     /// Explicitly request a block from the node.
