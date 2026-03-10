@@ -119,6 +119,13 @@ pub enum FilterType {
     Basic,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+enum BlockType {
+    #[default]
+    Legacy,
+    Witness,
+}
+
 impl From<FilterType> for u8 {
     fn from(value: FilterType) -> Self {
         match value {
@@ -335,6 +342,7 @@ struct Config {
     connection_type: ConnectionType,
     peer_timeout_config: PeerTimeoutConfig,
     filter_type: FilterType,
+    block_type: BlockType,
 }
 
 impl Default for Config {
@@ -347,6 +355,7 @@ impl Default for Config {
             connection_type: Default::default(),
             peer_timeout_config: PeerTimeoutConfig::default(),
             filter_type: FilterType::default(),
+            block_type: BlockType::default(),
         }
     }
 }

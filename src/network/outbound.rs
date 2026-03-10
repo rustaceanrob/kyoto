@@ -15,7 +15,7 @@ use bitcoin::{
     BlockHash, Network, Transaction, Wtxid,
 };
 
-use crate::default_port_from_network;
+use crate::{default_port_from_network, BlockType};
 
 use super::{KYOTO_VERSION, PROTOCOL_VERSION, RUST_BITCOIN_VERSION};
 
@@ -23,6 +23,7 @@ use super::{KYOTO_VERSION, PROTOCOL_VERSION, RUST_BITCOIN_VERSION};
 pub(in crate::network) struct MessageGenerator {
     pub network: Network,
     pub transport: Transport,
+    pub block_type: BlockType,
 }
 
 pub(in crate::network) enum Transport {
@@ -50,7 +51,10 @@ impl MessageGenerator {
     }
 
     pub(in crate::network) fn block(&mut self, hash: BlockHash) -> Vec<u8> {
-        let inv = Inventory::Block(hash);
+        let inv = match self.block_type {
+            BlockType::Legacy => Inventory::Block(hash),
+            BlockType::Witness => Inventory::WitnessBlock(hash),
+        };
         let msg = NetworkMessage::GetData(vec![inv]);
         self.serialize(msg)
     }
