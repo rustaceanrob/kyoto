@@ -164,7 +164,10 @@ impl Requester {
             .map(|tx| tx.output.iter().map(|txout| txout.value).sum())
             .unwrap_or(Amount::ZERO);
         let block_fees = revenue.checked_sub(subsidy).unwrap_or(Amount::ZERO);
-        let fee_rate = block_fees.to_sat() / weight.to_kwu_floor();
+        let fee_rate = block_fees
+            .to_sat()
+            .checked_div(weight.to_kwu_floor())
+            .unwrap_or(0);
         Ok(FeeRate::from_sat_per_kwu(fee_rate))
     }
 
