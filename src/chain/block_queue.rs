@@ -144,14 +144,26 @@ mod test {
         [hash_1, hash_2, hash_3]
     }
 
+    trait DummyRequestExt {
+        fn dummy_request(&self) -> Request;
+    }
+
+    impl DummyRequestExt for BlockHash {
+        fn dummy_request(&self) -> Request {
+            let (tx, _rx) = oneshot::channel();
+            let client_request = ClientRequest::new(*self, tx);
+            Request::from_block_request(client_request)
+        }
+    }
+
     #[test]
     fn test_block_queue() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
-        queue.add(hash_1);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
+        queue.add(hash_1.dummy_request());
         assert_eq!(queue.queue.len(), 4);
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(queue.pop(), None);
@@ -184,9 +196,9 @@ mod test {
     async fn test_laggy_peer() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
         assert_eq!(queue.queue.len(), 3);
         assert_eq!(queue.pop(), Some(hash_1));
         tokio::time::sleep(Duration::from_secs(6)).await;
@@ -224,10 +236,10 @@ mod test {
     fn test_blocks_removed() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
-        queue.add(hash_1);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
+        queue.add(hash_1.dummy_request());
         assert_eq!(queue.queue.len(), 4);
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(
