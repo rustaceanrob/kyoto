@@ -94,31 +94,18 @@ impl BlockQueue {
 #[derive(Debug)]
 pub(crate) struct Request {
     hash: BlockHash,
-    recipient: BlockRecipient,
+    recipient: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
 }
 
 impl Request {
-    fn new(hash: BlockHash) -> Self {
-        Self {
-            hash,
-            recipient: BlockRecipient::Event,
-        }
-    }
-
     fn from_block_request(
         block_request: ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>,
     ) -> Self {
         let (hash, oneshot) = block_request.into_values();
         Self {
             hash,
-            recipient: BlockRecipient::Client(oneshot),
+            recipient: oneshot,
         }
-    }
-}
-
-impl From<BlockHash> for Request {
-    fn from(value: BlockHash) -> Self {
-        Request::new(value)
     }
 }
 
@@ -129,14 +116,10 @@ impl From<ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>> for R
 }
 
 #[derive(Debug)]
-pub(crate) enum BlockRecipient {
-    Client(oneshot::Sender<Result<IndexedBlock, FetchBlockError>>),
-    Event,
-}
-
-#[derive(Debug)]
 pub(crate) enum ProcessBlockResponse {
-    Accepted { block_recipient: BlockRecipient },
+    Accepted {
+        block_recipient: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
+    },
     LateResponse,
     UnknownHash,
 }
@@ -161,14 +144,26 @@ mod test {
         [hash_1, hash_2, hash_3]
     }
 
+    trait DummyRequestExt {
+        fn dummy_request(&self) -> Request;
+    }
+
+    impl DummyRequestExt for BlockHash {
+        fn dummy_request(&self) -> Request {
+            let (tx, _rx) = oneshot::channel();
+            let client_request = ClientRequest::new(*self, tx);
+            Request::from_block_request(client_request)
+        }
+    }
+
     #[test]
     fn test_block_queue() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
-        queue.add(hash_1);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
+        queue.add(hash_1.dummy_request());
         assert_eq!(queue.queue.len(), 4);
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(queue.pop(), None);
@@ -201,9 +196,9 @@ mod test {
     async fn test_laggy_peer() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
         assert_eq!(queue.queue.len(), 3);
         assert_eq!(queue.pop(), Some(hash_1));
         tokio::time::sleep(Duration::from_secs(6)).await;
@@ -241,10 +236,10 @@ mod test {
     fn test_blocks_removed() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
         let mut queue = BlockQueue::new();
-        queue.add(hash_1);
-        queue.add(hash_2);
-        queue.add(hash_3);
-        queue.add(hash_1);
+        queue.add(hash_1.dummy_request());
+        queue.add(hash_2.dummy_request());
+        queue.add(hash_3.dummy_request());
+        queue.add(hash_1.dummy_request());
         assert_eq!(queue.queue.len(), 4);
         assert_eq!(queue.pop(), Some(hash_1));
         assert_eq!(
