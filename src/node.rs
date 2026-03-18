@@ -25,7 +25,7 @@ use tokio::{
 
 use crate::{
     chain::{
-        block_queue::{BlockQueue, BlockRecipient, ProcessBlockResponse},
+        block_queue::{BlockQueue, ProcessBlockResponse},
         chain::Chain,
         checkpoints::HeaderCheckpoint,
         error::HeaderSyncError,
@@ -552,18 +552,12 @@ impl Node {
                 self.dialog
                     .send_info(Info::BlockReceived(block.block_hash()))
                     .await;
-                match block_recipient {
-                    BlockRecipient::Client(sender) => {
-                        let send_err = sender.send(Ok(IndexedBlock::new(height, block))).is_err();
-                        if send_err {
-                            self.dialog.send_warning(Warning::ChannelDropped);
-                        };
-                    }
-                    BlockRecipient::Event => {
-                        self.dialog
-                            .send_event(Event::Block(IndexedBlock::new(height, block)));
-                    }
-                }
+                let send_err = block_recipient
+                    .send(Ok(IndexedBlock::new(height, block)))
+                    .is_err();
+                if send_err {
+                    self.dialog.send_warning(Warning::ChannelDropped);
+                };
             }
             ProcessBlockResponse::LateResponse => {
                 crate::debug!(format!(

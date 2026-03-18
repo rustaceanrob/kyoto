@@ -43,8 +43,6 @@ impl core::fmt::Display for Info {
 /// Data and structures useful for a consumer, such as a wallet.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// A [`Block`](crate) that was requested.
-    Block(IndexedBlock),
     /// The chain of block headers has been altered in some way.
     ChainUpdate(BlockHeaderChanges),
     /// The node is fully synced, having scanned the requested range.

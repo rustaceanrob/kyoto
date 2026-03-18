@@ -94,31 +94,18 @@ impl BlockQueue {
 #[derive(Debug)]
 pub(crate) struct Request {
     hash: BlockHash,
-    recipient: BlockRecipient,
+    recipient: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
 }
 
 impl Request {
-    fn new(hash: BlockHash) -> Self {
-        Self {
-            hash,
-            recipient: BlockRecipient::Event,
-        }
-    }
-
     fn from_block_request(
         block_request: ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>,
     ) -> Self {
         let (hash, oneshot) = block_request.into_values();
         Self {
             hash,
-            recipient: BlockRecipient::Client(oneshot),
+            recipient: oneshot,
         }
-    }
-}
-
-impl From<BlockHash> for Request {
-    fn from(value: BlockHash) -> Self {
-        Request::new(value)
     }
 }
 
@@ -129,14 +116,10 @@ impl From<ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>> for R
 }
 
 #[derive(Debug)]
-pub(crate) enum BlockRecipient {
-    Client(oneshot::Sender<Result<IndexedBlock, FetchBlockError>>),
-    Event,
-}
-
-#[derive(Debug)]
 pub(crate) enum ProcessBlockResponse {
-    Accepted { block_recipient: BlockRecipient },
+    Accepted {
+        block_recipient: oneshot::Sender<Result<IndexedBlock, FetchBlockError>>,
+    },
     LateResponse,
     UnknownHash,
 }
