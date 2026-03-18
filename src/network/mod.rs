@@ -518,11 +518,11 @@ impl AddressBook {
         if self.tried.is_empty() && self.new.is_empty() {
             return None;
         }
-        let use_tried: bool = rand::random();
-        if use_tried && !self.tried.is_empty() {
-            return self.tried.select();
+        if rand::random() {
+            self.tried.select().or_else(|| self.new.select())
+        } else {
+            self.new.select().or_else(|| self.tried.select())
         }
-        self.new.select()
     }
 
     pub(crate) fn failed(&mut self, record: &Record) {
