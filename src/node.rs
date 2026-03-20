@@ -618,7 +618,6 @@ impl Node {
                         locator_hashes: self.chain.header_chain.locators(),
                         stop_hash: BlockHash::all_zeros(),
                     };
-                    self.chain.clear_compact_filter_queue();
                     Some(MainThreadMessage::GetHeaders(next_headers))
                 } else {
                     None

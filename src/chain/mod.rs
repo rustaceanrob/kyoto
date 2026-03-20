@@ -11,7 +11,7 @@ pub mod checkpoints;
 pub(crate) mod error;
 pub(crate) mod graph;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bitcoin::constants::SUBSIDY_HALVING_INTERVAL;
 use bitcoin::hashes::{sha256d, Hash};
@@ -23,6 +23,8 @@ use bitcoin::{
 
 use crate::network::PeerId;
 use crate::HeaderCheckpoint;
+
+const MAX_PREV_STOP_HASHES: usize = 3;
 
 type Height = u32;
 
@@ -104,6 +106,7 @@ pub(crate) struct FilterRequestState {
     pub last_filter_header_request: Option<FilterHeaderRequest>,
     pub pending_batch: Option<(PeerId, CFHeaderBatch)>,
     pub agreement_state: FilterHeaderAgreements,
+    prev_cf_header_stop_hashes: VecDeque<BlockHash>,
 }
 
 impl FilterRequestState {
@@ -113,7 +116,22 @@ impl FilterRequestState {
             last_filter_header_request: None,
             pending_batch: None,
             agreement_state: FilterHeaderAgreements::new(required),
+            prev_cf_header_stop_hashes: VecDeque::new(),
         }
+    }
+
+    pub(crate) fn push_stop_hash(&mut self, hash: BlockHash) {
+        if self.prev_cf_header_stop_hashes.contains(&hash) {
+            return;
+        }
+        if self.prev_cf_header_stop_hashes.len() >= MAX_PREV_STOP_HASHES {
+            self.prev_cf_header_stop_hashes.pop_front();
+        }
+        self.prev_cf_header_stop_hashes.push_back(hash);
+    }
+
+    pub(crate) fn was_recently_requested(&self, hash: &BlockHash) -> bool {
+        self.prev_cf_header_stop_hashes.contains(hash)
     }
 }
 

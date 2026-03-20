@@ -198,6 +198,12 @@ impl Chain {
             }
         }
         if request.stop_hash.ne(&batch.stop_hash()) {
+            if self
+                .request_state
+                .was_recently_requested(&batch.stop_hash())
+            {
+                return Ok(CFHeaderChanges::AddedToQueue);
+            }
             return Err(CFHeaderSyncError::UnrequestedStophash);
         }
         // Check that the start height we requested and the length of the batch are aligned.
@@ -291,6 +297,7 @@ impl Chain {
             .header_chain
             .block_hash_at_height(stop_hash_index)
             .unwrap_or(self.header_chain.tip_hash());
+        self.request_state.push_stop_hash(stop_hash);
         self.request_state.last_filter_header_request = Some(FilterHeaderRequest {
             expected_prev_filter_header: prev_header,
             start_height: last_unchecked_cfheader,
@@ -822,7 +829,7 @@ mod tests {
             filter_hashes: stale_hashes,
         };
         let cf_header_sync_res = chain.sync_cf_headers(0.into(), cf_headers);
-        assert!(cf_header_sync_res.is_err());
+        assert!(cf_header_sync_res.is_ok());
         let cf_headers = CFHeaders {
             filter_type: 0x00,
             stop_hash: scenario.last_block_hash(),
@@ -1062,7 +1069,7 @@ mod tests {
             filter_hashes: scenario.n_most_work_filter_hashes(4),
         };
         let cf_header_sync_res = chain.sync_cf_headers(1.into(), cf_headers);
-        assert!(cf_header_sync_res.is_err());
+        assert!(cf_header_sync_res.is_ok());
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
