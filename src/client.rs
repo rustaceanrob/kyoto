@@ -237,6 +237,21 @@ impl Requester {
         rx.await.map_err(|_| ClientError::RecvError)
     }
 
+    /// Look up the height of a block hash in the locally synced chain of most work.
+    /// Returns `None` if the hash is not in the header chain.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn height_of_hash(&self, hash: BlockHash) -> Result<Option<u32>, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<u32>>();
+        let request = ClientRequest::new(hash, tx);
+        self.ntx
+            .send(ClientMessage::HeightOfHash(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
+    }
+
     /// Check if the node is running.
     pub fn is_running(&self) -> bool {
         self.ntx.send(ClientMessage::NoOp).is_ok()

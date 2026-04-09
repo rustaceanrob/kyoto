@@ -267,6 +267,14 @@ async fn various_client_methods() {
     // get_header beyond the chain should return None
     let too_high = requester.get_header(cp.height + 1).await.unwrap();
     assert!(too_high.is_none());
+    // height_of_hash for the chain tip should return the tip height
+    let tip_height = requester.height_of_hash(cp.hash).await.unwrap();
+    assert!(tip_height.is_some());
+    assert_eq!(tip_height.unwrap(), cp.height);
+    // height_of_hash for an unknown hash should return None
+    let fake_hash: BlockHash = bitcoin::hashes::Hash::all_zeros();
+    let unknown = requester.height_of_hash(fake_hash).await.unwrap();
+    assert!(unknown.is_none());
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
