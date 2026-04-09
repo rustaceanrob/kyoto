@@ -155,6 +155,8 @@ pub(crate) enum ClientMessage {
     GetPeerInfo(ClientRequest<(), Vec<(AddrV2, ServiceFlags)>>),
     /// Look up a header at a specific height in the chain of most work.
     GetHeader(ClientRequest<u32, Option<IndexedHeader>>),
+    /// Look up the height of a block hash in the chain of most work.
+    HeightOfHash(ClientRequest<BlockHash, Option<u32>>),
     /// Send an empty message to see if the node is running.
     NoOp,
 }

@@ -341,6 +341,14 @@ impl BlockTree {
         self.headers.get(hash).map(|node| node.header)
     }
 
+    // Returns the height of `hash` only when it sits on the canonical chain of most work.
+    // Returns `None` for unknown hashes and for hashes on stale/reorganized branches.
+    pub(crate) fn height_of_hash_canonical_only(&self, hash: BlockHash) -> Option<Height> {
+        let height = self.headers.get(&hash).map(|node| node.height)?;
+        let canonical = self.block_hash_at_height(height)?;
+        (canonical == hash).then_some(height)
+    }
+
     pub(crate) fn height_of_hash(&self, hash: BlockHash) -> Option<Height> {
         self.headers.get(&hash).map(|node| node.height)
     }
@@ -614,6 +622,20 @@ mod tests {
         assert_eq!(chain.header_at_height(10), Some(new_block_10));
         assert_eq!(chain.header_at_height(9), Some(base[1].0));
         assert_eq!(chain.header_at_height(8), Some(base[0].0));
+        // height_of_hash returns the height for hashes on the canonical chain
+        assert_eq!(chain.height_of_hash(new_block_10.block_hash()), Some(10));
+        assert_eq!(chain.height_of_hash(block_11.block_hash()), Some(11));
+        // ...and None for hashes that were reorganized away, even though the header
+        // is still stored in the graph.
+        assert_eq!(
+            chain.height_of_hash_canonical_only(old_block_10.block_hash()),
+            None
+        );
+        // Unknown hashes also return None.
+        let unknown =
+            BlockHash::from_str("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap();
+        assert_eq!(chain.height_of_hash(unknown), None);
     }
 
     #[test]
