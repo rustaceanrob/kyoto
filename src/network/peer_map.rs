@@ -48,6 +48,7 @@ pub(crate) struct ManagedPeer {
 #[derive(Debug)]
 pub(crate) struct PeerMap {
     pub(crate) tx_queue: Arc<Mutex<BroadcastQueue>>,
+    pub(crate) whitelist_only: bool,
     current_id: PeerId,
     heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
@@ -68,6 +69,7 @@ impl PeerMap {
         network: Network,
         block_type: BlockType,
         whitelist: Whitelist,
+        whitelist_only: bool,
         dialog: Arc<Dialog>,
         connection_type: ConnectionType,
         timeout_config: PeerTimeoutConfig,
@@ -75,6 +77,7 @@ impl PeerMap {
     ) -> Self {
         Self {
             tx_queue: Arc::new(Mutex::new(BroadcastQueue::new())),
+            whitelist_only,
             current_id: PeerId(0),
             heights: height_monitor,
             network,
@@ -231,6 +234,7 @@ impl PeerMap {
 
     // Pull a peer from the configuration if we have one. If not, select a random peer from the database,
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
+    // When `whitelist_only` is set, only whitelist peers are used.
     pub async fn next_peer(&mut self) -> Option<Record> {
         if let Some(peer) = self.whitelist.pop() {
             crate::debug!("Using a configured peer");
@@ -239,6 +243,9 @@ impl PeerMap {
                 .unwrap_or(default_port_from_network(&self.network));
             let record = Record::new(peer.address(), port, peer.known_services, &LOCAL_HOST);
             return Some(record);
+        }
+        if self.whitelist_only {
+            return None;
         }
         let mut db_lock = self.db.lock().await;
         if db_lock.is_empty() {
