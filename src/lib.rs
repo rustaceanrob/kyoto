@@ -306,6 +306,11 @@ impl From<SocketAddr> for TrustedPeer {
 pub struct Socks5Proxy(SocketAddr);
 
 impl Socks5Proxy {
+    /// Define a non-standard Socks5 proxy to connect to.
+    pub fn new(socket_addr: impl Into<SocketAddr>) -> Self {
+        Self(socket_addr.into())
+    }
+
     /// Connect to the default local Socks5 proxy hosted at `127.0.0.1:9050`.
     pub const fn local() -> Self {
         Socks5Proxy(SocketAddr::new(
