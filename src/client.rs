@@ -7,6 +7,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
+use crate::chain::IndexedHeader;
 use crate::messages::ClientRequest;
 use crate::{Event, HeaderCheckpoint, Info, TrustedPeer, Warning};
 
@@ -217,6 +218,21 @@ impl Requester {
         let request = ClientRequest::new((), tx);
         self.ntx
             .send(ClientMessage::BestBlock(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
+    }
+
+    /// Look up a header at a specific height in the locally synced chain of most work.
+    /// Returns `None` if the height is not in the header chain.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn get_header(&self, height: u32) -> Result<Option<IndexedHeader>, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<IndexedHeader>>();
+        let request = ClientRequest::new(height, tx);
+        self.ntx
+            .send(ClientMessage::GetHeader(request))
             .map_err(|_| ClientError::SendError)?;
         rx.await.map_err(|_| ClientError::RecvError)
     }

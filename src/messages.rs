@@ -7,7 +7,7 @@ use bitcoin::{
     block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Transaction, Wtxid,
 };
 
-use crate::chain::BlockHeaderChanges;
+use crate::chain::{BlockHeaderChanges, IndexedHeader};
 use crate::IndexedFilter;
 use crate::{chain::checkpoints::HeaderCheckpoint, IndexedBlock, TrustedPeer};
 
@@ -153,6 +153,8 @@ pub(crate) enum ClientMessage {
     GetBroadcastMinFeeRate(ClientRequest<(), FeeRate>),
     /// Get info on connections
     GetPeerInfo(ClientRequest<(), Vec<(AddrV2, ServiceFlags)>>),
+    /// Look up a header at a specific height in the chain of most work.
+    GetHeader(ClientRequest<u32, Option<IndexedHeader>>),
     /// Send an empty message to see if the node is running.
     NoOp,
 }
