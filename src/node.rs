@@ -29,7 +29,7 @@ use crate::{
         chain::Chain,
         checkpoints::HeaderCheckpoint,
         error::HeaderSyncError,
-        CFHeaderChanges, ChainState, FilterCheck, HeightMonitor,
+        CFHeaderChanges, ChainState, FilterCheck, HeightMonitor, IndexedHeader,
     },
     error::FetchBlockError,
     messages::ClientRequest,
@@ -265,6 +265,17 @@ impl Node {
                                 let peers = self.peer_map.peer_info();
                                 let send_result = oneshot.send(peers);
                                 if send_result.is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
+                            ClientMessage::GetHeader(request) => {
+                                let (height, oneshot) = request.into_values();
+                                let header = self
+                                    .chain
+                                    .header_chain
+                                    .header_at_height(height)
+                                    .map(|h| IndexedHeader::new(height, h));
+                                if oneshot.send(header).is_err() {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }

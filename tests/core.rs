@@ -253,6 +253,20 @@ async fn various_client_methods() {
     let peers = requester.peer_info().await.unwrap();
     assert_eq!(peers.len(), 1);
     assert!(requester.is_running());
+    // get_header should return a header within the synced range
+    let header_at_1 = requester.get_header(1).await.unwrap();
+    assert!(header_at_1.is_some());
+    let header_at_1 = header_at_1.unwrap();
+    assert_eq!(header_at_1.height, 1);
+    // get_header at the tip should match the chain tip hash
+    let tip_header = requester.get_header(cp.height).await.unwrap();
+    assert!(tip_header.is_some());
+    let tip_header = tip_header.unwrap();
+    assert_eq!(tip_header.height, cp.height);
+    assert_eq!(tip_header.block_hash(), cp.hash);
+    // get_header beyond the chain should return None
+    let too_high = requester.get_header(cp.height + 1).await.unwrap();
+    assert!(too_high.is_none());
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }
