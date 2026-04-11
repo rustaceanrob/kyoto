@@ -70,6 +70,7 @@ impl Node {
         let Config {
             required_peers,
             white_list,
+            whitelist_only,
             data_path: _,
             chain_state,
             connection_type,
@@ -95,6 +96,7 @@ impl Node {
             network,
             block_type,
             white_list,
+            whitelist_only,
             Arc::clone(&dialog),
             connection_type,
             peer_timeout_config,
@@ -430,11 +432,13 @@ impl Node {
         self.peer_map
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
-        // Now we may request peers if required
-        crate::debug!("Requesting new addresses");
-        self.peer_map
-            .send_message(nonce, MainThreadMessage::GetAddr)
-            .await;
+        // Request peer addresses unless restricted to the whitelist only.
+        if !self.peer_map.whitelist_only {
+            crate::debug!("Requesting new addresses");
+            self.peer_map
+                .send_message(nonce, MainThreadMessage::GetAddr)
+                .await;
+        }
         // Inform the user we are connected to all required peers
         if self.peer_map.live().eq(&self.required_peers) {
             self.dialog.send_info(Info::ConnectionsMet).await;
