@@ -9,7 +9,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash,
+    Block,
 };
 use bitcoin::{FeeRate, Wtxid};
 use tokio::io::AsyncBufReadExt;
@@ -59,20 +59,7 @@ impl<R: AsyncBufReadExt + Send + Sync + Unpin> Reader<R> {
                 if inventory.len() > MAX_INV {
                     return Some(ReaderMessage::Disconnect);
                 }
-                let mut hashes = Vec::new();
-                for i in inventory {
-                    match i {
-                        Inventory::Block(hash) => hashes.push(hash),
-                        Inventory::CompactBlock(hash) => hashes.push(hash),
-                        Inventory::WitnessBlock(hash) => hashes.push(hash),
-                        _ => continue,
-                    }
-                }
-                if !hashes.is_empty() {
-                    Some(ReaderMessage::NewBlocks(hashes))
-                } else {
-                    None
-                }
+                None
             }
             NetworkMessage::GetData(inventory) => {
                 let mut requests = Vec::new();
@@ -168,7 +155,6 @@ pub(in crate::network) enum ReaderMessage {
     FilterHeaders(CFHeaders),
     Filter(CFilter),
     Block(Block),
-    NewBlocks(Vec<BlockHash>),
     Reject(RejectPayload),
     Disconnect,
     Verack,

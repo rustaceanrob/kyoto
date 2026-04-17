@@ -16,10 +16,7 @@ use tokio::{
     sync::mpsc::{self},
 };
 use tokio::{
-    sync::{
-        mpsc::{Receiver, UnboundedReceiver},
-        Mutex,
-    },
+    sync::mpsc::{Receiver, UnboundedReceiver},
     time::MissedTickBehavior,
 };
 
@@ -28,7 +25,7 @@ use crate::{
         block_queue::{BlockQueue, ProcessBlockResponse},
         chain::Chain,
         checkpoints::HeaderCheckpoint,
-        CFHeaderChanges, ChainState, FilterCheck, HeaderSyncEffect, HeightMonitor, IndexedHeader,
+        CFHeaderChanges, ChainState, FilterCheck, HeaderSyncEffect, IndexedHeader,
     },
     error::FetchBlockError,
     messages::ClientRequest,
@@ -89,7 +86,6 @@ impl Node {
         let state = NodeState::Behind;
         // Configure the peer manager
         let (mtx, mrx) = mpsc::channel::<PeerThreadMessage>(32);
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
         let peer_map = PeerMap::new(
             mtx,
             network,
@@ -99,7 +95,6 @@ impl Node {
             Arc::clone(&dialog),
             connection_type,
             peer_timeout_config,
-            Arc::clone(&height_monitor),
         );
         // Build the chain
         let chain_state = chain_state.unwrap_or(ChainState::Checkpoint(
@@ -109,7 +104,6 @@ impl Node {
             network,
             chain_state,
             Arc::clone(&dialog),
-            height_monitor,
             required_peers,
             filter_type,
         );
@@ -157,7 +151,6 @@ impl Node {
                             match peer_thread.message {
                                 PeerMessage::Version(version) => {
                                     self.peer_map.set_services(peer_thread.nonce, version.services);
-                                    self.peer_map.set_height(peer_thread.nonce, version.start_height as u32).await;
                                     let response = self.handle_version(peer_thread.nonce, version).await?;
                                     self.peer_map.send_message(peer_thread.nonce, response).await;
                                     crate::debug!(format!("[{}]: version", peer_thread.nonce));
@@ -195,15 +188,6 @@ impl Node {
                                     }
                                     None => continue,
                                 },
-                                PeerMessage::NewBlocks(blocks) => {
-                                    crate::debug!(format!("[{}]: inv", peer_thread.nonce));
-                                    match self.handle_inventory_blocks(peer_thread.nonce, blocks).await {
-                                        Some(response) => {
-                                            self.peer_map.broadcast(response).await;
-                                        }
-                                        None => continue,
-                                    }
-                                }
                                 PeerMessage::FeeFilter(feerate) => {
                                     self.peer_map.set_broadcast_min(peer_thread.nonce, feerate);
                                 }
@@ -335,11 +319,8 @@ impl Node {
     // Try to continue with the syncing process
     async fn advance_state(&mut self, last_block: &mut LastBlockMonitor) {
         match self.state {
-            NodeState::Behind => {
-                if self.chain.is_synced().await {
-                    self.state = NodeState::HeadersSynced;
-                }
-            }
+            // This state is updated upon receiving new block headers
+            NodeState::Behind => (),
             NodeState::HeadersSynced => {
                 if self.chain.is_cf_headers_synced() {
                     self.state = NodeState::FilterHeadersSynced;
@@ -380,7 +361,7 @@ impl Node {
     // After we receiving some chain-syncing message, we decide what chain of data needs to be
     // requested next.
     async fn next_stateful_message(&mut self) -> Option<MainThreadMessage> {
-        if !self.chain.is_synced().await {
+        if self.state == NodeState::Behind {
             let headers = GetHeadersMessage {
                 version: WTXID_VERSION,
                 locator_hashes: self.chain.header_chain.locators(),
@@ -431,6 +412,9 @@ impl Node {
         self.peer_map
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
+        self.peer_map
+            .send_message(nonce, MainThreadMessage::SendHeaders)
+            .await;
         // Request peer addresses unless restricted to the whitelist only.
         if !self.peer_map.whitelist_only {
             crate::debug!("Requesting new addresses");
@@ -460,13 +444,21 @@ impl Node {
         let chain = &mut self.chain;
         match chain.sync_chain(headers) {
             Ok(effect) => match effect {
-                HeaderSyncEffect::Added => self.chain.send_chain_update().await,
+                HeaderSyncEffect::Added => {
+                    if self.state != NodeState::Behind {
+                        self.state = NodeState::Behind;
+                    }
+                    self.chain.send_chain_update().await;
+                }
                 HeaderSyncEffect::Empty => {
-                    if !chain.is_synced().await {
-                        return Some(MainThreadMessage::Disconnect);
+                    if self.state == NodeState::Behind {
+                        self.state = NodeState::HeadersSynced;
                     }
                 }
                 HeaderSyncEffect::Reorg(reorgs) => {
+                    if self.state != NodeState::HeadersSynced {
+                        self.state = NodeState::HeadersSynced;
+                    }
                     self.chain.send_chain_update().await;
                     self.block_queue.remove(&reorgs);
                 }
@@ -597,39 +589,6 @@ impl Node {
             return next_block_hash.map(MainThreadMessage::GetBlock);
         }
         None
-    }
-
-    // If new inventory came in, we need to download the headers and update the node state
-    async fn handle_inventory_blocks(
-        &mut self,
-        nonce: PeerId,
-        blocks: Vec<BlockHash>,
-    ) -> Option<MainThreadMessage> {
-        for block in blocks.iter() {
-            if !self.chain.header_chain.contains(*block) {
-                self.peer_map.increment_height(nonce).await;
-                crate::debug!(format!("New block: {}", block));
-            }
-        }
-        match self.state {
-            NodeState::Behind => None,
-            _ => {
-                if blocks
-                    .into_iter()
-                    .any(|block| !self.chain.header_chain.contains(block))
-                {
-                    self.state = NodeState::Behind;
-                    let next_headers = GetHeadersMessage {
-                        version: WTXID_VERSION,
-                        locator_hashes: self.chain.header_chain.locators(),
-                        stop_hash: BlockHash::all_zeros(),
-                    };
-                    Some(MainThreadMessage::GetHeaders(next_headers))
-                } else {
-                    None
-                }
-            }
-        }
     }
 
     // Clear the filter hash cache and redownload the filters.

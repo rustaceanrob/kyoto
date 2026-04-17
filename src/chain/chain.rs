@@ -6,14 +6,12 @@ use bitcoin::{
     p2p::message_filter::{CFHeaders, CFilter, GetCFHeaders, GetCFilters},
     BlockHash, Network,
 };
-use tokio::sync::Mutex;
 
 use super::{
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderBatch, CFHeaderChanges, ChainState, Filter, FilterCheck, FilterHeaderRequest,
-    FilterRequest, FilterRequestState, HeaderSyncEffect, HeaderValidationExt, HeightMonitor,
-    PeerId,
+    FilterRequest, FilterRequestState, HeaderSyncEffect, HeaderValidationExt, PeerId,
 };
 use crate::{chain::BlockHeaderChanges, messages::Event, Dialog, Info, Progress};
 use crate::{FilterType, IndexedFilter};
@@ -26,7 +24,6 @@ pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
-    heights: Arc<Mutex<HeightMonitor>>,
     dialog: Arc<Dialog>,
     filter_type: FilterType,
 }
@@ -36,7 +33,6 @@ impl Chain {
         network: Network,
         chain_state: ChainState,
         dialog: Arc<Dialog>,
-        height_monitor: Arc<Mutex<HeightMonitor>>,
         quorum_required: u8,
         filter_type: FilterType,
     ) -> Self {
@@ -60,7 +56,6 @@ impl Chain {
             header_chain,
             request_state: FilterRequestState::new(quorum_required),
             network,
-            heights: height_monitor,
             dialog,
             filter_type,
         }
@@ -73,17 +68,6 @@ impl Chain {
             .take(10)
             .map(|index| (index.height, index.header))
             .collect()
-    }
-
-    // Do we have best known height and is our height equal to it
-    // If our height is greater, we received partial inventory, and
-    // the header message contained the rest of the new blocks.
-    pub(crate) async fn is_synced(&self) -> bool {
-        let height_lock = self.heights.lock().await;
-        match height_lock.max() {
-            Some(peer_max) => self.header_chain.height() >= peer_max,
-            None => false,
-        }
     }
 
     // Sync the chain with headers from a peer, adjusting to reorgs if needed
@@ -418,13 +402,8 @@ impl Chain {
             )))
             .await;
         crate::debug!(format!(
-            "Headers: ({}/{}) CFHeaders: ({}/{}) CFilters: ({}/{})",
+            "Headers: {} CFHeaders: ({}/{}) CFilters: ({}/{})",
             self.header_chain.height(),
-            self.heights
-                .lock()
-                .await
-                .max()
-                .unwrap_or(self.header_chain.height()),
             self.header_chain.total_filter_headers_synced(),
             self.header_chain.internal_chain_len() as u32,
             self.header_chain.total_filters_synced(),
@@ -447,7 +426,6 @@ mod tests {
         BlockHash, FilterHash, FilterHeader,
     };
     use corepc_node::serde_json;
-    use tokio::sync::Mutex;
 
     use crate::chain::ChainState;
     use crate::FilterType;
@@ -457,13 +435,9 @@ mod tests {
         Dialog,
     };
 
-    use super::{CFHeaderChanges, Chain, HeightMonitor};
+    use super::{CFHeaderChanges, Chain};
 
-    fn new_regtest(
-        anchor: HeaderCheckpoint,
-        height_monitor: Arc<Mutex<HeightMonitor>>,
-        peers: u8,
-    ) -> Chain {
+    fn new_regtest(anchor: HeaderCheckpoint, peers: u8) -> Chain {
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -471,7 +445,6 @@ mod tests {
             bitcoin::Network::Regtest,
             ChainState::Checkpoint(anchor),
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
-            height_monitor,
             peers,
             FilterType::Basic,
         )
@@ -583,8 +556,7 @@ mod tests {
     #[tokio::test]
     async fn test_fork_includes_old_vals() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor, 1);
+        let mut chain = new_regtest(gen, 1);
         let chain_scenario = load_scenario();
         let canonical = chain_scenario.most_work;
         let mut canonical_iter = canonical.into_iter();
@@ -622,16 +594,13 @@ mod tests {
     #[tokio::test]
     async fn test_filters_out_of_order() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
+        let mut chain = new_regtest(gen, 1);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let block_5 = scenario.last_block_header();
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        height_monitor.lock().await.insert(1.into(), 2501);
-        assert!(chain.is_synced().await);
         let filter_hashes = scenario.n_most_work_filter_hashes(5);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
@@ -655,15 +624,12 @@ mod tests {
     #[tokio::test]
     async fn test_bad_filter() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 1);
+        let mut chain = new_regtest(gen, 1);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        height_monitor.lock().await.insert(1.into(), 2501);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -692,15 +658,12 @@ mod tests {
     #[tokio::test]
     async fn test_has_conflict() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        height_monitor.lock().await.insert(1.into(), 2501);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -754,15 +717,12 @@ mod tests {
     #[tokio::test]
     async fn test_uneven_cf_headers() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        height_monitor.lock().await.insert(1.into(), 2501);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -805,8 +765,7 @@ mod tests {
     #[tokio::test]
     async fn test_reorg_no_queue() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let mut stale_headers = scenario.n_most_work_headers(3);
         let stale_block_data = scenario.stale_chain.first().unwrap();
@@ -814,8 +773,6 @@ mod tests {
         let chain_sync = chain.sync_chain(stale_headers);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         // Reorganize the blocks
         let most_work = scenario.most_work_headers();
@@ -865,8 +822,7 @@ mod tests {
     #[tokio::test]
     async fn test_reorg_with_queue() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let mut header_batch = scenario.n_most_work_headers(3);
         let stale = scenario
@@ -878,8 +834,6 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let mut stale_hashes = scenario.n_most_work_filter_hashes(3);
         let stale_hash = scenario
@@ -930,8 +884,7 @@ mod tests {
     #[ignore = "temporarily broken due to hex decoding"]
     async fn reorg_during_filter_sync() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -942,8 +895,6 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
         let filter_1 = hex::decode("018976c0").unwrap();
         let filter_2 = hex::decode("018b1f28").unwrap();
         let filter_3 = hex::decode("01117310").unwrap();
@@ -999,8 +950,6 @@ mod tests {
         let header_batch = vec![new_block_4, block_5];
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
-        height_monitor.lock().await.increment(1.into());
-        assert!(chain.is_synced().await);
         // Request the headers again
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
@@ -1046,8 +995,7 @@ mod tests {
     #[tokio::test]
     async fn test_inv_no_queue() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let header_batch = scenario.n_most_work_headers(4);
         let block_4 = header_batch
@@ -1057,14 +1005,11 @@ mod tests {
         let chain_sync = chain.sync_chain(header_batch);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let block_5 = scenario.last_block_header();
         let chain_sync = chain.sync_chain(vec![block_5]);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2501);
-        assert!(chain.is_synced().await);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
             filter_type: 0x00,
@@ -1096,16 +1041,13 @@ mod tests {
     #[tokio::test]
     async fn test_inv_with_queue() {
         let gen = base_block();
-        let height_monitor = Arc::new(Mutex::new(HeightMonitor::new()));
-        let mut chain = new_regtest(gen, height_monitor.clone(), 2);
+        let mut chain = new_regtest(gen, 2);
         let scenario = load_scenario();
         let first_four = scenario.n_most_work_headers(4);
         let block_4 = first_four.last().copied().unwrap();
         let chain_sync = chain.sync_chain(first_four);
         assert!(chain_sync.is_ok());
         assert_eq!(chain.header_chain.height(), 2500);
-        height_monitor.lock().await.insert(1.into(), 2500);
-        assert!(chain.is_synced().await);
         let first_four_filter_hashes = scenario.n_most_work_filter_hashes(4);
         chain.next_cf_header_message();
         let cf_headers = CFHeaders {
