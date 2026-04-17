@@ -336,11 +336,8 @@ impl Node {
     // Try to continue with the syncing process
     async fn advance_state(&mut self, last_block: &mut LastBlockMonitor) {
         match self.state {
-            NodeState::Behind => {
-                if self.chain.is_synced().await {
-                    self.state = NodeState::HeadersSynced;
-                }
-            }
+            // This state is updated upon receiving headers.
+            NodeState::Behind => (),
             NodeState::HeadersSynced => {
                 if self.chain.is_cf_headers_synced() {
                     self.state = NodeState::FilterHeadersSynced;
@@ -381,10 +378,13 @@ impl Node {
     // After we receiving some chain-syncing message, we decide what chain of data needs to be
     // requested next.
     async fn next_stateful_message(&mut self) -> Option<MainThreadMessage> {
-        if !self.chain.is_synced().await {
+        if self.state == NodeState::Behind {
+            crate::debug!("Sending getheaders");
+            let loc = self.chain.header_chain.locators();
+            crate::debug!(format!("Locators {loc:?}"));
             let headers = GetHeadersMessage {
                 version: WTXID_VERSION,
-                locator_hashes: self.chain.header_chain.locators(),
+                locator_hashes: loc,
                 stop_hash: BlockHash::all_zeros(),
             };
             return Some(MainThreadMessage::GetHeaders(headers));
@@ -432,6 +432,10 @@ impl Node {
         self.peer_map
             .send_message(nonce, MainThreadMessage::Verack)
             .await;
+        // BIP-130 allows peers to announce new blocks by block header
+        self.peer_map
+            .send_message(nonce, MainThreadMessage::SendHeaders)
+            .await;
         // Request peer addresses unless restricted to the whitelist only.
         if !self.peer_map.whitelist_only {
             crate::debug!("Requesting new addresses");
@@ -462,14 +466,20 @@ impl Node {
         match chain.sync_chain(headers) {
             Ok(reorgs) => {
                 self.chain.send_chain_update().await;
+                if self.state != NodeState::Behind {
+                    crate::debug!("Resetting node state to behind");
+                    self.state = NodeState::Behind;
+                }
                 if !reorgs.is_empty() {
                     self.block_queue.remove(&reorgs);
                 }
             }
             Err(e) => match e {
                 HeaderSyncError::EmptyMessage => {
-                    if !chain.is_synced().await {
-                        return Some(MainThreadMessage::Disconnect);
+                    crate::debug!("Empty headers message received");
+                    if self.state == NodeState::Behind {
+                        crate::debug!("Advancing state");
+                        self.state = NodeState::HeadersSynced;
                     }
                     return self.next_stateful_message().await;
                 }

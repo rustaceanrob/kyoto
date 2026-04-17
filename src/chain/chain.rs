@@ -93,6 +93,7 @@ impl Chain {
         if header_batch.is_empty() {
             return Err(HeaderSyncError::EmptyMessage);
         }
+        crate::debug!(format!("{header_batch:?}"));
         // If our chain already has the last header in the message there is no new information
         if self.header_chain.contains(
             header_batch
@@ -100,7 +101,8 @@ impl Chain {
                 .expect("non-empty check above.")
                 .block_hash(),
         ) {
-            return Ok(Vec::new());
+            crate::debug!("Duplicate headers.");
+            return Err(HeaderSyncError::EmptyMessage);
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
