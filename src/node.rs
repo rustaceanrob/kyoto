@@ -28,8 +28,7 @@ use crate::{
         block_queue::{BlockQueue, ProcessBlockResponse},
         chain::Chain,
         checkpoints::HeaderCheckpoint,
-        error::HeaderSyncError,
-        CFHeaderChanges, ChainState, FilterCheck, HeightMonitor, IndexedHeader,
+        CFHeaderChanges, ChainState, FilterCheck, HeaderSyncEffect, HeightMonitor, IndexedHeader,
     },
     error::FetchBlockError,
     messages::ClientRequest,
@@ -460,27 +459,25 @@ impl Node {
     ) -> Option<MainThreadMessage> {
         let chain = &mut self.chain;
         match chain.sync_chain(headers) {
-            Ok(reorgs) => {
-                self.chain.send_chain_update().await;
-                if !reorgs.is_empty() {
-                    self.block_queue.remove(&reorgs);
-                }
-            }
-            Err(e) => match e {
-                HeaderSyncError::EmptyMessage => {
+            Ok(effect) => match effect {
+                HeaderSyncEffect::Added => self.chain.send_chain_update().await,
+                HeaderSyncEffect::Empty => {
                     if !chain.is_synced().await {
                         return Some(MainThreadMessage::Disconnect);
                     }
-                    return self.next_stateful_message().await;
                 }
-                _ => {
-                    self.dialog.send_warning(Warning::UnexpectedSyncError {
-                        warning: format!("Unexpected header syncing error: {e}"),
-                    });
-                    self.peer_map.ban(peer_id).await;
-                    return Some(MainThreadMessage::Disconnect);
+                HeaderSyncEffect::Reorg(reorgs) => {
+                    self.chain.send_chain_update().await;
+                    self.block_queue.remove(&reorgs);
                 }
             },
+            Err(e) => {
+                self.dialog.send_warning(Warning::UnexpectedSyncError {
+                    warning: format!("Unexpected header syncing error: {e}"),
+                });
+                self.peer_map.ban(peer_id).await;
+                return Some(MainThreadMessage::Disconnect);
+            }
         }
         self.next_stateful_message().await
     }
