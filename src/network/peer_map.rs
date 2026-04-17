@@ -22,7 +22,6 @@ use tokio::{
 
 use crate::{
     broadcaster::BroadcastQueue,
-    chain::HeightMonitor,
     default_port_from_network,
     network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
     BlockType, Dialog, TrustedPeer,
@@ -50,7 +49,6 @@ pub(crate) struct PeerMap {
     pub(crate) tx_queue: Arc<Mutex<BroadcastQueue>>,
     pub(crate) whitelist_only: bool,
     current_id: PeerId,
-    heights: Arc<Mutex<HeightMonitor>>,
     network: Network,
     block_type: BlockType,
     mtx: Sender<PeerThreadMessage>,
@@ -73,13 +71,11 @@ impl PeerMap {
         dialog: Arc<Dialog>,
         connection_type: ConnectionType,
         timeout_config: PeerTimeoutConfig,
-        height_monitor: Arc<Mutex<HeightMonitor>>,
     ) -> Self {
         Self {
             tx_queue: Arc::new(Mutex::new(BroadcastQueue::new())),
             whitelist_only,
             current_id: PeerId(0),
-            heights: height_monitor,
             network,
             block_type,
             mtx,
@@ -95,9 +91,6 @@ impl PeerMap {
     // Remove any finished connections
     pub async fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished());
-        let active = self.map.keys().copied().collect::<Vec<PeerId>>();
-        let mut height_lock = self.heights.lock().await;
-        height_lock.retain(&active);
     }
 
     // The number of peers with live connections
@@ -174,18 +167,6 @@ impl PeerMap {
         if let Some(peer) = self.map.get_mut(&nonce) {
             peer.record.update_service_flags(flags);
         }
-    }
-
-    // Set the height of a peer upon receiving the version message
-    pub async fn set_height(&mut self, nonce: PeerId, height: u32) {
-        let mut height_lock = self.heights.lock().await;
-        height_lock.insert(nonce, height);
-    }
-
-    // Add one to the height of a peer when receiving inventory
-    pub async fn increment_height(&mut self, nonce: PeerId) {
-        let mut height_lock = self.heights.lock().await;
-        height_lock.increment(nonce);
     }
 
     // The minimum fee rate to successfully broadcast a transaction to all peers

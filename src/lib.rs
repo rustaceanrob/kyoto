@@ -326,7 +326,7 @@ impl From<SocketAddr> for Socks5Proxy {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeState {
     // We are behind on block headers according to our peers.
     Behind,

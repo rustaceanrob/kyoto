@@ -448,7 +448,6 @@ pub(crate) enum PeerMessage {
     FilterHeaders(CFHeaders),
     Filter(CFilter),
     Block(Block),
-    NewBlocks(Vec<BlockHash>),
     FeeFilter(FeeRate),
 }
 
