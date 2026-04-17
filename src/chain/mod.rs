@@ -67,6 +67,13 @@ impl IndexedHeader {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum HeaderSyncEffect {
+    Added,
+    Empty,
+    Reorg(Vec<BlockHash>),
+}
+
 /// Changes applied to the chain of block headers.
 #[derive(Debug, Clone)]
 pub enum BlockHeaderChanges {

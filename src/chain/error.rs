@@ -4,7 +4,6 @@ use std::fmt::Debug;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum HeaderSyncError {
-    EmptyMessage,
     HeadersNotConnected,
     InvalidHeaderWork,
     InvalidHeaderTimes,
@@ -17,7 +16,6 @@ pub(crate) enum HeaderSyncError {
 impl Display for HeaderSyncError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            HeaderSyncError::EmptyMessage => write!(f, "empty headers message."),
             HeaderSyncError::HeadersNotConnected => {
                 write!(f, "the headers received do not connect.")
             }

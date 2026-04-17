@@ -12,7 +12,8 @@ use super::{
     error::{CFHeaderSyncError, CFilterSyncError, HeaderSyncError},
     graph::{AcceptHeaderChanges, BlockTree, HeaderRejection},
     CFHeaderBatch, CFHeaderChanges, ChainState, Filter, FilterCheck, FilterHeaderRequest,
-    FilterRequest, FilterRequestState, HeaderValidationExt, HeightMonitor, PeerId,
+    FilterRequest, FilterRequestState, HeaderSyncEffect, HeaderValidationExt, HeightMonitor,
+    PeerId,
 };
 use crate::{chain::BlockHeaderChanges, messages::Event, Dialog, Info, Progress};
 use crate::{FilterType, IndexedFilter};
@@ -89,9 +90,9 @@ impl Chain {
     pub(crate) fn sync_chain(
         &mut self,
         header_batch: Vec<Header>,
-    ) -> Result<Vec<BlockHash>, HeaderSyncError> {
+    ) -> Result<HeaderSyncEffect, HeaderSyncError> {
         if header_batch.is_empty() {
-            return Err(HeaderSyncError::EmptyMessage);
+            return Ok(HeaderSyncEffect::Empty);
         }
         // If our chain already has the last header in the message there is no new information
         if self.header_chain.contains(
@@ -100,7 +101,7 @@ impl Chain {
                 .expect("non-empty check above.")
                 .block_hash(),
         ) {
-            return Ok(Vec::new());
+            return Ok(HeaderSyncEffect::Empty);
         }
         // We check first if the peer is sending us nonsense
         self.sanity_check(&header_batch)?;
@@ -153,7 +154,10 @@ impl Chain {
                 },
             }
         }
-        Ok(reorgs)
+        if !reorgs.is_empty() {
+            return Ok(HeaderSyncEffect::Reorg(reorgs));
+        }
+        Ok(HeaderSyncEffect::Added)
     }
 
     // These are invariants in all batches of headers we receive
