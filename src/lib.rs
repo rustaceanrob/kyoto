@@ -60,6 +60,7 @@ pub mod messages;
 /// The structure that communicates with the Bitcoin P2P network and collects data.
 pub mod node;
 
+use bitcoin::OutPoint;
 use chain::Filter;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -428,6 +429,82 @@ impl Dialog {
 
     fn send_event(&self, message: Event) {
         let _ = self.event_tx.send(message);
+    }
+}
+
+/// A package is a set of dependent transactions to submit to the mempool.
+#[derive(Debug, Clone)]
+pub struct Package {
+    parent: Transaction,
+    child: Option<Transaction>,
+}
+
+impl Package {
+    /// Create a new package from a single transaction.
+    pub fn new_single(transaction: Transaction) -> Self {
+        Self {
+            parent: transaction,
+            child: None,
+        }
+    }
+
+    /// Construct a new package using the one-parent-one-child topology, where the child spends an
+    /// output from the parent. The primary use of such a topology is for a child to bump the
+    /// fee-rate of the package.
+    ///
+    /// # Errors
+    ///
+    /// If the child does not spend at least one output created by the parent.
+    pub fn new_one_parent_one_child(
+        parent: Transaction,
+        child: Transaction,
+    ) -> Result<Self, error::PackageError> {
+        let outpoints = {
+            let txid = parent.compute_txid();
+            let mut outpoints = Vec::with_capacity(parent.output.len());
+            for vout in 0..parent.output.len() {
+                outpoints.push(OutPoint {
+                    txid,
+                    vout: vout as u32,
+                });
+            }
+            outpoints
+        };
+        if !child
+            .input
+            .iter()
+            .any(|input| outpoints.contains(&input.previous_output))
+        {
+            return Err(error::PackageError::UnrelatedTransactions);
+        }
+        Ok(Self {
+            parent,
+            child: Some(child),
+        })
+    }
+
+    fn advertise_package(&self) -> Wtxid {
+        match &self.child {
+            Some(child) => child.compute_wtxid(),
+            None => self.parent.compute_wtxid(),
+        }
+    }
+
+    fn parent(&self) -> Transaction {
+        self.parent.clone()
+    }
+
+    fn child(&self) -> Option<Transaction> {
+        self.child.clone()
+    }
+}
+
+impl From<Transaction> for Package {
+    fn from(value: Transaction) -> Self {
+        Package {
+            parent: value,
+            child: None,
+        }
     }
 }
 
