@@ -685,6 +685,7 @@ async fn whitelist_only_sync() {
     assert_eq!(cp.hash, best);
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
+    // No peer available, white list only.
     let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest)
         .chain_state(ChainState::Checkpoint(HeaderCheckpoint::from_genesis(
             bitcoin::Network::Regtest,
@@ -694,6 +695,34 @@ async fn whitelist_only_sync() {
     let (node, _client) = builder.build();
     let result = node.run().await;
     assert!(result.is_err());
+    // Peer resolved from hostname.
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 2).await;
+    let best = best_hash(rpc);
+    let peer = TrustedPeer::from_hostname(socket_addr.ip().to_string(), socket_addr.port());
+    let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest)
+        .chain_state(ChainState::Checkpoint(HeaderCheckpoint::from_genesis(
+            bitcoin::Network::Regtest,
+        )))
+        .add_peer(peer)
+        .whitelist_only()
+        .data_dir(&tempdir);
+    let (node, client) = builder.build();
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        info_rx,
+        warn_rx,
+        event_rx: mut channel,
+    } = client;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    sync_assert(&best, &mut channel).await;
+    let cp = requester.chain_tip().await.unwrap();
+    assert_eq!(cp.hash, best);
+    requester.shutdown().unwrap();
+    rpc.stop().unwrap();
 }
 
 #[tokio::test]
