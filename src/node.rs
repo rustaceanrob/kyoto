@@ -9,7 +9,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, Network, Transaction, Wtxid,
+    Block, BlockHash, Network, Wtxid,
 };
 use tokio::{
     select,
@@ -33,7 +33,7 @@ use crate::{
         peer_map::PeerMap, LastBlockMonitor, MainThreadMessage, PeerId, PeerMessage,
         PeerThreadMessage,
     },
-    Config, IndexedBlock, NodeState,
+    Config, IndexedBlock, NodeState, Package,
 };
 
 use super::{
@@ -313,7 +313,7 @@ impl Node {
     }
 
     // Broadcast transactions according to the configured policy
-    async fn broadcast_transaction(&self, broadcast: ClientRequest<Transaction, Wtxid>) {
+    async fn broadcast_transaction(&self, broadcast: ClientRequest<Package, Wtxid>) {
         let mut queue = self.peer_map.tx_queue.lock().await;
         let (transaction, oneshot) = broadcast.into_values();
         queue.add_to_queue(transaction, oneshot);

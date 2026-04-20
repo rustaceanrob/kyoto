@@ -1,6 +1,6 @@
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{Amount, Transaction, Wtxid};
+use bitcoin::{Amount, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 use crate::chain::block_subsidy;
 use crate::chain::IndexedHeader;
 use crate::messages::ClientRequest;
-use crate::{Event, HeaderCheckpoint, Info, TrustedPeer, Warning};
+use crate::{Event, HeaderCheckpoint, Info, Package, TrustedPeer, Warning};
 
 use super::{error::ClientError, messages::ClientMessage};
 use super::{error::FetchBlockError, IndexedBlock};
@@ -65,23 +65,22 @@ impl Requester {
             .map_err(|_| ClientError::SendError)
     }
 
-    /// Broadcast a new transaction to the network, waiting for at least one peer to request it.
+    /// Submit a package of transactions to the network, returning when transaction data was sent
+    /// to at least one peer.
     ///
-    /// # Note
+    /// Note that this is directly callable with a single [`Transaction`].
     ///
-    /// When broadcasting a one-parent one-child (TRUC) package,
-    /// broadcast the child first, followed by the parent.
+    /// # Returns
     ///
-    /// Package relay is under-development at the time of writing.
-    ///
-    /// For more information, see BIP-431 and BIP-331.
+    /// The `Wtxid` of the child or singleton transaction.
     ///
     /// # Errors
     ///
     /// If the node has stopped running.
-    pub async fn broadcast_tx(&self, transaction: Transaction) -> Result<Wtxid, ClientError> {
+    pub async fn submit_package(&self, package: impl Into<Package>) -> Result<Wtxid, ClientError> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Wtxid>();
-        let client_request = ClientRequest::new(transaction, tx);
+        let package = package.into();
+        let client_request = ClientRequest::new(package, tx);
         self.ntx
             .send(ClientMessage::Broadcast(client_request))
             .map_err(|_| ClientError::SendError)?;

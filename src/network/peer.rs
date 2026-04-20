@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use addrman::Record;
 use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
 use bitcoin::{
-    p2p::{message::NetworkMessage, ServiceFlags},
+    p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags},
     Network,
 };
 use tokio::{
@@ -259,15 +259,40 @@ impl Peer {
                     .await?;
                 Ok(())
             }
-            ReaderMessage::TxRequests(requests) => {
+            ReaderMessage::GetData(requests) => {
                 let mut tx_queue = self.tx_queue.lock().await;
-                for wtxid in requests {
-                    let transaction = tx_queue.fetch_tx(wtxid);
-                    if let Some(transaction) = transaction {
-                        let msg = message_generator.broadcast_transaction(transaction);
-                        self.write_bytes(writer, msg).await?;
-                        self.message_state.sent_tx(wtxid);
-                        tx_queue.successful(wtxid);
+                for inv in requests {
+                    match inv {
+                        Inventory::WTx(wtxid) => {
+                            let transaction = tx_queue.fetch_tx(wtxid);
+                            if let Some(transaction) = transaction {
+                                let msg = message_generator.broadcast_transaction(transaction);
+                                self.write_bytes(writer, msg).await?;
+                                self.message_state.sent_tx(wtxid);
+                                tx_queue.sent_transaction_payload(wtxid);
+                            }
+                        }
+                        Inventory::Transaction(txid) => {
+                            let transaction = tx_queue.fetch_tx(txid);
+                            if let Some(transaction) = transaction {
+                                let wtxid = transaction.compute_wtxid();
+                                let msg = message_generator.broadcast_transaction(transaction);
+                                self.write_bytes(writer, msg).await?;
+                                self.message_state.sent_tx(wtxid);
+                                tx_queue.sent_transaction_payload(wtxid);
+                            }
+                        }
+                        Inventory::WitnessTransaction(txid) => {
+                            let transaction = tx_queue.fetch_tx(txid);
+                            if let Some(transaction) = transaction {
+                                let wtxid = transaction.compute_wtxid();
+                                let msg = message_generator.broadcast_transaction(transaction);
+                                self.write_bytes(writer, msg).await?;
+                                self.message_state.sent_tx(wtxid);
+                                tx_queue.sent_transaction_payload(wtxid);
+                            }
+                        }
+                        _ => (),
                     }
                 }
                 Ok(())
