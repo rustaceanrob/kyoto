@@ -264,6 +264,14 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::HeightOfHash(request) => {
+                                let (hash, oneshot) = request.into_values();
+                                let height =
+                                    self.chain.header_chain.height_of_hash_canonical_only(hash);
+                                if oneshot.send(height).is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }
