@@ -3,13 +3,11 @@ use std::ops::Div;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{
-    block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Transaction, Wtxid,
-};
+use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
 
 use crate::chain::{BlockHeaderChanges, IndexedHeader};
-use crate::IndexedFilter;
 use crate::{chain::checkpoints::HeaderCheckpoint, IndexedBlock, TrustedPeer};
+use crate::{IndexedFilter, Package};
 
 use super::error::FetchBlockError;
 
@@ -140,7 +138,7 @@ pub(crate) enum ClientMessage {
     /// Stop the node.
     Shutdown,
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
-    Broadcast(ClientRequest<Transaction, Wtxid>),
+    Broadcast(ClientRequest<Package, Wtxid>),
     /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan,
     /// Explicitly request a block from the node.

@@ -61,16 +61,7 @@ impl<R: AsyncBufReadExt + Send + Sync + Unpin> Reader<R> {
                 }
                 None
             }
-            NetworkMessage::GetData(inventory) => {
-                let mut requests = Vec::new();
-                for inv in inventory {
-                    match inv {
-                        Inventory::WTx(wtxid) => requests.push(wtxid),
-                        _ => continue,
-                    }
-                }
-                Some(ReaderMessage::TxRequests(requests))
-            }
+            NetworkMessage::GetData(inventory) => Some(ReaderMessage::GetData(inventory)),
             NetworkMessage::NotFound(_) => None,
             NetworkMessage::GetBlocks(_) => None,
             NetworkMessage::GetHeaders(_) => None,
@@ -162,7 +153,7 @@ pub(in crate::network) enum ReaderMessage {
     #[allow(dead_code)]
     Pong(u64),
     FeeFilter(FeeRate),
-    TxRequests(Vec<Wtxid>),
+    GetData(Vec<Inventory>),
 }
 
 impl ReaderMessage {

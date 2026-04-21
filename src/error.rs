@@ -75,3 +75,30 @@ impl core::fmt::Display for FetchBlockError {
 }
 
 impl_sourceless_error!(FetchBlockError);
+
+/// Errors when constructing transaction packages.
+#[derive(Debug)]
+pub enum PackageError {
+    /// Packages may not include more than two transactions and must include at least one
+    /// transaction.
+    InvalidPackageLength(usize),
+    /// Child transactions must spend an output from the parent.
+    UnrelatedTransactions,
+}
+
+impl core::fmt::Display for PackageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PackageError::InvalidPackageLength(s) => {
+                write!(
+                    f,
+                    "package must include at most two transactions, got {}",
+                    s
+                )
+            }
+            PackageError::UnrelatedTransactions => {
+                write!(f, "packages must have dependent inputs and outputs.")
+            }
+        }
+    }
+}
