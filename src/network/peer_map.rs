@@ -24,7 +24,7 @@ use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
     network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
-    BlockType, Dialog, TrustedPeer,
+    BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
 
 use super::{AddressBook, ConnectionType, MainThreadMessage, PeerThreadMessage};
@@ -217,13 +217,53 @@ impl PeerMap {
     // as long as it is not from the same netgroup. If there are no peers in the database, try DNS.
     // When `whitelist_only` is set, only whitelist peers are used.
     pub async fn next_peer(&mut self) -> Option<Record> {
-        if let Some(peer) = self.whitelist.pop() {
-            crate::debug!("Using a configured peer");
+        while let Some(peer) = self.whitelist.pop() {
             let port = peer
                 .port
                 .unwrap_or(default_port_from_network(&self.network));
-            let record = Record::new(peer.address(), port, peer.known_services, &LOCAL_HOST);
-            return Some(record);
+            let addr = match peer.address {
+                TrustedPeerInner::Addr(addr) => addr,
+                TrustedPeerInner::Hostname(host) => {
+                    crate::debug!(format!("Resolving hostname {host}:{port}"));
+                    match tokio::net::lookup_host((host.as_str(), port)).await {
+                        Ok(iter) => {
+                            let resolved: Vec<AddrV2> = iter
+                                .map(|sa| match sa.ip() {
+                                    IpAddr::V4(ip) => AddrV2::Ipv4(ip),
+                                    IpAddr::V6(ip) => AddrV2::Ipv6(ip),
+                                })
+                                .collect();
+                            if resolved.is_empty() {
+                                crate::debug!(format!(
+                                    "Hostname {host} resolved to no addresses, skipping"
+                                ));
+                                continue;
+                            }
+                            crate::debug!(format!(
+                                "Resolved {host} to {} address(es)",
+                                resolved.len()
+                            ));
+                            // Push every resolved address onto the whitelist so each is tried on
+                            // a subsequent call. Reversed so the resolver's preferred order is
+                            // preserved under LIFO pop.
+                            for resolved_addr in resolved.into_iter().rev() {
+                                self.whitelist.push(TrustedPeer {
+                                    address: TrustedPeerInner::Addr(resolved_addr),
+                                    port: Some(port),
+                                    known_services: peer.known_services,
+                                });
+                            }
+                            continue;
+                        }
+                        Err(_) => {
+                            crate::debug!(format!("Failed to resolve hostname {host}"));
+                            continue;
+                        }
+                    }
+                }
+            };
+            crate::debug!("Using a configured peer");
+            return Some(Record::new(addr, port, peer.known_services, &LOCAL_HOST));
         }
         if self.whitelist_only {
             return None;

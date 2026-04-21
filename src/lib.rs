@@ -185,6 +185,18 @@ impl std::cmp::Ord for IndexedFilter {
     }
 }
 
+#[derive(Debug, Clone)]
+enum TrustedPeerInner {
+    Addr(AddrV2),
+    Hostname(String),
+}
+
+impl From<AddrV2> for TrustedPeerInner {
+    fn from(addr: AddrV2) -> Self {
+        Self::Addr(addr)
+    }
+}
+
 /// A peer on the Bitcoin P2P network
 ///
 /// # Building peers
@@ -205,22 +217,25 @@ impl std::cmp::Ord for IndexedFilter {
 /// // Or implicitly with `into`
 /// let local_host = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 /// let trusted: TrustedPeer = (local_host, None).into();
+///
+/// // Or from a hostname — resolution happens at connection time.
+/// let trusted = TrustedPeer::from_hostname("bitcoind.svc.local", 8333);
 /// ```
 #[derive(Debug, Clone)]
 pub struct TrustedPeer {
-    /// The IP address of the remote node to connect to.
-    pub address: AddrV2,
-    /// The port to establish a TCP connection. If none is provided, the typical Bitcoin Core port is used as the default.
-    pub port: Option<u16>,
-    /// The services this peer is known to offer before starting the node.
-    pub known_services: ServiceFlags,
+    // The address or hostname of the remote node to connect to.
+    address: TrustedPeerInner,
+    // The port to establish a TCP connection. If none is provided, the typical Bitcoin Core port is used as the default.
+    port: Option<u16>,
+    // The services this peer is known to offer before starting the node.
+    known_services: ServiceFlags,
 }
 
 impl TrustedPeer {
     /// Create a new trusted peer.
-    pub fn new(address: AddrV2, port: Option<u16>, services: ServiceFlags) -> Self {
+    pub fn new(address: impl Into<AddrV2>, port: Option<u16>, services: ServiceFlags) -> Self {
         Self {
-            address,
+            address: TrustedPeerInner::Addr(address.into()),
             port,
             known_services: services,
         }
@@ -233,7 +248,7 @@ impl TrustedPeer {
             IpAddr::V6(ip) => AddrV2::Ipv6(ip),
         };
         Self {
-            address,
+            address: TrustedPeerInner::Addr(address),
             port: None,
             known_services: ServiceFlags::NONE,
         }
@@ -247,15 +262,24 @@ impl TrustedPeer {
             SocketAddr::V6(ip) => AddrV2::Ipv6(*ip.ip()),
         };
         Self {
-            address,
+            address: TrustedPeerInner::Addr(address),
             port: Some(socket_addr.port()),
             known_services: ServiceFlags::NONE,
         }
     }
 
-    /// The IP address of the trusted peer.
-    pub fn address(&self) -> AddrV2 {
-        self.address.clone()
+    /// Create a new trusted peer from a DNS hostname.
+    ///
+    /// The hostname is stored as-is and resolved to an IP address at the
+    /// time a connection is attempted, via [`tokio::net::lookup_host`]. If
+    /// resolution fails or yields no addresses, the peer is skipped and
+    /// the next configured peer is tried.
+    pub fn from_hostname(hostname: impl Into<String>, port: u16) -> Self {
+        Self {
+            address: TrustedPeerInner::Hostname(hostname.into()),
+            port: Some(port),
+            known_services: ServiceFlags::NONE,
+        }
     }
 
     /// A recommended port to connect to, if there is one.
@@ -281,12 +305,6 @@ impl From<(IpAddr, Option<u16>)> for TrustedPeer {
             IpAddr::V6(ip) => AddrV2::Ipv6(ip),
         };
         TrustedPeer::new(address, value.1, ServiceFlags::NONE)
-    }
-}
-
-impl From<TrustedPeer> for (AddrV2, Option<u16>) {
-    fn from(value: TrustedPeer) -> Self {
-        (value.address(), value.port())
     }
 }
 
