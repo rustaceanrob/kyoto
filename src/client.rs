@@ -68,7 +68,7 @@ impl Requester {
     /// Submit a package of transactions to the network, returning when transaction data was sent
     /// to at least one peer.
     ///
-    /// Note that this is directly callable with a single [`Transaction`].
+    /// Note that this is directly callable with a single [`Transaction`](crate::Transaction).
     ///
     /// # Returns
     ///
