@@ -192,7 +192,18 @@ impl Requester {
     /// If the node has stopped running.
     pub fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
-            .send(ClientMessage::Rescan)
+            .send(ClientMessage::Rescan(None))
+            .map_err(|_| ClientError::SendError)
+    }
+
+    /// Re-emit block filters _after_ the specified height.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub fn rescan_from(&self, height: u32) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::Rescan(Some(height)))
             .map_err(|_| ClientError::SendError)
     }
 

@@ -140,7 +140,7 @@ pub(crate) enum ClientMessage {
     /// Broadcast a [`crate::Transaction`] with a [`crate::TxBroadcastPolicy`].
     Broadcast(ClientRequest<Package, Wtxid>),
     /// Starting at the configured anchor checkpoint, re-emit all filters.
-    Rescan,
+    Rescan(Option<u32>),
     /// Explicitly request a block from the node.
     GetBlock(ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>),
     /// Get the chain tip.
