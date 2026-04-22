@@ -5,6 +5,29 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+## Added
+
+- `Socks5Proxy::new`
+- `get_header` added to client
+- `height_of_hash` added to client
+- `whitelist_only` to restrict peer discovery to trusted peers
+- `Package` type to broadcast 1P1C and single transaction packages
+- `rescan_from` metnod to rescan after a specified height
+- `TrustedPeer` can resolve a DNS seed
+
+## Changed
+
+- Redundant `Event::Block` removed
+- `broadcast_tx` is now `submit_package`
+
+## Fixed
+
+- New/tried peer fallbacks fixed
+- Peers are not banned for late CF header responses
+- BIP-130 `sendheaders` are used instead of `inv`
+
 ## 0.4.2
 
 ## Fixed
