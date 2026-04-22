@@ -477,6 +477,37 @@ impl Package {
         parent: Transaction,
         child: Transaction,
     ) -> Result<Self, error::PackageError> {
+        Self::child_depends_on_parent(&parent, &child)?;
+        Ok(Self {
+            parent,
+            child: Some(child),
+        })
+    }
+
+    /// Construct a new package from a list of transactions. Currently, the only valid package
+    /// lengths are 1 and 2. In the case of two transactions, the child is expected to be _last_ in
+    /// the list.
+    ///
+    /// # Errors
+    ///
+    /// - If the length of the vector is not one or two
+    /// - The transactions do not depend on each other.
+    pub fn from_vec(mut transactions: Vec<Transaction>) -> Result<Self, error::PackageError> {
+        match transactions.len() {
+            1 => Ok(Package::new_single(transactions.remove(0))),
+            2 => {
+                let parent = transactions.remove(0);
+                let child = transactions.remove(0);
+                Ok(Package::new_one_parent_one_child(parent, child)?)
+            }
+            invalid => Err(error::PackageError::InvalidPackageLength(invalid)),
+        }
+    }
+
+    fn child_depends_on_parent(
+        parent: &Transaction,
+        child: &Transaction,
+    ) -> Result<(), error::PackageError> {
         let outpoints = {
             let txid = parent.compute_txid();
             let mut outpoints = Vec::with_capacity(parent.output.len());
@@ -495,10 +526,7 @@ impl Package {
         {
             return Err(error::PackageError::UnrelatedTransactions);
         }
-        Ok(Self {
-            parent,
-            child: Some(child),
-        })
+        Ok(())
     }
 
     fn advertise_package(&self) -> Wtxid {
