@@ -192,7 +192,7 @@ impl Requester {
     /// If the node has stopped running.
     pub fn rescan(&self) -> Result<(), ClientError> {
         self.ntx
-            .send(ClientMessage::Rescan)
+            .send(ClientMessage::Rescan(None))
             .map_err(|_| ClientError::SendError)
     }
 

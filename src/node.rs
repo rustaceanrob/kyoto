@@ -203,8 +203,8 @@ impl Node {
                             ClientMessage::Broadcast(transaction) => {
                                 self.broadcast_transaction(transaction).await;
                             },
-                            ClientMessage::Rescan => {
-                                if let Some(response) = self.rescan() {
+                            ClientMessage::Rescan(height_opt) => {
+                                if let Some(response) = self.rescan(height_opt) {
                                     self.peer_map.broadcast(response).await;
                                 }
                             },
@@ -600,7 +600,7 @@ impl Node {
     }
 
     // Clear the filter hash cache and redownload the filters.
-    fn rescan(&mut self) -> Option<MainThreadMessage> {
+    fn rescan(&mut self, _height_opt: Option<u32>) -> Option<MainThreadMessage> {
         match self.state {
             NodeState::Behind => None,
             NodeState::HeadersSynced => None,
