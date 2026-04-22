@@ -600,12 +600,15 @@ impl Node {
     }
 
     // Clear the filter hash cache and redownload the filters.
-    fn rescan(&mut self, _height_opt: Option<u32>) -> Option<MainThreadMessage> {
+    fn rescan(&mut self, height_opt: Option<u32>) -> Option<MainThreadMessage> {
         match self.state {
             NodeState::Behind => None,
             NodeState::HeadersSynced => None,
             _ => {
                 self.chain.clear_filters();
+                if let Some(height) = height_opt {
+                    self.chain.header_chain.assume_checked_to(height);
+                }
                 self.state = NodeState::FilterHeadersSynced;
                 Some(MainThreadMessage::GetFilters(
                     self.chain.next_filter_message(),
