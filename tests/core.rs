@@ -26,6 +26,10 @@ use corepc_node::{anyhow, exe_path};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+fn setup_debug_output() {
+    std::env::set_var("KYOTO_DEBUG_OUTPUT", "1");
+}
+
 // Start the bitcoin daemon either through an environment variable or by download
 fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node, SocketAddrV4)> {
     let path = exe_path()?;
@@ -120,6 +124,7 @@ async fn print_logs(mut info_rx: Receiver<Info>, mut warn_rx: UnboundedReceiver<
 
 #[tokio::test]
 async fn live_reorg() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -172,6 +177,7 @@ async fn live_reorg() {
 
 #[tokio::test]
 async fn live_reorg_additional_sync() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -226,6 +232,7 @@ async fn live_reorg_additional_sync() {
 
 #[tokio::test]
 async fn various_client_methods() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -281,6 +288,7 @@ async fn various_client_methods() {
 
 #[tokio::test]
 async fn stop_reorg_resync() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -369,6 +377,7 @@ async fn stop_reorg_resync() {
 
 #[tokio::test]
 async fn stop_reorg_two_resync() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -459,6 +468,7 @@ async fn stop_reorg_two_resync() {
 
 #[tokio::test]
 async fn stop_reorg_start_on_orphan() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir: PathBuf = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -564,6 +574,7 @@ async fn stop_reorg_start_on_orphan() {
 
 #[tokio::test]
 async fn tx_can_broadcast() {
+    setup_debug_output();
     let amount_to_us = Amount::from_sat(100_000);
     let amount_to_op_return = Amount::from_sat(50_000);
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
@@ -657,6 +668,7 @@ async fn tx_can_broadcast() {
 
 #[tokio::test]
 async fn whitelist_only_sync() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
@@ -727,6 +739,7 @@ async fn whitelist_only_sync() {
 
 #[tokio::test]
 async fn inv_fallback_after_burst_mine() {
+    setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
     let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
