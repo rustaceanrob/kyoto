@@ -584,7 +584,9 @@ pub(crate) use impl_sourceless_error;
 macro_rules! debug {
     ($expr:expr) => {
         #[cfg(debug_assertions)]
-        println!("{}", $expr)
+        if std::env::var("KYOTO_DEBUG_OUTPUT").is_ok() {
+            println!("{}", $expr)
+        }
     };
 }
 
