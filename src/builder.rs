@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use bitcoin::Network;
 
@@ -65,13 +65,6 @@ impl Builder {
     /// Add a preferred peer to try to connect to.
     pub fn add_peer(mut self, trusted_peer: impl Into<TrustedPeer>) -> Self {
         self.config.white_list.push(trusted_peer.into());
-        self
-    }
-
-    /// Add a path to the directory where data should be stored. If none is provided, the current
-    /// working directory will be used.
-    pub fn data_dir(mut self, path: impl Into<PathBuf>) -> Self {
-        self.config.data_path = Some(path.into());
         self
     }
 

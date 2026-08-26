@@ -67,7 +67,6 @@ impl Node {
             required_peers,
             white_list,
             whitelist_only,
-            data_path: _,
             chain_state,
             connection_type,
             peer_timeout_config,
