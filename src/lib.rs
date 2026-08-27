@@ -64,7 +64,6 @@ use bitcoin::OutPoint;
 use chain::Filter;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
 
 // Re-exports
 #[doc(inline)]
@@ -377,7 +376,6 @@ struct Config {
     required_peers: u8,
     white_list: Vec<TrustedPeer>,
     whitelist_only: bool,
-    data_path: Option<PathBuf>,
     chain_state: Option<ChainState>,
     connection_type: ConnectionType,
     peer_timeout_config: PeerTimeoutConfig,
@@ -391,7 +389,6 @@ impl Default for Config {
             required_peers: 1,
             white_list: Default::default(),
             whitelist_only: Default::default(),
-            data_path: Default::default(),
             chain_state: Default::default(),
             connection_type: Default::default(),
             peer_timeout_config: PeerTimeoutConfig::default(),

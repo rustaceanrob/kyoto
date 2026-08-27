@@ -55,7 +55,7 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
 
 fn new_node(
     socket_addr: SocketAddrV4,
-    tempdir_path: PathBuf,
+    _tempdir_path: PathBuf,
     chain_state: ChainState,
 ) -> (Node, Client) {
     let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
@@ -63,7 +63,7 @@ fn new_node(
     trusted.set_services(ServiceFlags::P2P_V2);
     let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest);
     let builder = builder.chain_state(chain_state);
-    let (node, client) = builder.add_peer(host).data_dir(tempdir_path).build();
+    let (node, client) = builder.add_peer(host).build();
     (node, client)
 }
 
@@ -671,7 +671,6 @@ async fn whitelist_only_sync() {
     setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
     let rpc = &bitcoind.client;
-    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
     let miner = rpc.new_address().unwrap();
     mine_blocks(rpc, &miner, 10, 2).await;
     let best = best_hash(rpc);
@@ -681,8 +680,7 @@ async fn whitelist_only_sync() {
             bitcoin::Network::Regtest,
         )))
         .add_peer(host)
-        .whitelist_only()
-        .data_dir(&tempdir);
+        .whitelist_only();
     let (node, client) = builder.build();
     tokio::task::spawn(async move { node.run().await });
     let Client {
@@ -702,8 +700,7 @@ async fn whitelist_only_sync() {
         .chain_state(ChainState::Checkpoint(HashCheckpoint::from_genesis(
             bitcoin::Network::Regtest,
         )))
-        .whitelist_only()
-        .data_dir(&tempdir);
+        .whitelist_only();
     let (node, _client) = builder.build();
     let result = node.run().await;
     assert!(result.is_err());
@@ -719,8 +716,7 @@ async fn whitelist_only_sync() {
             bitcoin::Network::Regtest,
         )))
         .add_peer(peer)
-        .whitelist_only()
-        .data_dir(&tempdir);
+        .whitelist_only();
     let (node, client) = builder.build();
     tokio::task::spawn(async move { node.run().await });
     let Client {
