@@ -144,6 +144,14 @@ impl Builder {
         self
     }
 
+    /// Set the maximum number of gossiped transaction `Wtxid`s the node will remember for
+    /// deduplication when a mempool monitor is active. When the cache reaches this cap it is
+    /// cleared wholesale, allowing recently-seen transactions to be requested again.
+    pub fn max_monitored_wtxids(mut self, max: usize) -> Self {
+        self.config.max_monitored_wtxids = max;
+        self
+    }
+
     /// Consume the node builder and receive a [`Node`] and [`Client`].
     pub fn build(mut self) -> (Node, Client) {
         Node::new(self.network, core::mem::take(&mut self.config))

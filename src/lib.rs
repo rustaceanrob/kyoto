@@ -381,7 +381,12 @@ struct Config {
     peer_timeout_config: PeerTimeoutConfig,
     filter_type: FilterType,
     block_type: BlockType,
+    max_monitored_wtxids: usize,
 }
+
+// Wallets that watch mempool tx propagation only need a shallow window: enough to
+// dedup announcements from the current inv burst without holding a full mempool.
+const DEFAULT_MAX_MONITORED_WTXIDS: usize = 10_000;
 
 impl Default for Config {
     fn default() -> Self {
@@ -394,6 +399,7 @@ impl Default for Config {
             peer_timeout_config: PeerTimeoutConfig::default(),
             filter_type: FilterType::default(),
             block_type: BlockType::default(),
+            max_monitored_wtxids: DEFAULT_MAX_MONITORED_WTXIDS,
         }
     }
 }

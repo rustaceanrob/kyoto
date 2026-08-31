@@ -27,7 +27,7 @@ use crate::{
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
 
-use super::{AddressBook, ConnectionType, MainThreadMessage, PeerThreadMessage};
+use super::{AddressBook, ConnectionType, MainThreadMessage, MonitorGate, PeerThreadMessage};
 
 const LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
@@ -41,6 +41,10 @@ pub(crate) struct ManagedPeer {
     broadcast_min: FeeRate,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
+    // True once the peer has completed the version handshake. Used to decide whether it is
+    // safe to broadcast a `Disconnect` — dropping a mid-handshake peer loses the address
+    // book entry `tried()` would have recorded.
+    handshaked: bool,
 }
 
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
@@ -58,6 +62,7 @@ pub(crate) struct PeerMap {
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
+    monitor_gate: MonitorGate,
 }
 
 impl PeerMap {
@@ -85,7 +90,13 @@ impl PeerMap {
             whitelist,
             dialog,
             timeout_config,
+            monitor_gate: MonitorGate::new(),
         }
+    }
+
+    // Shared handle for enabling/disabling mempool tx monitoring at the wire boundary.
+    pub fn monitor_gate(&self) -> MonitorGate {
+        self.monitor_gate.clone()
     }
 
     // Remove any finished connections
@@ -128,6 +139,7 @@ impl PeerMap {
             Arc::clone(&self.db),
             self.timeout_config,
             Arc::clone(&self.tx_queue),
+            self.monitor_gate.clone(),
         );
         let connection = self
             .connector
@@ -150,6 +162,7 @@ impl PeerMap {
                 broadcast_min: FeeRate::BROADCAST_MIN,
                 ptx,
                 handle,
+                handshaked: false,
             },
         );
         Ok(())
@@ -296,9 +309,18 @@ impl PeerMap {
 
     // We tried this peer and successfully connected.
     pub async fn tried(&mut self, nonce: PeerId) {
-        if let Some(peer) = self.map.get(&nonce) {
+        if let Some(peer) = self.map.get_mut(&nonce) {
+            peer.handshaked = true;
             let mut db = self.db.lock().await;
             db.tried(&peer.record);
+        }
+    }
+
+    // Send `Disconnect` to every peer that has completed its version handshake. Peers still
+    // mid-handshake are left alone so they can finish and get recorded in the address book.
+    pub async fn disconnect_handshaked(&self) {
+        for peer in self.map.values().filter(|p| p.handshaked) {
+            let _ = peer.ptx.send(MainThreadMessage::Disconnect).await;
         }
     }
 

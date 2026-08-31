@@ -3,6 +3,10 @@ use std::{
     fs::{self, File},
     net::IpAddr,
     path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -21,7 +25,7 @@ use bitcoin::{
         message_network::VersionMessage,
         Magic,
     },
-    Block, BlockHash, FeeRate, Wtxid,
+    Block, BlockHash, FeeRate, Transaction, Wtxid,
 };
 use socks::{create_socks5, SocksConnection};
 use tokio::{net::TcpStream, time::Instant};
@@ -87,6 +91,30 @@ impl From<u32> for PeerId {
 impl std::fmt::Display for PeerId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Peer {}", self.0)
+    }
+}
+
+// Shared flag deciding whether peer readers surface mempool tx announcements.
+// Enabled by the node the first time a client installs a monitor; readers drop
+// tx inv/Tx messages at the wire boundary while this is off.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct MonitorGate(Arc<AtomicBool>);
+
+impl MonitorGate {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub(crate) fn enable(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn disable(&self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
     }
 }
 
@@ -409,6 +437,7 @@ pub(crate) enum MainThreadMessage {
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
     GetBlock(BlockHash),
+    GetTx(Vec<Wtxid>),
     Disconnect,
     BroadcastPending,
     Verack,
@@ -450,6 +479,8 @@ pub(crate) enum PeerMessage {
     Block(Block),
     NewBlocks(Vec<BlockHash>),
     FeeFilter(FeeRate),
+    TxInv(Vec<Wtxid>),
+    Tx(Transaction),
 }
 
 #[derive(Debug)]

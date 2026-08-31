@@ -25,8 +25,8 @@ use super::{
     inbound::MessageParser,
     outbound::{MessageGenerator, Transport},
     reader::{Reader, ReaderMessage},
-    AddressBook, MainThreadMessage, MessageState, PeerId, PeerMessage, PeerThreadMessage,
-    PeerTimeoutConfig, TimeSensitiveId,
+    AddressBook, MainThreadMessage, MessageState, MonitorGate, PeerId, PeerMessage,
+    PeerThreadMessage, PeerTimeoutConfig, TimeSensitiveId,
 };
 
 const LOOP_TIMEOUT: Duration = Duration::from_millis(500);
@@ -44,6 +44,7 @@ pub(crate) struct Peer {
     timeout_config: PeerTimeoutConfig,
     message_state: MessageState,
     tx_queue: Arc<Mutex<BroadcastQueue>>,
+    monitor_gate: MonitorGate,
 }
 
 impl Peer {
@@ -59,6 +60,7 @@ impl Peer {
         db: Arc<Mutex<AddressBook>>,
         timeout_config: PeerTimeoutConfig,
         tx_queue: Arc<Mutex<BroadcastQueue>>,
+        monitor_gate: MonitorGate,
     ) -> Self {
         Self {
             nonce,
@@ -72,6 +74,7 @@ impl Peer {
             timeout_config,
             message_state: MessageState::new(timeout_config.response_timeout),
             tx_queue,
+            monitor_gate,
         }
     }
 
@@ -102,7 +105,11 @@ impl Peer {
                     transport: Transport::V2 { encryptor },
                     block_type: self.block_type,
                 };
-                let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
+                let reader = Reader::new(
+                    MessageParser::V2(reader, decryptor),
+                    tx,
+                    self.monitor_gate.clone(),
+                );
                 (outbound_messages, reader)
             } else {
                 let outbound_messages = MessageGenerator {
@@ -110,11 +117,16 @@ impl Peer {
                     transport: Transport::V1,
                     block_type: self.block_type,
                 };
-                let reader = Reader::new(MessageParser::V1(reader, self.network), tx);
+                let reader = Reader::new(
+                    MessageParser::V1(reader, self.network),
+                    tx,
+                    self.monitor_gate.clone(),
+                );
                 (outbound_messages, reader)
             };
 
-        let message = outbound_messages.version_message(None);
+        let message =
+            outbound_messages.version_message(None, self.monitor_gate.is_enabled());
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
@@ -268,6 +280,24 @@ impl Peer {
                     .await?;
                 Ok(())
             }
+            ReaderMessage::TxInv(wtxids) => {
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::TxInv(wtxids),
+                    })
+                    .await?;
+                Ok(())
+            }
+            ReaderMessage::Tx(transaction) => {
+                self.main_thread_sender
+                    .send(PeerThreadMessage {
+                        nonce: self.nonce,
+                        message: PeerMessage::Tx(transaction),
+                    })
+                    .await?;
+                Ok(())
+            }
             ReaderMessage::GetData(requests) => {
                 let mut tx_queue = self.tx_queue.lock().await;
                 for inv in requests {
@@ -402,6 +432,13 @@ impl Peer {
             }
             MainThreadMessage::GetBlock(message) => {
                 let message = message_generator.block(message);
+                self.write_bytes(writer, message).await?;
+            }
+            MainThreadMessage::GetTx(wtxids) => {
+                if wtxids.is_empty() {
+                    return Ok(());
+                }
+                let message = message_generator.fetch_transactions(wtxids);
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::BroadcastPending => {

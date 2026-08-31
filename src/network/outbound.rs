@@ -45,8 +45,8 @@ impl MessageGenerator {
         }
     }
 
-    pub(in crate::network) fn version_message(&mut self, port: Option<u16>) -> Vec<u8> {
-        let msg = NetworkMessage::Version(make_version(port, &self.network));
+    pub(in crate::network) fn version_message(&mut self, port: Option<u16>, relay: bool) -> Vec<u8> {
+        let msg = NetworkMessage::Version(make_version(port, &self.network, relay));
         self.serialize(msg)
     }
 
@@ -61,6 +61,11 @@ impl MessageGenerator {
 
     pub(in crate::network) fn announce_transactions(&mut self, wtxids: Vec<Wtxid>) -> Vec<u8> {
         let msg = NetworkMessage::Inv(wtxids.into_iter().map(Inventory::WTx).collect());
+        self.serialize(msg)
+    }
+
+    pub(in crate::network) fn fetch_transactions(&mut self, wtxids: Vec<Wtxid>) -> Vec<u8> {
+        let msg = NetworkMessage::GetData(wtxids.into_iter().map(Inventory::WTx).collect());
         self.serialize(msg)
     }
 
@@ -83,7 +88,11 @@ fn encrypt_plaintext(encryptor: &mut PacketWriter, plaintext: Vec<u8>) -> Vec<u8
         .expect("encryption to in memory buffer cannot fail.")
 }
 
-pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
+pub(in crate::network) fn make_version(
+    port: Option<u16>,
+    network: &Network,
+    relay: bool,
+) -> VersionMessage {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("time went backwards")
@@ -103,6 +112,6 @@ pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> 
         nonce: 1,
         user_agent: format!("/Rust BIP-157:{KYOTO_VERSION}/rust-bitcoin:{RUST_BITCOIN_VERSION}/"),
         start_height: 0,
-        relay: false,
+        relay,
     }
 }

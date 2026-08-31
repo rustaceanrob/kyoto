@@ -1,4 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::Duration,
+};
 
 use bitcoin::{
     block::Header,
@@ -9,11 +13,11 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash, Network, Wtxid,
+    Block, BlockHash, Network, OutPoint, ScriptBuf, Transaction, Wtxid,
 };
 use tokio::{
     select,
-    sync::mpsc::{self},
+    sync::mpsc::{self, UnboundedSender},
 };
 use tokio::{
     sync::mpsc::{Receiver, UnboundedReceiver},
@@ -59,6 +63,75 @@ pub struct Node {
     block_queue: BlockQueue,
     client_recv: UnboundedReceiver<ClientMessage>,
     peer_recv: Receiver<PeerThreadMessage>,
+    monitor: Option<MonitorState>,
+    max_monitored_wtxids: usize,
+}
+
+// Watch set + dedup cache backing an active `Requester::monitor` subscription.
+#[derive(Debug)]
+struct MonitorState {
+    scripts: HashSet<ScriptBuf>,
+    outpoints: HashSet<OutPoint>,
+    seen_wtxids: HashSet<Wtxid>,
+    cap: usize,
+    tx: UnboundedSender<Transaction>,
+}
+
+impl MonitorState {
+    fn new(
+        scripts: HashSet<ScriptBuf>,
+        outpoints: HashSet<OutPoint>,
+        cap: usize,
+        tx: UnboundedSender<Transaction>,
+    ) -> Self {
+        Self {
+            scripts,
+            outpoints,
+            seen_wtxids: HashSet::new(),
+            cap,
+            tx,
+        }
+    }
+
+    fn extend(
+        &mut self,
+        scripts: HashSet<ScriptBuf>,
+        outpoints: HashSet<OutPoint>,
+        tx: UnboundedSender<Transaction>,
+    ) {
+        self.scripts.extend(scripts);
+        self.outpoints.extend(outpoints);
+        self.tx = tx;
+    }
+
+    // Record announced wtxids and return the ones we hadn't seen before. When the cache
+    // overflows the cap we clear it wholesale (per spec) and preserve this batch's new
+    // wtxids so we don't turn around and re-request them.
+    fn record_advertised(&mut self, wtxids: &[Wtxid]) -> Vec<Wtxid> {
+        let mut fresh = Vec::new();
+        for w in wtxids {
+            if self.seen_wtxids.insert(*w) {
+                fresh.push(*w);
+            }
+        }
+        if self.seen_wtxids.len() > self.cap {
+            self.seen_wtxids.clear();
+            for w in &fresh {
+                self.seen_wtxids.insert(*w);
+            }
+        }
+        fresh
+    }
+
+    fn matches(&self, tx: &Transaction) -> bool {
+        tx.output
+            .iter()
+            .any(|out| self.scripts.contains(&out.script_pubkey))
+            || tx
+                .input
+                .iter()
+                .any(|inp| self.outpoints.contains(&inp.previous_output))
+    }
 }
 
 impl Node {
@@ -72,6 +145,7 @@ impl Node {
             peer_timeout_config,
             filter_type,
             block_type,
+            max_monitored_wtxids,
         } = config;
         // Set up a communication channel between the node and client
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
@@ -116,6 +190,8 @@ impl Node {
                 block_queue: BlockQueue::new(),
                 client_recv: crx,
                 peer_recv: mrx,
+                monitor: None,
+                max_monitored_wtxids,
             },
             client,
         )
@@ -199,6 +275,16 @@ impl Node {
                                 PeerMessage::FeeFilter(feerate) => {
                                     self.peer_map.set_broadcast_min(peer_thread.nonce, feerate);
                                 }
+                                PeerMessage::TxInv(wtxids) => {
+                                    if let Some(fetch) = self.handle_tx_inv(&wtxids) {
+                                        self.peer_map
+                                            .send_message(peer_thread.nonce, fetch)
+                                            .await;
+                                    }
+                                }
+                                PeerMessage::Tx(transaction) => {
+                                    self.handle_gossiped_tx(transaction);
+                                }
                             }
                         },
                         _ => continue,
@@ -280,6 +366,9 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::Monitor { scripts, outpoints, tx } => {
+                                self.install_or_extend_monitor(scripts, outpoints, tx).await;
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }
@@ -330,6 +419,58 @@ impl Node {
         self.peer_map
             .send_random(MainThreadMessage::BroadcastPending)
             .await;
+    }
+
+    async fn install_or_extend_monitor(
+        &mut self,
+        scripts: HashSet<ScriptBuf>,
+        outpoints: HashSet<OutPoint>,
+        tx: UnboundedSender<Transaction>,
+    ) {
+        match &mut self.monitor {
+            Some(state) => state.extend(scripts, outpoints, tx),
+            None => {
+                self.monitor = Some(MonitorState::new(
+                    scripts,
+                    outpoints,
+                    self.max_monitored_wtxids,
+                    tx,
+                ));
+                self.peer_map.monitor_gate().enable();
+                // Peers that already completed the handshake advertised `relay=false` and
+                // will not send us tx gossip. Drop them so the dispatch loop reconnects
+                // with `relay=true`. Mid-handshake peers still read the gate before sending
+                // their version, so they pick up the new value without a restart.
+                self.peer_map.disconnect_handshaked().await;
+            }
+        }
+    }
+
+    // Returns a `GetTx` request for wtxids we hadn't already seen. Returns `None` when
+    // monitoring is off or every advertised wtxid was already in the dedup cache.
+    fn handle_tx_inv(&mut self, wtxids: &[Wtxid]) -> Option<MainThreadMessage> {
+        let monitor = self.monitor.as_mut()?;
+        let fresh = monitor.record_advertised(wtxids);
+        if fresh.is_empty() {
+            None
+        } else {
+            Some(MainThreadMessage::GetTx(fresh))
+        }
+    }
+
+    fn handle_gossiped_tx(&mut self, transaction: Transaction) {
+        let Some(monitor) = self.monitor.as_mut() else {
+            return;
+        };
+        if !monitor.matches(&transaction) {
+            return;
+        }
+        if monitor.tx.send(transaction).is_err() {
+            // Receiver was dropped: tear down monitoring so peers stop surfacing tx gossip.
+            self.dialog.send_warning(Warning::ChannelDropped);
+            self.monitor = None;
+            self.peer_map.monitor_gate().disable();
+        }
     }
 
     // Try to continue with the syncing process

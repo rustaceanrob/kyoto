@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddrV4},
     path::PathBuf,
     time::Duration,
@@ -729,6 +730,74 @@ async fn whitelist_only_sync() {
     sync_assert(&best, &mut channel).await;
     let cp = requester.chain_tip().await.unwrap();
     assert_eq!(cp.hash, best);
+    requester.shutdown().unwrap();
+    rpc.stop().unwrap();
+}
+
+#[tokio::test]
+async fn monitor_receives_mempool_tx() {
+    setup_debug_output();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
+
+    // Give bitcoind a wallet balance to spend from.
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 110, 5).await;
+
+    // Watched address the kyoto node will monitor for outputs to.
+    let mut rng = StdRng::seed_from_u64(20002);
+    let secret = SecretKey::new(&mut rng);
+    let secp = Secp256k1::new();
+    let keypair = Keypair::from_secret_key(&secp, &secret);
+    let (internal_key, _) = keypair.x_only_public_key();
+    let watched_addr = Address::p2tr(&secp, internal_key, None, KnownHrp::Regtest);
+    let watched_script = watched_addr.script_pubkey();
+
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir,
+        ChainState::Checkpoint(HashCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        info_rx,
+        warn_rx,
+        event_rx: _,
+    } = client;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+
+    // Install the monitor before bitcoind announces anything so the reader gate is on by
+    // the time the tx crosses the wire.
+    let mut scripts = HashSet::new();
+    scripts.insert(watched_script.clone());
+    let mut monitor_rx = requester.monitor(scripts, HashSet::new()).unwrap();
+
+    // Wait until the handshake with bitcoind has completed. Only after that will bitcoind
+    // deliver `inv` announcements over this connection.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let sent_txid = rpc
+        .send_to_address(&watched_addr, Amount::from_sat(50_000))
+        .unwrap()
+        .txid()
+        .unwrap();
+
+    let received = tokio::time::timeout(Duration::from_secs(60), monitor_rx.recv())
+        .await
+        .expect("monitor receiver did not fire within 60s")
+        .expect("monitor sender was dropped");
+
+    assert_eq!(received.compute_txid(), sent_txid);
+    assert!(
+        received
+            .output
+            .iter()
+            .any(|out| out.script_pubkey == watched_script),
+        "received tx should pay to the watched script"
+    );
+
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }

@@ -9,7 +9,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block, BlockHash,
+    Block, BlockHash, Transaction,
 };
 use bitcoin::{FeeRate, Wtxid};
 use tokio::io::AsyncBufReadExt;
@@ -19,6 +19,7 @@ use crate::messages::RejectPayload;
 
 use super::error::ReaderError;
 use super::inbound::MessageParser;
+use super::MonitorGate;
 use super::TimeSensitiveId;
 
 // From Bitcoin Core PR #29575
@@ -29,23 +30,64 @@ const MAX_HEADERS: usize = 2_000;
 pub(in crate::network) struct Reader<R: AsyncBufReadExt + Send + Sync + Unpin> {
     parser: MessageParser<R>,
     tx: Sender<ReaderMessage>,
+    monitor_gate: MonitorGate,
 }
 
 impl<R: AsyncBufReadExt + Send + Sync + Unpin> Reader<R> {
-    pub fn new(parser: MessageParser<R>, tx: Sender<ReaderMessage>) -> Self {
-        Self { parser, tx }
+    pub fn new(
+        parser: MessageParser<R>,
+        tx: Sender<ReaderMessage>,
+        monitor_gate: MonitorGate,
+    ) -> Self {
+        Self {
+            parser,
+            tx,
+            monitor_gate,
+        }
     }
 
     pub(in crate::network) async fn read_from_remote(&mut self) -> Result<(), ReaderError> {
         loop {
             if let Some(message) = self.parser.read_message().await? {
-                let cleaned_message = self.parse_message(message);
-                match cleaned_message {
-                    Some(message) => self.tx.send(message).await?,
-                    None => continue,
+                // `Inv` may carry both block and transaction announcements. Split it here so
+                // `parse_message` keeps its one-message-in, one-message-out shape.
+                if let NetworkMessage::Inv(inventory) = message {
+                    for split in self.split_inv(inventory) {
+                        self.tx.send(split).await?;
+                    }
+                    continue;
+                }
+                if let Some(cleaned) = self.parse_message(message) {
+                    self.tx.send(cleaned).await?;
                 }
             }
         }
+    }
+
+    fn split_inv(&self, inventory: Vec<Inventory>) -> Vec<ReaderMessage> {
+        if inventory.len() > MAX_INV {
+            return vec![ReaderMessage::Disconnect];
+        }
+        let monitoring = self.monitor_gate.is_enabled();
+        let mut blocks: Vec<BlockHash> = Vec::new();
+        let mut tx_wtxids: Vec<Wtxid> = Vec::new();
+        for inv in inventory {
+            match inv {
+                Inventory::Block(hash)
+                | Inventory::CompactBlock(hash)
+                | Inventory::WitnessBlock(hash) => blocks.push(hash),
+                Inventory::WTx(wtxid) if monitoring => tx_wtxids.push(wtxid),
+                _ => (),
+            }
+        }
+        let mut out = Vec::new();
+        if !blocks.is_empty() {
+            out.push(ReaderMessage::NewBlocks(blocks));
+        }
+        if !tx_wtxids.is_empty() {
+            out.push(ReaderMessage::TxInv(tx_wtxids));
+        }
+        out
     }
 
     fn parse_message(&self, message: NetworkMessage) -> Option<ReaderMessage> {
@@ -55,30 +97,17 @@ impl<R: AsyncBufReadExt + Send + Sync + Unpin> Reader<R> {
             NetworkMessage::Verack => Some(ReaderMessage::Verack),
             // If a peer is sending this message they are incredibly old or faulty.
             NetworkMessage::Addr(_) => None,
-            NetworkMessage::Inv(inventory) => {
-                if inventory.len() > MAX_INV {
-                    return Some(ReaderMessage::Disconnect);
-                }
-                let blocks: Vec<BlockHash> = inventory
-                    .into_iter()
-                    .filter_map(|inv| match inv {
-                        Inventory::Block(hash)
-                        | Inventory::CompactBlock(hash)
-                        | Inventory::WitnessBlock(hash) => Some(hash),
-                        _ => None,
-                    })
-                    .collect();
-                if blocks.is_empty() {
-                    return None;
-                }
-                Some(ReaderMessage::NewBlocks(blocks))
-            }
+            // `Inv` is pre-handled in `read_from_remote` so it can emit two messages.
+            NetworkMessage::Inv(_) => None,
             NetworkMessage::GetData(inventory) => Some(ReaderMessage::GetData(inventory)),
             NetworkMessage::NotFound(_) => None,
             NetworkMessage::GetBlocks(_) => None,
             NetworkMessage::GetHeaders(_) => None,
             NetworkMessage::MemPool => None,
-            NetworkMessage::Tx(_) => None,
+            NetworkMessage::Tx(transaction) => self
+                .monitor_gate
+                .is_enabled()
+                .then_some(ReaderMessage::Tx(transaction)),
             NetworkMessage::Block(block) => Some(ReaderMessage::Block(block)),
             NetworkMessage::Headers(headers) => {
                 if headers.len() > MAX_HEADERS {
@@ -167,6 +196,8 @@ pub(in crate::network) enum ReaderMessage {
     Pong(u64),
     FeeFilter(FeeRate),
     GetData(Vec<Inventory>),
+    TxInv(Vec<Wtxid>),
+    Tx(Transaction),
 }
 
 impl ReaderMessage {
@@ -189,35 +220,69 @@ impl ReaderMessage {
 mod tests {
     use super::*;
 
-    fn test_reader() -> Reader<tokio::io::Empty> {
+    fn test_reader(monitor_gate: MonitorGate) -> Reader<tokio::io::Empty> {
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
         Reader::new(
             MessageParser::V1(tokio::io::empty(), bitcoin::Network::Regtest),
             tx,
+            monitor_gate,
         )
     }
 
     #[test]
-    fn inv_parsing_surfaces_only_block_hashes() {
-        let reader = test_reader();
+    fn inv_split_gates_transactions_on_monitor() {
         let block = BlockHash::from_byte_array([1; 32]);
         let witness_block = BlockHash::from_byte_array([2; 32]);
         let txid = bitcoin::Txid::from_byte_array([3; 32]);
-        // Mixed inventory: only block hashes surface, in order.
-        let parsed = reader.parse_message(NetworkMessage::Inv(vec![
+        let wtxid = bitcoin::Wtxid::from_byte_array([4; 32]);
+
+        // Monitor off: only block hashes surface, wtxid inv is dropped.
+        let gate = MonitorGate::new();
+        let reader = test_reader(gate.clone());
+        let split = reader.split_inv(vec![
             Inventory::Transaction(txid),
             Inventory::Block(block),
+            Inventory::WTx(wtxid),
             Inventory::WitnessBlock(witness_block),
-        ]));
-        assert!(
-            matches!(parsed, Some(ReaderMessage::NewBlocks(hashes)) if hashes == vec![block, witness_block])
-        );
-        // Transaction-only inventory remains ignored.
-        let parsed = reader.parse_message(NetworkMessage::Inv(vec![Inventory::Transaction(txid)]));
-        assert!(parsed.is_none());
+        ]);
+        assert!(matches!(
+            split.as_slice(),
+            [ReaderMessage::NewBlocks(hashes)] if hashes == &vec![block, witness_block]
+        ));
+        // Transaction-only inventory produces no messages when monitoring is off.
+        let split = reader.split_inv(vec![Inventory::WTx(wtxid)]);
+        assert!(split.is_empty());
+
+        // Monitor on: WTx invs surface as a separate message, alongside any blocks.
+        gate.enable();
+        let split = reader.split_inv(vec![
+            Inventory::Block(block),
+            Inventory::WTx(wtxid),
+            Inventory::Transaction(txid),
+        ]);
+        assert!(matches!(
+            split.as_slice(),
+            [ReaderMessage::NewBlocks(hashes), ReaderMessage::TxInv(wtxids)]
+                if hashes == &vec![block] && wtxids == &vec![wtxid]
+        ));
+
         // Oversized inventory still disconnects.
         let oversized = vec![Inventory::Block(block); MAX_INV + 1];
-        let parsed = reader.parse_message(NetworkMessage::Inv(oversized));
-        assert!(matches!(parsed, Some(ReaderMessage::Disconnect)));
+        let split = reader.split_inv(oversized);
+        assert!(matches!(split.as_slice(), [ReaderMessage::Disconnect]));
+    }
+
+    #[test]
+    fn tx_message_gated_on_monitor() {
+        let raw = hex::decode("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000").unwrap();
+        let tx: Transaction = bitcoin::consensus::deserialize(&raw).unwrap();
+
+        let gate = MonitorGate::new();
+        let reader = test_reader(gate.clone());
+        assert!(reader.parse_message(NetworkMessage::Tx(tx.clone())).is_none());
+
+        gate.enable();
+        let parsed = reader.parse_message(NetworkMessage::Tx(tx.clone()));
+        assert!(matches!(parsed, Some(ReaderMessage::Tx(seen)) if seen == tx));
     }
 }

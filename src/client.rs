@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{Amount, Wtxid};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
@@ -265,6 +267,32 @@ impl Requester {
     /// Check if the node is running.
     pub fn is_running(&self) -> bool {
         self.ntx.send(ClientMessage::NoOp).is_ok()
+    }
+
+    /// Install or extend a mempool transaction monitor. Every gossiped transaction whose outputs
+    /// spend to any of `scripts`, or whose inputs consume any of `outpoints`, will be delivered
+    /// on the returned receiver.
+    ///
+    /// Repeated calls union the previous `scripts` and `outpoints` into the running watch set.
+    /// The previous receiver is dropped; only the most recent receiver observes matches.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub fn monitor(
+        &self,
+        scripts: HashSet<ScriptBuf>,
+        outpoints: HashSet<OutPoint>,
+    ) -> Result<UnboundedReceiver<Transaction>, ClientError> {
+        let (tx, rx) = mpsc::unbounded_channel::<Transaction>();
+        self.ntx
+            .send(ClientMessage::Monitor {
+                scripts,
+                outpoints,
+                tx,
+            })
+            .map_err(|_| ClientError::SendError)?;
+        Ok(rx)
     }
 }
 
