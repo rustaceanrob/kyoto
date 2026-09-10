@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bip324::{PacketType, PacketWriter};
+use bip324::{OutboundCipher, PacketType};
 use bitcoin::{
     consensus::serialize,
     p2p::{
@@ -28,7 +28,7 @@ pub(in crate::network) struct MessageGenerator {
 
 pub(in crate::network) enum Transport {
     V1,
-    V2 { encryptor: PacketWriter },
+    V2 { encryptor: OutboundCipher },
 }
 
 impl MessageGenerator {
@@ -74,13 +74,11 @@ impl MessageGenerator {
 }
 
 fn serialize_network_message(message: NetworkMessage) -> Vec<u8> {
-    bip324::serde::serialize(message).expect("in memory serialization cannot fail.")
+    bip324::serde::serialize(message)
 }
 
-fn encrypt_plaintext(encryptor: &mut PacketWriter, plaintext: Vec<u8>) -> Vec<u8> {
-    encryptor
-        .encrypt_packet(&plaintext, None, PacketType::Genuine)
-        .expect("encryption to in memory buffer cannot fail.")
+fn encrypt_plaintext(encryptor: &mut OutboundCipher, plaintext: Vec<u8>) -> Vec<u8> {
+    encryptor.encrypt_to_vec(&plaintext, PacketType::Genuine, None)
 }
 
 pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {

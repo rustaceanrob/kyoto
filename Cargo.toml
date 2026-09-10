@@ -16,7 +16,7 @@ addrman = { package = "bitcoin-address-book", version = "0.1.1" }
 bitcoin = { version = "0.32.8", default-features = false, features = [
     "rand-std",
 ] }
-bip324 = { version = "0.7.0", default-features = false, features = [
+bip324 = { version = "0.10.0", default-features = false, features = [
     "tokio",
 ] }
 hashes = { package = "bitcoin_hashes", version = "0.20.0" }

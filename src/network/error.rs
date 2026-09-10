@@ -1,5 +1,6 @@
 use crate::impl_sourceless_error;
 
+use bip324::io::ProtocolError;
 use bip324::serde;
 use bitcoin::consensus::encode;
 use tokio::io;
@@ -57,6 +58,15 @@ impl From<serde::Error> for ReaderError {
 impl From<bip324::Error> for ReaderError {
     fn from(value: bip324::Error) -> Self {
         Self::DecryptionFailed(value)
+    }
+}
+
+impl From<ProtocolError> for ReaderError {
+    fn from(value: ProtocolError) -> Self {
+        match value {
+            ProtocolError::Io(err, _) => Self::Io(err),
+            ProtocolError::Internal(err) => Self::DecryptionFailed(err),
+        }
     }
 }
 

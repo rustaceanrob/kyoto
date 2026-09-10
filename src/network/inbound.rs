@@ -1,36 +1,29 @@
+use bip324::futures::ProtocolReader;
 use bip324::serde::NetworkMessage;
-use bip324::{PacketReader, PacketType};
+use bip324::PacketType;
 use bitcoin::consensus::{deserialize, deserialize_partial};
 use bitcoin::p2p::message::RawNetworkMessage;
 use bitcoin::Network;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 use super::error::ReaderError;
 use super::V1Header;
 
 const MAX_MESSAGE_BYTES: u32 = 1024 * 1024 * 32;
 
-pub(crate) enum MessageParser<R: AsyncBufReadExt + Send + Sync + Unpin> {
-    V2(R, PacketReader),
+pub(crate) enum MessageParser<R: AsyncRead + Send + Sync + Unpin> {
+    V2(ProtocolReader<R>),
     V1(R, Network),
 }
 
-impl<R: AsyncBufReadExt + Send + Sync + Unpin> MessageParser<R> {
+impl<R: AsyncRead + Send + Sync + Unpin> MessageParser<R> {
     pub async fn read_message(&mut self) -> Result<Option<NetworkMessage>, ReaderError> {
         match self {
-            MessageParser::V2(stream, decryptor) => {
-                let mut len_buf = [0; 3];
-                let _ = stream.read_exact(&mut len_buf).await?;
-                let message_len = decryptor.decypt_len(len_buf);
-                if message_len > MAX_MESSAGE_BYTES as usize {
-                    return Err(ReaderError::MessageTooLarge);
-                }
-                let mut response_message = vec![0; message_len];
-                let _ = stream.read_exact(&mut response_message).await?;
-                let msg = decryptor.decrypt_payload(&response_message, None)?;
-                match msg.packet_type() {
+            MessageParser::V2(reader) => {
+                let payload = reader.read().await?;
+                match payload.packet_type() {
                     PacketType::Genuine => {
-                        let parsed = bip324::serde::deserialize(msg.contents())?;
+                        let parsed = bip324::serde::deserialize(payload.contents())?;
                         Ok(Some(parsed))
                     }
                     PacketType::Decoy => Ok(None),
