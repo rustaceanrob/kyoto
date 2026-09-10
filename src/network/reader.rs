@@ -12,7 +12,7 @@ use bitcoin::{
     Block, BlockHash,
 };
 use bitcoin::{FeeRate, Wtxid};
-use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncRead;
 use tokio::sync::mpsc::Sender;
 
 use crate::messages::RejectPayload;
@@ -26,12 +26,12 @@ const MAX_ADDR: usize = 1_000;
 const MAX_INV: usize = 50_000;
 const MAX_HEADERS: usize = 2_000;
 
-pub(in crate::network) struct Reader<R: AsyncBufReadExt + Send + Sync + Unpin> {
+pub(in crate::network) struct Reader<R: AsyncRead + Send + Sync + Unpin> {
     parser: MessageParser<R>,
     tx: Sender<ReaderMessage>,
 }
 
-impl<R: AsyncBufReadExt + Send + Sync + Unpin> Reader<R> {
+impl<R: AsyncRead + Send + Sync + Unpin> Reader<R> {
     pub fn new(parser: MessageParser<R>, tx: Sender<ReaderMessage>) -> Self {
         Self { parser, tx }
     }

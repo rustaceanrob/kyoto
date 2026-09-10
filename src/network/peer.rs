@@ -2,7 +2,8 @@ extern crate tokio;
 use std::{sync::Arc, time::Duration};
 
 use addrman::Record;
-use bip324::{AsyncProtocol, PacketReader, PacketWriter, Role};
+use bip324::futures::{Protocol, ProtocolReader};
+use bip324::{OutboundCipher, Role};
 use bitcoin::{
     p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags},
     Network,
@@ -83,26 +84,25 @@ impl Peer {
         let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
         let (reader, mut writer) = connection.into_split();
-        let mut reader = BufReader::new(reader);
+        let reader = BufReader::new(reader);
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
         let (mut outbound_messages, mut peer_reader) =
             if self.source.service_flags().has(ServiceFlags::P2P_V2) && !is_proxy_connection {
-                let handshake_result = tokio::time::timeout(
-                    V2_HANDSHAKE_TIMEOUT,
-                    self.try_handshake(&mut writer, &mut reader),
-                )
-                .await
-                .map_err(|_| PeerError::HandshakeFailed)?;
+                let handshake_result =
+                    tokio::time::timeout(V2_HANDSHAKE_TIMEOUT, self.try_handshake(writer, reader))
+                        .await
+                        .map_err(|_| PeerError::HandshakeFailed)?;
                 if handshake_result.is_err() {
                     self.dialog.send_warning(Warning::CouldNotConnect);
                 }
-                let (decryptor, encryptor) = handshake_result?;
+                let (protocol_reader, encryptor, w) = handshake_result?;
+                writer = w;
                 let outbound_messages = MessageGenerator {
                     network: self.network,
                     transport: Transport::V2 { encryptor },
                     block_type: self.block_type,
                 };
-                let reader = Reader::new(MessageParser::V2(reader, decryptor), tx);
+                let reader = Reader::new(MessageParser::V2(protocol_reader), tx);
                 (outbound_messages, reader)
             } else {
                 let outbound_messages = MessageGenerator {
@@ -452,21 +452,20 @@ impl Peer {
 
     async fn try_handshake<W, R>(
         &mut self,
-        writer: &mut W,
-        reader: &mut R,
-    ) -> Result<(PacketReader, PacketWriter), PeerError>
+        writer: W,
+        reader: R,
+    ) -> Result<(ProtocolReader<R>, OutboundCipher, W), PeerError>
     where
         W: AsyncWrite + Send + Unpin,
         R: AsyncRead + Send + Unpin,
     {
         crate::debug!("Initiating a handshake for encrypted messaging");
-        let handshake =
-            AsyncProtocol::new(self.network, Role::Initiator, None, None, reader, writer).await;
-        match handshake {
-            Ok(proto) => {
+        match Protocol::new(self.network, Role::Initiator, None, None, reader, writer).await {
+            Ok(protocol) => {
                 crate::debug!("Established an encrypted connection");
-                let (reader, writer) = proto.into_split();
-                Ok((reader.decoder(), writer.encoder()))
+                let (protocol_reader, protocol_writer) = protocol.into_split();
+                let (outbound_cipher, writer) = protocol_writer.into_inner();
+                Ok((protocol_reader, outbound_cipher, writer))
             }
             Err(_) => Err(PeerError::HandshakeFailed),
         }
