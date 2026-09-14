@@ -72,6 +72,7 @@ impl Node {
             peer_timeout_config,
             filter_type,
             block_type,
+            scan_filters_from_tip,
         } = config;
         // Set up a communication channel between the node and client
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
@@ -105,6 +106,7 @@ impl Node {
             Arc::clone(&dialog),
             required_peers,
             filter_type,
+            scan_filters_from_tip,
         );
         (
             Self {
@@ -469,6 +471,7 @@ impl Node {
                 HeaderSyncEffect::Empty => {
                     if self.state == NodeState::Behind {
                         self.state = NodeState::HeadersSynced;
+                        self.chain.finalize_filter_start_height();
                     }
                 }
                 HeaderSyncEffect::Reorg(reorgs) => {
@@ -642,10 +645,17 @@ impl Node {
                 if let Some(height) = height_opt {
                     self.chain.header_chain.assume_checked_to(height);
                 }
-                self.state = NodeState::FilterHeadersSynced;
-                Some(MainThreadMessage::GetFilters(
-                    self.chain.next_filter_message(),
-                ))
+                if !self.chain.is_cf_headers_synced() {
+                    self.state = NodeState::HeadersSynced;
+                    Some(MainThreadMessage::GetFilterHeaders(
+                        self.chain.next_cf_header_message(),
+                    ))
+                } else {
+                    self.state = NodeState::FilterHeadersSynced;
+                    Some(MainThreadMessage::GetFilters(
+                        self.chain.next_filter_message(),
+                    ))
+                }
             }
         }
     }

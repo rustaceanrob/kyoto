@@ -445,24 +445,34 @@ impl BlockTree {
         }
     }
 
-    pub(crate) fn filter_headers_synced(&self) -> bool {
+    // Iterate over canonical blocks from tip down to (and including) `start`, or to the anchor
+    // when `start` is `None`. Genesis is never yielded.
+    pub(crate) fn iter_window(&self, start: Option<u32>) -> impl Iterator<Item = &BlockNode> {
         self.iter_data()
-            .map(|node| node.filter_commitment)
-            .all(|commitment| commitment.is_some())
+            .take_while(move |n| n.height > 0 && start.is_none_or(|s| n.height >= s))
     }
 
-    pub(crate) fn filters_synced(&self) -> bool {
-        self.iter_data().all(|node| node.filter_checked)
+    pub(crate) fn filter_headers_synced(&self, start: Option<u32>) -> bool {
+        self.iter_window(start)
+            .all(|n| n.filter_commitment.is_some())
     }
 
-    pub(crate) fn total_filters_synced(&self) -> u32 {
-        self.iter_data().filter(|node| node.filter_checked).count() as u32
+    pub(crate) fn filters_synced(&self, start: Option<u32>) -> bool {
+        self.iter_window(start).all(|n| n.filter_checked)
     }
 
-    pub(crate) fn total_filter_headers_synced(&self) -> u32 {
-        self.iter_data()
-            .filter(|node| node.filter_commitment.is_some())
+    pub(crate) fn total_filters_synced(&self, start: Option<u32>) -> u32 {
+        self.iter_window(start).filter(|n| n.filter_checked).count() as u32
+    }
+
+    pub(crate) fn total_filter_headers_synced(&self, start: Option<u32>) -> u32 {
+        self.iter_window(start)
+            .filter(|n| n.filter_commitment.is_some())
             .count() as u32
+    }
+
+    pub(crate) fn window_len(&self, start: Option<u32>) -> u32 {
+        self.iter_window(start).count() as u32
     }
 
     pub(crate) fn locators(&self) -> Vec<BlockHash> {
@@ -698,8 +708,8 @@ mod tests {
             chain.accept_header(header);
         }
         chain.assume_checked_to(3);
-        assert!(!chain.filters_synced());
+        assert!(!chain.filters_synced(None));
         chain.assume_checked_to(4);
-        assert!(chain.filters_synced());
+        assert!(chain.filters_synced(None));
     }
 }

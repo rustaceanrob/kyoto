@@ -381,6 +381,7 @@ struct Config {
     peer_timeout_config: PeerTimeoutConfig,
     filter_type: FilterType,
     block_type: BlockType,
+    scan_filters_from_tip: Option<u32>,
 }
 
 impl Default for Config {
@@ -394,6 +395,7 @@ impl Default for Config {
             peer_timeout_config: PeerTimeoutConfig::default(),
             filter_type: FilterType::default(),
             block_type: BlockType::default(),
+            scan_filters_from_tip: None,
         }
     }
 }

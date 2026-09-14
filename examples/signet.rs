@@ -37,6 +37,8 @@ async fn main() {
         .chain_state(ChainState::Checkpoint(checkpoint))
         // The number of connections we would like to maintain
         .required_peers(1)
+        // Only scan the last 10 filters from the tip for transactions.
+        .scan_filters_from_tip(10)
         // Create the node and client
         .build();
 

@@ -20,12 +20,38 @@ const CF_HEADER_BATCH_SIZE: u32 = 1_999;
 const FILTER_BATCH_SIZE: u32 = 999;
 
 #[derive(Debug)]
+pub(crate) enum FilterWindow {
+    Unbounded,
+    // `N` configured via `scan_filters_from_tip`, awaiting finalize.
+    Configured(u32),
+    // Snapshotted lower bound of the sync window (inclusive), fixed for the session.
+    Bounded(u32),
+}
+
+impl FilterWindow {
+    fn from_config(scan_filters_from_tip: Option<u32>) -> Self {
+        match scan_filters_from_tip {
+            None => Self::Unbounded,
+            Some(n) => Self::Configured(n),
+        }
+    }
+
+    fn bound(&self) -> Option<u32> {
+        match self {
+            Self::Bounded(h) => Some(*h),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Chain {
     pub(crate) header_chain: BlockTree,
     request_state: FilterRequestState,
     network: Network,
     dialog: Arc<Dialog>,
     filter_type: FilterType,
+    filter_window: FilterWindow,
 }
 
 impl Chain {
@@ -35,6 +61,7 @@ impl Chain {
         dialog: Arc<Dialog>,
         quorum_required: u8,
         filter_type: FilterType,
+        scan_filters_from_tip: Option<u32>,
     ) -> Self {
         let header_chain = match chain_state {
             ChainState::Snapshot(headers) => {
@@ -58,6 +85,16 @@ impl Chain {
             network,
             dialog,
             filter_type,
+            filter_window: FilterWindow::from_config(scan_filters_from_tip),
+        }
+    }
+
+    // Snapshot the lower bound of the filter sync window.
+    pub(crate) fn finalize_filter_start_height(&mut self) {
+        if let FilterWindow::Configured(n) = self.filter_window {
+            let tip = self.header_chain.height();
+            let start = tip.saturating_add(1).saturating_sub(n);
+            self.filter_window = FilterWindow::Bounded(start);
         }
     }
 
@@ -266,19 +303,12 @@ impl Chain {
     pub(crate) fn next_cf_header_message(&mut self) -> GetCFHeaders {
         let mut last_unchecked_cfheader = self.header_chain.height();
         let mut prev_header = None;
-        for data in self.header_chain.iter_data() {
-            if data.height.eq(&0) {
+        for data in self.header_chain.iter_window(self.filter_window.bound()) {
+            if let Some(commitment) = data.filter_commitment {
+                prev_header = Some(commitment.header);
                 break;
             }
-            match data.filter_commitment {
-                Some(commitment) => {
-                    prev_header = Some(commitment.header);
-                    break;
-                }
-                None => {
-                    last_unchecked_cfheader = data.height;
-                }
-            }
+            last_unchecked_cfheader = data.height;
         }
         let stop_hash_index = last_unchecked_cfheader + CF_HEADER_BATCH_SIZE;
         let stop_hash = self
@@ -300,7 +330,8 @@ impl Chain {
 
     // Are the compact filter headers caught up to the header chain
     pub(crate) fn is_cf_headers_synced(&self) -> bool {
-        self.header_chain.filter_headers_synced()
+        self.header_chain
+            .filter_headers_synced(self.filter_window.bound())
     }
 
     // Handle a new filter
@@ -354,10 +385,7 @@ impl Chain {
     // Next filter message, if there is one
     pub(crate) fn next_filter_message(&mut self) -> GetCFilters {
         let mut last_unchecked_filter = self.header_chain.height();
-        for block_data in self.header_chain.iter_data() {
-            if block_data.height.eq(&0) {
-                break;
-            }
+        for block_data in self.header_chain.iter_window(self.filter_window.bound()) {
             if block_data.filter_checked {
                 break;
             }
@@ -381,7 +409,7 @@ impl Chain {
 
     // Are we synced with filters
     pub(crate) fn is_filters_synced(&self) -> bool {
-        self.header_chain.filters_synced()
+        self.header_chain.filters_synced(self.filter_window.bound())
     }
 
     // Reset the compact filter queue because we received a new block
@@ -394,22 +422,31 @@ impl Chain {
     // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) fn clear_filters(&mut self) {
         self.header_chain.reset_all_filters();
+        self.filter_window = FilterWindow::Unbounded;
     }
 
     pub(crate) fn send_chain_update(&self) {
+        let bound = self.filter_window.bound();
+        let chain_len = self.header_chain.internal_chain_len() as u32;
+        let total_to_check = match self.filter_window {
+            FilterWindow::Bounded(_) => self.header_chain.window_len(bound),
+            _ => chain_len,
+        };
+        let cf_headers = self.header_chain.total_filter_headers_synced(bound);
+        let cfilters = self.header_chain.total_filters_synced(bound);
         self.dialog.send_info(Info::Progress(Progress::new(
-            self.header_chain.total_filter_headers_synced(),
-            self.header_chain.total_filters_synced(),
-            self.header_chain.internal_chain_len() as u32,
+            cf_headers,
+            cfilters,
+            total_to_check,
             self.header_chain.height(),
         )));
         crate::debug!(format!(
             "Headers: {} CFHeaders: ({}/{}) CFilters: ({}/{})",
             self.header_chain.height(),
-            self.header_chain.total_filter_headers_synced(),
-            self.header_chain.internal_chain_len() as u32,
-            self.header_chain.total_filters_synced(),
-            self.header_chain.internal_chain_len() as u32,
+            cf_headers,
+            total_to_check,
+            cfilters,
+            total_to_check,
         ));
     }
 }
@@ -439,7 +476,7 @@ mod tests {
 
     use super::{CFHeaderChanges, Chain};
 
-    fn new_regtest(anchor: HashCheckpoint, peers: u8) -> Chain {
+    fn new_regtest(anchor: HashCheckpoint, peers: u8, scan_from_tip: Option<u32>) -> Chain {
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
         let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
@@ -449,6 +486,7 @@ mod tests {
             Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
             peers,
             FilterType::Basic,
+            scan_from_tip,
         )
     }
 
@@ -558,7 +596,7 @@ mod tests {
     #[tokio::test]
     async fn test_fork_includes_old_vals() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 1);
+        let mut chain = new_regtest(gen, 1, None);
         let chain_scenario = load_scenario();
         let canonical = chain_scenario.most_work;
         let mut canonical_iter = canonical.into_iter();
@@ -596,7 +634,7 @@ mod tests {
     #[tokio::test]
     async fn test_filters_out_of_order() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 1);
+        let mut chain = new_regtest(gen, 1, None);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let block_5 = scenario.last_block_header();
@@ -626,7 +664,7 @@ mod tests {
     #[tokio::test]
     async fn test_bad_filter() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 1);
+        let mut chain = new_regtest(gen, 1, None);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
@@ -660,7 +698,7 @@ mod tests {
     #[tokio::test]
     async fn test_has_conflict() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
@@ -719,7 +757,7 @@ mod tests {
     #[tokio::test]
     async fn test_uneven_cf_headers() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let header_batch = scenario.most_work_headers();
         let chain_sync = chain.sync_chain(header_batch);
@@ -767,7 +805,7 @@ mod tests {
     #[tokio::test]
     async fn test_reorg_no_queue() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let mut stale_headers = scenario.n_most_work_headers(3);
         let stale_block_data = scenario.stale_chain.first().unwrap();
@@ -824,7 +862,7 @@ mod tests {
     #[tokio::test]
     async fn test_reorg_with_queue() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let mut header_batch = scenario.n_most_work_headers(3);
         let stale = scenario
@@ -886,7 +924,7 @@ mod tests {
     #[ignore = "temporarily broken due to hex decoding"]
     async fn reorg_during_filter_sync() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let block_1: Header = deserialize(&hex::decode("000000206a7cb0df73f2a05fd8eb63de4c9c0fda70d8848f3581b601338b530088474f4bbe54a272e64276a49cf98359a6e43563b6527cce7c9434c0c2ca21b4710b84593362c266ffff7f2000000000").unwrap()).unwrap();
         let block_2: Header = deserialize(&hex::decode("000000204326468f18d82108c98e5a328192770c8cb8d4e3322a4df708fe3232b3f0797dcd9468dd32ad9d68cfd49048378ec2caae965e4998200e4f83cba92f396f0b373462c266ffff7f2001000000").unwrap()).unwrap();
         let block_3: Header = deserialize(&hex::decode("00000020a860ab5e9320ad1e0318e154ea31cab1e030a1f4e1bcf89c63bfdf3055852d01053e4b600cfa947ce54315cc62b23e706dbfca5566f3156b272bf1f8971d930b3462c266ffff7f2001000000").unwrap()).unwrap();
@@ -997,7 +1035,7 @@ mod tests {
     #[tokio::test]
     async fn test_inv_no_queue() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let header_batch = scenario.n_most_work_headers(4);
         let block_4 = header_batch
@@ -1043,7 +1081,7 @@ mod tests {
     #[tokio::test]
     async fn test_inv_with_queue() {
         let gen = base_block();
-        let mut chain = new_regtest(gen, 2);
+        let mut chain = new_regtest(gen, 2, None);
         let scenario = load_scenario();
         let first_four = scenario.n_most_work_headers(4);
         let block_4 = first_four.last().copied().unwrap();
@@ -1077,5 +1115,88 @@ mod tests {
         assert!(cf_header_sync_res.is_ok());
         assert_eq!(cf_header_sync_res.unwrap(), CFHeaderChanges::AddedToQueue);
         assert!(!chain.is_cf_headers_synced());
+    }
+
+    #[tokio::test]
+    async fn test_scan_filters_from_tip() {
+        use super::FilterWindow;
+        let scenario = load_scenario();
+
+        // N far exceeds chain length: window falls below the anchor, equivalent to unset.
+        {
+            let mut chain = new_regtest(base_block(), 1, Some(10_000));
+            chain.sync_chain(scenario.most_work_headers()).unwrap();
+            chain.finalize_filter_start_height();
+            assert!(matches!(chain.filter_window, FilterWindow::Bounded(0)));
+            assert!(!chain.is_cf_headers_synced());
+            let req = chain.next_cf_header_message();
+            assert_eq!(req.start_height, 2497);
+        }
+
+        // N == 0: filter sync short-circuits immediately.
+        {
+            let mut chain = new_regtest(base_block(), 1, Some(0));
+            chain.sync_chain(scenario.most_work_headers()).unwrap();
+            chain.finalize_filter_start_height();
+            assert!(matches!(chain.filter_window, FilterWindow::Bounded(2502)));
+            assert!(chain.is_cf_headers_synced());
+            assert!(chain.is_filters_synced());
+        }
+
+        // 0 < N < chain_len: bounded tail sync, boundary is static across a header extension.
+        {
+            let mut chain = new_regtest(base_block(), 1, Some(3));
+            let first_three = scenario.n_most_work_headers(3);
+            chain.sync_chain(first_three).unwrap();
+            assert_eq!(chain.header_chain.height(), 2499);
+            chain.finalize_filter_start_height();
+            assert!(matches!(chain.filter_window, FilterWindow::Bounded(2497)));
+
+            let req = chain.next_cf_header_message();
+            assert_eq!(req.start_height, 2497);
+            assert_eq!(
+                chain
+                    .request_state
+                    .last_filter_header_request
+                    .unwrap()
+                    .expected_prev_filter_header,
+                None
+            );
+
+            let block_3_hash = scenario.most_work[2].header.0.block_hash();
+            let cf_headers = CFHeaders {
+                filter_type: 0x00,
+                stop_hash: block_3_hash,
+                previous_filter_header: scenario.prev_header(),
+                filter_hashes: scenario.n_most_work_filter_hashes(3),
+            };
+            assert_eq!(
+                chain.sync_cf_headers(0.into(), cf_headers).unwrap(),
+                CFHeaderChanges::Extended
+            );
+            assert!(chain.is_cf_headers_synced());
+
+            chain.next_filter_message();
+            for filter in scenario.filters().into_iter().take(3) {
+                chain.sync_filter(filter).unwrap();
+            }
+            assert!(chain.is_filters_synced());
+
+            // Extend the chain by two more headers; boundary stays at 2497.
+            let last_two: Vec<Header> = scenario
+                .most_work
+                .iter()
+                .skip(3)
+                .map(|d| d.header.0)
+                .collect();
+            chain.sync_chain(last_two).unwrap();
+            assert_eq!(chain.header_chain.height(), 2501);
+            assert!(matches!(chain.filter_window, FilterWindow::Bounded(2497)));
+
+            // Only the newly-connected blocks need filter headers.
+            assert!(!chain.is_cf_headers_synced());
+            let req = chain.next_cf_header_message();
+            assert_eq!(req.start_height, 2500);
+        }
     }
 }

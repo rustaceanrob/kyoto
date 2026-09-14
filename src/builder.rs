@@ -144,6 +144,13 @@ impl Builder {
         self
     }
 
+    /// Only sync compact filter headers and filters for the last `n` blocks below the chain tip.
+    /// The window is snapshotted when header sync first completes and stays fixed.
+    pub fn scan_filters_from_tip(mut self, n: u32) -> Self {
+        self.config.scan_filters_from_tip = Some(n);
+        self
+    }
+
     /// Consume the node builder and receive a [`Node`] and [`Client`].
     pub fn build(mut self) -> (Node, Client) {
         Node::new(self.network, core::mem::take(&mut self.config))
