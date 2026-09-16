@@ -123,6 +123,18 @@ impl Builder {
         self
     }
 
+    /// Skip filter header and filter downloads during the initial sync. Once the node is
+    /// believed to be at the current chain tip, filters will be downloaded for newly mined
+    /// blocks. This feature is intended for new wallets that have never received a payment.
+    ///
+    /// A subsequent call to
+    /// [`Requester::rescan`](crate::Requester::rescan) or
+    /// [`Requester::rescan_from`](crate::Requester::rescan_from) resumes normal filter syncing.
+    pub fn headers_only_sync(mut self) -> Self {
+        self.config.headers_only_sync = true;
+        self
+    }
+
     /// Route network traffic through a Tor daemon using a Socks5 proxy. Currently, proxies
     /// must be reachable by IP address.
     pub fn socks5_proxy(mut self, proxy: impl Into<Socks5Proxy>) -> Self {
