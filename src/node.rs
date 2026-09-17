@@ -59,6 +59,7 @@ pub struct Node {
     block_queue: BlockQueue,
     client_recv: UnboundedReceiver<ClientMessage>,
     peer_recv: Receiver<PeerThreadMessage>,
+    headers_only_sync: bool,
 }
 
 impl Node {
@@ -72,6 +73,7 @@ impl Node {
             peer_timeout_config,
             filter_type,
             block_type,
+            headers_only_sync,
         } = config;
         // Set up a communication channel between the node and client
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
@@ -116,6 +118,7 @@ impl Node {
                 block_queue: BlockQueue::new(),
                 client_recv: crx,
                 peer_recv: mrx,
+                headers_only_sync,
             },
             client,
         )
@@ -338,21 +341,20 @@ impl Node {
             // This state is updated upon receiving new block headers
             NodeState::Behind => (),
             NodeState::HeadersSynced => {
-                if self.chain.is_cf_headers_synced() {
+                if self.headers_only_sync {
+                    self.state = NodeState::FiltersSynced;
+                    self.headers_only_sync = false;
+                    let tip = self.chain.header_chain.height();
+                    self.chain.header_chain.assume_checked_to(tip);
+                    self.emit_sync_complete();
+                } else if self.chain.is_cf_headers_synced() {
                     self.state = NodeState::FilterHeadersSynced;
                 }
             }
             NodeState::FilterHeadersSynced => {
                 if self.chain.is_filters_synced() {
                     self.state = NodeState::FiltersSynced;
-                    let update = SyncUpdate::new(
-                        HashCheckpoint::new(
-                            self.chain.header_chain.height(),
-                            self.chain.header_chain.tip_hash(),
-                        ),
-                        self.chain.last_ten(),
-                    );
-                    self.dialog.send_event(Event::FiltersSynced(update));
+                    self.emit_sync_complete();
                 }
             }
             NodeState::FiltersSynced => {
@@ -364,6 +366,17 @@ impl Node {
                 }
             }
         }
+    }
+
+    fn emit_sync_complete(&self) {
+        let update = SyncUpdate::new(
+            HashCheckpoint::new(
+                self.chain.header_chain.height(),
+                self.chain.header_chain.tip_hash(),
+            ),
+            self.chain.last_ten(),
+        );
+        self.dialog.send_event(Event::FiltersSynced(update));
     }
 
     // When syncing headers we are only interested in one peer to start
@@ -384,7 +397,11 @@ impl Node {
                 stop_hash: BlockHash::all_zeros(),
             };
             return Some(MainThreadMessage::GetHeaders(headers));
-        } else if !self.chain.is_cf_headers_synced() {
+        }
+        if self.headers_only_sync {
+            return None;
+        }
+        if !self.chain.is_cf_headers_synced() {
             return Some(MainThreadMessage::GetFilterHeaders(
                 self.chain.next_cf_header_message(),
             ));
@@ -638,14 +655,22 @@ impl Node {
             NodeState::Behind => None,
             NodeState::HeadersSynced => None,
             _ => {
+                self.headers_only_sync = false;
                 self.chain.clear_filters();
                 if let Some(height) = height_opt {
                     self.chain.header_chain.assume_checked_to(height);
                 }
-                self.state = NodeState::FilterHeadersSynced;
-                Some(MainThreadMessage::GetFilters(
-                    self.chain.next_filter_message(),
-                ))
+                if !self.chain.is_cf_headers_synced() {
+                    self.state = NodeState::HeadersSynced;
+                    Some(MainThreadMessage::GetFilterHeaders(
+                        self.chain.next_cf_header_message(),
+                    ))
+                } else {
+                    self.state = NodeState::FilterHeadersSynced;
+                    Some(MainThreadMessage::GetFilters(
+                        self.chain.next_filter_message(),
+                    ))
+                }
             }
         }
     }

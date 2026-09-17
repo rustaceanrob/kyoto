@@ -734,6 +734,96 @@ async fn whitelist_only_sync() {
 }
 
 #[tokio::test]
+async fn headers_only_sync_then_rescan() {
+    setup_debug_output();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 10, 2).await;
+    let best = best_hash(rpc);
+    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
+    let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest)
+        .chain_state(ChainState::Checkpoint(HashCheckpoint::from_genesis(
+            bitcoin::Network::Regtest,
+        )))
+        .add_peer(host)
+        .headers_only_sync();
+    let (node, client) = builder.build();
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        info_rx,
+        warn_rx,
+        event_rx: mut channel,
+    } = client;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+    let mut filters_before = 0usize;
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            match channel.recv().await {
+                Some(Event::IndexedFilter(_)) => filters_before += 1,
+                Some(Event::FiltersSynced(update)) => {
+                    assert_eq!(update.tip().hash, best);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("headers-only sync timed out");
+    assert_eq!(
+        filters_before, 0,
+        "no filters should be delivered during headers-only sync"
+    );
+    // A block mined after the initial catchup should stream a filter, since the flag
+    // only skips the initial sync and flips off once the tip is reached.
+    mine_blocks(rpc, &miner, 1, 2).await;
+    let best = best_hash(rpc);
+    let mut new_block_filters = 0usize;
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            match channel.recv().await {
+                Some(Event::IndexedFilter(_)) => new_block_filters += 1,
+                Some(Event::FiltersSynced(update)) => {
+                    assert_eq!(update.tip().hash, best);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("new-block filter sync timed out");
+    assert_eq!(
+        new_block_filters, 1,
+        "one filter should be delivered for the newly mined block"
+    );
+    requester.rescan().unwrap();
+    let mut filters_after = 0usize;
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            match channel.recv().await {
+                Some(Event::IndexedFilter(_)) => filters_after += 1,
+                Some(Event::FiltersSynced(update)) => {
+                    assert_eq!(update.tip().hash, best);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("rescan sync timed out");
+    assert_eq!(
+        filters_after, 11,
+        "rescan should deliver filters for the synced chain"
+    );
+    requester.shutdown().unwrap();
+    rpc.stop().unwrap();
+}
+
+#[tokio::test]
 async fn inv_fallback_after_burst_mine() {
     setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
