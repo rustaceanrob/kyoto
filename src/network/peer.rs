@@ -20,6 +20,7 @@ use tokio::{
     time::{Instant, MissedTickBehavior},
 };
 
+use crate::network::gossip::TransactionCheck;
 use crate::network::RelayPolicy;
 use crate::{broadcaster::BroadcastQueue, messages::Warning, BlockType, Dialog, Info};
 
@@ -286,7 +287,42 @@ impl Peer {
                         .await?;
                     Ok(())
                 }
-                RelayPolicy::Transactions(_) => unimplemented!(),
+                RelayPolicy::Transactions(_) => {
+                    let requests: Vec<Inventory> = hashes
+                        .into_iter()
+                        .filter(|inv| {
+                            matches!(
+                                inv,
+                                Inventory::Transaction(_)
+                                    | Inventory::WitnessTransaction(_)
+                                    | Inventory::WTx(_)
+                            )
+                        })
+                        .collect();
+                    if requests.is_empty() {
+                        return Ok(());
+                    }
+                    let msg = message_generator.serialize(NetworkMessage::GetData(requests));
+                    self.write_bytes(writer, msg).await?;
+                    Ok(())
+                }
+            },
+            ReaderMessage::Transaction(tx) => match &self.relay_policy {
+                RelayPolicy::Transactions(watch) => {
+                    let watch_guard = watch.lock().await;
+                    let tx_check = watch_guard.check_tx(tx);
+                    match tx_check {
+                        TransactionCheck::SentToClient => {
+                            crate::debug!("Found unconfirmed transaction in mempool")
+                        }
+                        TransactionCheck::Failed => {
+                            self.dialog.send_warning(Warning::ChannelDropped);
+                        }
+                        TransactionCheck::NoMatch => (),
+                    }
+                    Ok(())
+                }
+                RelayPolicy::BlocksOnly => Ok(()),
             },
             ReaderMessage::GetData(requests) => {
                 let mut tx_queue = self.tx_queue.lock().await;
