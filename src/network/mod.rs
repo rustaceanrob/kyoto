@@ -32,6 +32,7 @@ use crate::Socks5Proxy;
 
 pub(crate) mod dns;
 pub(crate) mod error;
+pub(crate) mod gossip;
 pub(crate) mod inbound;
 pub(crate) mod outbound;
 pub(crate) mod peer;
