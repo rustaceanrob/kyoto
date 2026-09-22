@@ -283,6 +283,16 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::SubscribeGossip(request) => {
+                                let (req, oneshot) = request.into_values();
+                                let recv = self.peer_map.subscribe_to_gossip(req.scripts, req.txins).await;
+                                if oneshot.send(recv).is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
+                            ClientMessage::UnsubscribeGossip => {
+                                self.peer_map.unsubscribe_from_gossip().await;
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }

@@ -63,7 +63,10 @@ pub mod node;
 use bitcoin::OutPoint;
 use chain::Filter;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 // Re-exports
 #[doc(inline)]
@@ -564,6 +567,62 @@ impl From<Transaction> for Package {
         Package {
             parent: value,
             child: None,
+        }
+    }
+}
+
+/// Instruct the node to watch for unconfirmed transactions with a certain criteria.
+#[derive(Debug, Clone)]
+pub struct GossipMonitorRequest {
+    scripts: HashSet<ScriptBuf>,
+    txins: HashSet<OutPoint>,
+}
+
+/// Build a new [`GossipMonitorRequest`].
+#[derive(Debug, Clone, Default)]
+pub struct GossipMonitorRequestBuilder {
+    scripts: HashSet<ScriptBuf>,
+    txins: HashSet<OutPoint>,
+}
+
+impl GossipMonitorRequestBuilder {
+    /// Watch for these **output** scripts in an unconfirmed transactions.
+    pub fn from_expected_output_scripts(scripts: impl IntoIterator<Item = ScriptBuf>) -> Self {
+        let mut script_set = HashSet::new();
+        script_set.extend(scripts);
+        Self {
+            scripts: script_set,
+            txins: HashSet::new(),
+        }
+    }
+
+    /// Watch for these [`OutPoint`] used as an input in unconfirmed transactions.
+    pub fn from_expected_inputs(txins: impl IntoIterator<Item = OutPoint>) -> Self {
+        let mut op_set = HashSet::new();
+        op_set.extend(txins);
+        Self {
+            scripts: HashSet::new(),
+            txins: op_set,
+        }
+    }
+
+    /// Add scripts to the request.
+    pub fn add_scripts(mut self, scripts: impl IntoIterator<Item = ScriptBuf>) -> Self {
+        self.scripts.extend(scripts);
+        self
+    }
+
+    /// Add outpoints to the request.
+    pub fn add_outpoints(mut self, txins: impl IntoIterator<Item = OutPoint>) -> Self {
+        self.txins.extend(txins);
+        self
+    }
+
+    /// Complete the configuration for the request.
+    pub fn build(self) -> GossipMonitorRequest {
+        GossipMonitorRequest {
+            scripts: self.scripts,
+            txins: self.txins,
         }
     }
 }
