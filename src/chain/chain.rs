@@ -270,6 +270,9 @@ impl Chain {
             if data.height.eq(&0) {
                 break;
             }
+            if data.cf_header_assumed {
+                break;
+            }
             match data.filter_commitment {
                 Some(commitment) => {
                     prev_header = Some(commitment.header);
@@ -393,7 +396,7 @@ impl Chain {
 
     // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) fn clear_filters(&mut self) {
-        self.header_chain.reset_all_filters();
+        self.header_chain.reset_filter_state();
     }
 
     pub(crate) fn send_chain_update(&self) {
