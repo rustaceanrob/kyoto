@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 use addrman::Record;
 use bip324::futures::{Protocol, ProtocolReader};
 use bip324::{OutboundCipher, Role};
+use bitcoin::BlockHash;
 use bitcoin::{
     p2p::{message::NetworkMessage, message_blockdata::Inventory, ServiceFlags},
     Network,
@@ -259,11 +260,23 @@ impl Peer {
                     .await?;
                 Ok(())
             }
-            ReaderMessage::NewBlocks(block_hashes) => {
+            ReaderMessage::Inventory(hashes) => {
+                let blocks: Vec<BlockHash> = hashes
+                    .into_iter()
+                    .filter_map(|inv| match inv {
+                        Inventory::Block(hash)
+                        | Inventory::CompactBlock(hash)
+                        | Inventory::WitnessBlock(hash) => Some(hash),
+                        _ => None,
+                    })
+                    .collect();
+                if blocks.is_empty() {
+                    return Ok(());
+                }
                 self.main_thread_sender
                     .send(PeerThreadMessage {
                         nonce: self.nonce,
-                        message: PeerMessage::NewBlocks(block_hashes),
+                        message: PeerMessage::NewBlocks(blocks),
                     })
                     .await?;
                 Ok(())
