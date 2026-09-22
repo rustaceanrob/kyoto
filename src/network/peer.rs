@@ -115,7 +115,7 @@ impl Peer {
                 (outbound_messages, reader)
             };
 
-        let message = outbound_messages.version_message(None);
+        let message = outbound_messages.version_message();
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
