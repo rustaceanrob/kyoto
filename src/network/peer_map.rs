@@ -23,7 +23,9 @@ use tokio::{
 use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
-    network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
+    network::{
+        dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig, RelayPolicy,
+    },
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
 
@@ -106,8 +108,20 @@ impl PeerMap {
         self.whitelist.push(peer);
     }
 
-    // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
+        let (id, peer) = self
+            .spawn_peer(loaded_peer, RelayPolicy::BlocksOnly)
+            .await?;
+        self.map.insert(id, peer);
+        Ok(())
+    }
+
+    // Send out a TCP connection to a new peer and begin tracking the task
+    async fn spawn_peer(
+        &mut self,
+        loaded_peer: Record,
+        relay_policy: RelayPolicy,
+    ) -> Result<(PeerId, ManagedPeer), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let (addr, port) = loaded_peer.network_addr();
         if !self.connector.can_connect(&addr) {
@@ -122,6 +136,7 @@ impl PeerMap {
             loaded_peer.clone(),
             self.network,
             self.block_type,
+            relay_policy,
             self.mtx.clone(),
             prx,
             Arc::clone(&self.dialog),
@@ -143,7 +158,7 @@ impl PeerMap {
         };
         let is_proxy = self.connector.is_proxy();
         let handle = tokio::spawn(async move { peer.run(connection, is_proxy).await });
-        self.map.insert(
+        Ok((
             self.current_id,
             ManagedPeer {
                 record: loaded_peer,
@@ -151,8 +166,7 @@ impl PeerMap {
                 ptx,
                 handle,
             },
-        );
-        Ok(())
+        ))
     }
 
     // Set the minimum fee rate this peer will accept
