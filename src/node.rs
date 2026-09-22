@@ -283,6 +283,17 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::SubscribeGossip(request) => {
+                                let ((scripts, txins), oneshot) = request.into_values();
+                                let receiver =
+                                    self.peer_map.subscribe_gossip(scripts, txins).await;
+                                if oneshot.send(receiver).is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
+                            ClientMessage::UnsubscribeGossip => {
+                                self.peer_map.unsubscribe_gossip().await;
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }
@@ -310,6 +321,13 @@ impl Node {
                 .ok_or(NodeError::NoReachablePeers)?;
             if self.peer_map.dispatch(address).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect);
+            }
+        }
+        if self.peer_map.needs_gossip_peer() {
+            if let Some(gossip_address) = self.peer_map.next_peer().await {
+                if self.peer_map.dispatch_gossip(gossip_address).await.is_err() {
+                    self.dialog.send_warning(Warning::CouldNotConnect);
+                }
             }
         }
         Ok(())

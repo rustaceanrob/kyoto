@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddrV4},
     path::PathBuf,
     time::Duration,
@@ -819,6 +820,76 @@ async fn headers_only_sync_then_rescan() {
         filters_after, 11,
         "rescan should deliver filters for the synced chain"
     );
+    requester.shutdown().unwrap();
+    rpc.stop().unwrap();
+}
+
+#[tokio::test]
+async fn gossip_subscription_delivers_bounded_stream() {
+    setup_debug_output();
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 110, 5).await;
+
+    let host = (IpAddr::V4(*socket_addr.ip()), Some(socket_addr.port()));
+    let builder = bip157::builder::Builder::new(bitcoin::Network::Regtest)
+        .chain_state(ChainState::Checkpoint(HashCheckpoint::from_genesis(
+            bitcoin::Network::Regtest,
+        )))
+        .add_peer(host)
+        .add_peer(host);
+    let (node, client) = builder.build();
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        info_rx,
+        warn_rx,
+        event_rx: mut channel,
+    } = client;
+    tokio::task::spawn(async move { print_logs(info_rx, warn_rx).await });
+
+    let best = best_hash(rpc);
+    sync_assert(&best, &mut channel).await;
+
+    let mut rng = StdRng::seed_from_u64(20002);
+    let secret = SecretKey::new(&mut rng);
+    let secp = Secp256k1::new();
+    let keypair = Keypair::from_secret_key(&secp, &secret);
+    let (internal_key, _) = keypair.x_only_public_key();
+    let watch_address = Address::p2tr(&secp, internal_key, None, KnownHrp::Regtest);
+    let mut scripts = HashSet::new();
+    scripts.insert(watch_address.script_pubkey());
+
+    let mut receiver = requester
+        .subscribe_to_gossip(scripts, HashSet::new())
+        .await
+        .unwrap()
+        .expect("first subscribe returns a bounded receiver");
+    assert_eq!(receiver.max_capacity(), 64);
+
+    let repeat = requester
+        .subscribe_to_gossip(HashSet::new(), HashSet::new())
+        .await
+        .unwrap();
+    assert!(
+        repeat.is_none(),
+        "subscribing while active should extend in place and return None"
+    );
+
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let sent = rpc
+        .send_to_address(&watch_address, Amount::from_sat(50_000))
+        .unwrap();
+    let expected_txid = sent.txid().unwrap();
+
+    let received = tokio::time::timeout(Duration::from_secs(30), receiver.recv())
+        .await
+        .expect("timed out waiting for gossip transaction")
+        .expect("gossip channel closed unexpectedly");
+    assert_eq!(received.compute_txid(), expected_txid);
+
     requester.shutdown().unwrap();
     rpc.stop().unwrap();
 }

@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{Amount, Wtxid};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 use tokio::sync::oneshot;
 
 use crate::chain::block_subsidy;
@@ -260,6 +262,41 @@ impl Requester {
             .send(ClientMessage::HeightOfHash(request))
             .map_err(|_| ClientError::SendError)?;
         rx.await.map_err(|_| ClientError::RecvError)
+    }
+
+    /// Subscribe to transaction gossip that spends any of `txins` or pays any of `scripts`.
+    ///
+    /// The first successful call — or the first after [`Requester::unsubscribe`] — returns a
+    /// bounded [`tokio::sync::mpsc::Receiver`] (capacity 64) delivering matching transactions.
+    /// Subsequent calls while a subscription is active extend the watched sets in place and
+    /// return `None`. Transactions are dropped when the receiver is not drained quickly enough.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub async fn subscribe_to_gossip(
+        &self,
+        scripts: HashSet<ScriptBuf>,
+        txins: HashSet<OutPoint>,
+    ) -> Result<Option<Receiver<Transaction>>, ClientError> {
+        let (tx, rx) = oneshot::channel::<Option<Receiver<Transaction>>>();
+        let request = ClientRequest::new((scripts, txins), tx);
+        self.ntx
+            .send(ClientMessage::SubscribeGossip(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
+    }
+
+    /// Tear down the active transaction gossip subscription. The next call to
+    /// [`Requester::subscribe_to_gossip`] will hand out a fresh receiver.
+    ///
+    /// # Errors
+    ///
+    /// If the node has stopped running.
+    pub fn unsubscribe(&self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::UnsubscribeGossip)
+            .map_err(|_| ClientError::SendError)
     }
 
     /// Check if the node is running.

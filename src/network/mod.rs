@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     net::IpAddr,
     path::PathBuf,
+    sync::Arc,
     time::Duration,
 };
 
@@ -24,7 +25,9 @@ use bitcoin::{
     Block, BlockHash, FeeRate, Wtxid,
 };
 use socks::{create_socks5, SocksConnection};
-use tokio::{net::TcpStream, time::Instant};
+use tokio::{net::TcpStream, sync::Mutex, time::Instant};
+
+use crate::network::gossip::GossipMonitor;
 
 use error::PeerError;
 
@@ -32,6 +35,7 @@ use crate::Socks5Proxy;
 
 pub(crate) mod dns;
 pub(crate) mod error;
+pub(crate) mod gossip;
 pub(crate) mod inbound;
 pub(crate) mod outbound;
 pub(crate) mod peer;
@@ -193,10 +197,10 @@ impl ConnectionType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) enum RelayPolicy {
     BlocksOnly,
-    Transactions,
+    Transactions(Arc<Mutex<GossipMonitor>>),
 }
 
 #[derive(Debug, Clone)]

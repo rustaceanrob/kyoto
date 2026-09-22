@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -9,12 +9,12 @@ use addrman::Record;
 use bitcoin::{
     key::rand,
     p2p::{address::AddrV2, ServiceFlags},
-    FeeRate, Network,
+    FeeRate, Network, OutPoint, ScriptBuf, Transaction,
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
     sync::{
-        mpsc::{self, Sender},
+        mpsc::{self, Receiver, Sender},
         Mutex,
     },
     task::JoinHandle,
@@ -24,7 +24,8 @@ use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
     network::{
-        dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig, RelayPolicy,
+        dns::bootstrap_dns, error::PeerError, gossip::GossipMonitor, peer::Peer, PeerId,
+        PeerTimeoutConfig, RelayPolicy,
     },
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
@@ -32,6 +33,7 @@ use crate::{
 use super::{AddressBook, ConnectionType, MainThreadMessage, PeerThreadMessage};
 
 const LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+const GOSSIP_CHANNEL_CAPACITY: usize = 64;
 
 // Preferred peers to connect to based on the user configuration
 type Whitelist = Vec<TrustedPeer>;
@@ -43,6 +45,19 @@ pub(crate) struct ManagedPeer {
     broadcast_min: FeeRate,
     ptx: Sender<MainThreadMessage>,
     handle: JoinHandle<Result<(), PeerError>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct GossipPeer {
+    nonce: PeerId,
+    ptx: Sender<MainThreadMessage>,
+    handle: JoinHandle<Result<(), PeerError>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct GossipSubscription {
+    monitor: Arc<Mutex<GossipMonitor>>,
+    peer: Option<GossipPeer>,
 }
 
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
@@ -60,6 +75,7 @@ pub(crate) struct PeerMap {
     whitelist: Whitelist,
     dialog: Arc<Dialog>,
     timeout_config: PeerTimeoutConfig,
+    gossip: Option<GossipSubscription>,
 }
 
 impl PeerMap {
@@ -87,12 +103,18 @@ impl PeerMap {
             whitelist,
             dialog,
             timeout_config,
+            gossip: None,
         }
     }
 
     // Remove any finished connections
     pub async fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished());
+        if let Some(g) = &mut self.gossip {
+            if g.peer.as_ref().map_or(false, |p| p.handle.is_finished()) {
+                g.peer = None;
+            }
+        }
     }
 
     // The number of peers with live connections
@@ -110,6 +132,30 @@ impl PeerMap {
 
     // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
+        let managed = self.spawn(loaded_peer, RelayPolicy::BlocksOnly).await?;
+        self.map.insert(self.current_id, managed);
+        Ok(())
+    }
+
+    // Send out a TCP connection to a new peer that will watch transaction gossip
+    pub async fn dispatch_gossip(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
+        let Some(g) = self.gossip.as_ref() else {
+            return Ok(());
+        };
+        let relay_policy = RelayPolicy::Transactions(Arc::clone(&g.monitor));
+        let ManagedPeer { ptx, handle, .. } = self.spawn(loaded_peer, relay_policy).await?;
+        let nonce = self.current_id;
+        if let Some(g) = self.gossip.as_mut() {
+            g.peer = Some(GossipPeer { nonce, ptx, handle });
+        }
+        Ok(())
+    }
+
+    async fn spawn(
+        &mut self,
+        loaded_peer: Record,
+        relay_policy: RelayPolicy,
+    ) -> Result<ManagedPeer, PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let (addr, port) = loaded_peer.network_addr();
         if !self.connector.can_connect(&addr) {
@@ -119,12 +165,13 @@ impl PeerMap {
         }
         crate::debug!(format!("Connecting to {:?}:{}", addr, port));
         self.current_id.increment();
+        let peer_id = self.current_id;
         let mut peer = Peer::new(
-            self.current_id,
+            peer_id,
             loaded_peer.clone(),
             self.network,
             self.block_type,
-            RelayPolicy::BlocksOnly,
+            relay_policy,
             self.mtx.clone(),
             prx,
             Arc::clone(&self.dialog),
@@ -146,16 +193,48 @@ impl PeerMap {
         };
         let is_proxy = self.connector.is_proxy();
         let handle = tokio::spawn(async move { peer.run(connection, is_proxy).await });
-        self.map.insert(
-            self.current_id,
-            ManagedPeer {
-                record: loaded_peer,
-                broadcast_min: FeeRate::BROADCAST_MIN,
-                ptx,
-                handle,
-            },
-        );
-        Ok(())
+        Ok(ManagedPeer {
+            record: loaded_peer,
+            broadcast_min: FeeRate::BROADCAST_MIN,
+            ptx,
+            handle,
+        })
+    }
+
+    pub async fn subscribe_gossip(
+        &mut self,
+        scripts: HashSet<ScriptBuf>,
+        txins: HashSet<OutPoint>,
+    ) -> Option<Receiver<Transaction>> {
+        if let Some(g) = &self.gossip {
+            g.monitor.lock().await.extend(scripts, txins);
+            None
+        } else {
+            let (tx, rx) = mpsc::channel(GOSSIP_CHANNEL_CAPACITY);
+            self.gossip = Some(GossipSubscription {
+                monitor: Arc::new(Mutex::new(GossipMonitor::new(scripts, txins, tx))),
+                peer: None,
+            });
+            Some(rx)
+        }
+    }
+
+    pub async fn unsubscribe_gossip(&mut self) {
+        if let Some(g) = self.gossip.take() {
+            if let Some(peer) = g.peer {
+                let _ = peer.ptx.send(MainThreadMessage::Disconnect).await;
+            }
+        }
+    }
+
+    pub fn needs_gossip_peer(&self) -> bool {
+        match &self.gossip {
+            None => false,
+            Some(g) => g
+                .peer
+                .as_ref()
+                .map_or(true, |peer| peer.handle.is_finished()),
+        }
     }
 
     // Set the minimum fee rate this peer will accept
@@ -192,6 +271,12 @@ impl PeerMap {
     pub async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
+            return;
+        }
+        if let Some(peer) = self.gossip.as_ref().and_then(|g| g.peer.as_ref()) {
+            if peer.nonce == nonce {
+                let _ = peer.ptx.send(message).await;
+            }
         }
     }
 

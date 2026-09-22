@@ -119,7 +119,7 @@ impl Peer {
                 (outbound_messages, reader)
             };
 
-        let message = outbound_messages.version_message(None, self.relay_policy);
+        let message = outbound_messages.version_message(None, &self.relay_policy);
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
@@ -264,7 +264,7 @@ impl Peer {
                     .await?;
                 Ok(())
             }
-            ReaderMessage::Inventory(hashes) => match self.relay_policy {
+            ReaderMessage::Inventory(hashes) => match &self.relay_policy {
                 RelayPolicy::BlocksOnly => {
                     let blocks: Vec<BlockHash> = hashes
                         .into_iter()
@@ -286,8 +286,32 @@ impl Peer {
                         .await?;
                     Ok(())
                 }
-                RelayPolicy::Transactions => unreachable!(),
+                RelayPolicy::Transactions(_) => {
+                    let requests: Vec<Inventory> = hashes
+                        .into_iter()
+                        .filter(|inv| {
+                            matches!(
+                                inv,
+                                Inventory::Transaction(_)
+                                    | Inventory::WitnessTransaction(_)
+                                    | Inventory::WTx(_)
+                            )
+                        })
+                        .collect();
+                    if requests.is_empty() {
+                        return Ok(());
+                    }
+                    let msg = message_generator.serialize(NetworkMessage::GetData(requests));
+                    self.write_bytes(writer, msg).await?;
+                    Ok(())
+                }
             },
+            ReaderMessage::Transaction(transaction) => {
+                if let RelayPolicy::Transactions(monitor) = &self.relay_policy {
+                    monitor.lock().await.dispatch(transaction);
+                }
+                Ok(())
+            }
             ReaderMessage::GetData(requests) => {
                 let mut tx_queue = self.tx_queue.lock().await;
                 for inv in requests {

@@ -45,7 +45,11 @@ impl MessageGenerator {
         }
     }
 
-    pub(in crate::network) fn version_message(&mut self, port: Option<u16>, relay_policy: RelayPolicy) -> Vec<u8> {
+    pub(in crate::network) fn version_message(
+        &mut self,
+        port: Option<u16>,
+        relay_policy: &RelayPolicy,
+    ) -> Vec<u8> {
         let msg = NetworkMessage::Version(make_version(port, relay_policy, &self.network));
         self.serialize(msg)
     }
@@ -83,7 +87,7 @@ fn encrypt_plaintext(encryptor: &mut OutboundCipher, plaintext: Vec<u8>) -> Vec<
 
 pub(in crate::network) fn make_version(
     port: Option<u16>,
-    relay_policy: RelayPolicy,
+    relay_policy: &RelayPolicy,
     network: &Network,
 ) -> VersionMessage {
     let now = SystemTime::now()
@@ -97,7 +101,7 @@ pub(in crate::network) fn make_version(
     );
     let relay = match relay_policy {
         RelayPolicy::BlocksOnly => false,
-        RelayPolicy::Transactions => true,
+        RelayPolicy::Transactions(_) => true,
     };
     let from_and_recv = Address::new(&ip, ServiceFlags::NONE);
     VersionMessage {

@@ -9,7 +9,7 @@ use bitcoin::{
         message_network::VersionMessage,
         ServiceFlags,
     },
-    Block,
+    Block, Transaction,
 };
 use bitcoin::{FeeRate, Wtxid};
 use tokio::io::AsyncRead;
@@ -69,7 +69,7 @@ impl<R: AsyncRead + Send + Sync + Unpin> Reader<R> {
             NetworkMessage::GetBlocks(_) => None,
             NetworkMessage::GetHeaders(_) => None,
             NetworkMessage::MemPool => None,
-            NetworkMessage::Tx(_) => None,
+            NetworkMessage::Tx(tx) => Some(ReaderMessage::Transaction(tx)),
             NetworkMessage::Block(block) => Some(ReaderMessage::Block(block)),
             NetworkMessage::Headers(headers) => {
                 if headers.len() > MAX_HEADERS {
@@ -149,6 +149,7 @@ pub(in crate::network) enum ReaderMessage {
     FilterHeaders(CFHeaders),
     Filter(CFilter),
     Block(Block),
+    Transaction(Transaction),
     Inventory(Vec<Inventory>),
     Reject(RejectPayload),
     Disconnect,

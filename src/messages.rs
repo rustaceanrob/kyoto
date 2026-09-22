@@ -1,9 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Div;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
+use bitcoin::{
+    block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, OutPoint, ScriptBuf,
+    Transaction, Wtxid,
+};
+use tokio::sync::mpsc::Receiver;
 
 use crate::chain::{BlockHeaderChanges, IndexedHeader};
 use crate::{chain::checkpoints::HashCheckpoint, IndexedBlock, TrustedPeer};
@@ -155,6 +159,12 @@ pub(crate) enum ClientMessage {
     GetHeader(ClientRequest<u32, Option<IndexedHeader>>),
     /// Look up the height of a block hash in the chain of most work.
     HeightOfHash(ClientRequest<BlockHash, Option<u32>>),
+    /// Subscribe to transaction gossip filtered by output scripts and spent outpoints.
+    SubscribeGossip(
+        ClientRequest<(HashSet<ScriptBuf>, HashSet<OutPoint>), Option<Receiver<Transaction>>>,
+    ),
+    /// Tear down the transaction gossip subscription.
+    UnsubscribeGossip,
     /// Send an empty message to see if the node is running.
     NoOp,
 }
