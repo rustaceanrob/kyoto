@@ -20,6 +20,7 @@ use tokio::{
     time::{Instant, MissedTickBehavior},
 };
 
+use crate::network::RelayPolicy;
 use crate::{broadcaster::BroadcastQueue, messages::Warning, BlockType, Dialog, Info};
 
 use super::{
@@ -41,6 +42,7 @@ pub(crate) struct Peer {
     main_thread_recv: Receiver<MainThreadMessage>,
     network: Network,
     block_type: BlockType,
+    relay_policy: RelayPolicy,
     dialog: Arc<Dialog>,
     db: Arc<Mutex<AddressBook>>,
     timeout_config: PeerTimeoutConfig,
@@ -55,6 +57,7 @@ impl Peer {
         source: Record,
         network: Network,
         block_type: BlockType,
+        relay_policy: RelayPolicy,
         main_thread_sender: Sender<PeerThreadMessage>,
         main_thread_recv: Receiver<MainThreadMessage>,
         dialog: Arc<Dialog>,
@@ -69,6 +72,7 @@ impl Peer {
             main_thread_recv,
             network,
             block_type,
+            relay_policy,
             dialog,
             db,
             timeout_config,
@@ -115,7 +119,7 @@ impl Peer {
                 (outbound_messages, reader)
             };
 
-        let message = outbound_messages.version_message(None);
+        let message = outbound_messages.version_message(None, self.relay_policy);
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
         let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
@@ -260,27 +264,30 @@ impl Peer {
                     .await?;
                 Ok(())
             }
-            ReaderMessage::Inventory(hashes) => {
-                let blocks: Vec<BlockHash> = hashes
-                    .into_iter()
-                    .filter_map(|inv| match inv {
-                        Inventory::Block(hash)
-                        | Inventory::CompactBlock(hash)
-                        | Inventory::WitnessBlock(hash) => Some(hash),
-                        _ => None,
-                    })
-                    .collect();
-                if blocks.is_empty() {
-                    return Ok(());
+            ReaderMessage::Inventory(hashes) => match self.relay_policy {
+                RelayPolicy::BlocksOnly => {
+                    let blocks: Vec<BlockHash> = hashes
+                        .into_iter()
+                        .filter_map(|inv| match inv {
+                            Inventory::Block(hash)
+                            | Inventory::CompactBlock(hash)
+                            | Inventory::WitnessBlock(hash) => Some(hash),
+                            _ => None,
+                        })
+                        .collect();
+                    if blocks.is_empty() {
+                        return Ok(());
+                    }
+                    self.main_thread_sender
+                        .send(PeerThreadMessage {
+                            nonce: self.nonce,
+                            message: PeerMessage::NewBlocks(blocks),
+                        })
+                        .await?;
+                    Ok(())
                 }
-                self.main_thread_sender
-                    .send(PeerThreadMessage {
-                        nonce: self.nonce,
-                        message: PeerMessage::NewBlocks(blocks),
-                    })
-                    .await?;
-                Ok(())
-            }
+                RelayPolicy::Transactions => unreachable!(),
+            },
             ReaderMessage::GetData(requests) => {
                 let mut tx_queue = self.tx_queue.lock().await;
                 for inv in requests {

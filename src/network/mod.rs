@@ -193,6 +193,12 @@ impl ConnectionType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RelayPolicy {
+    BlocksOnly,
+    Transactions,
+}
+
 #[derive(Debug, Clone)]
 struct MessageState {
     general_timeout: Duration,

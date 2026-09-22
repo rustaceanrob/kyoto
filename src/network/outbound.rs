@@ -15,7 +15,7 @@ use bitcoin::{
     BlockHash, Network, Transaction, Wtxid,
 };
 
-use crate::{default_port_from_network, BlockType};
+use crate::{default_port_from_network, network::RelayPolicy, BlockType};
 
 use super::{KYOTO_VERSION, PROTOCOL_VERSION, RUST_BITCOIN_VERSION};
 
@@ -45,8 +45,8 @@ impl MessageGenerator {
         }
     }
 
-    pub(in crate::network) fn version_message(&mut self, port: Option<u16>) -> Vec<u8> {
-        let msg = NetworkMessage::Version(make_version(port, &self.network));
+    pub(in crate::network) fn version_message(&mut self, port: Option<u16>, relay_policy: RelayPolicy) -> Vec<u8> {
+        let msg = NetworkMessage::Version(make_version(port, relay_policy, &self.network));
         self.serialize(msg)
     }
 
@@ -81,7 +81,11 @@ fn encrypt_plaintext(encryptor: &mut OutboundCipher, plaintext: Vec<u8>) -> Vec<
     encryptor.encrypt_to_vec(&plaintext, PacketType::Genuine, None)
 }
 
-pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> VersionMessage {
+pub(in crate::network) fn make_version(
+    port: Option<u16>,
+    relay_policy: RelayPolicy,
+    network: &Network,
+) -> VersionMessage {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("time went backwards")
@@ -91,6 +95,10 @@ pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> 
         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         port.unwrap_or(default_port),
     );
+    let relay = match relay_policy {
+        RelayPolicy::BlocksOnly => false,
+        RelayPolicy::Transactions => true,
+    };
     let from_and_recv = Address::new(&ip, ServiceFlags::NONE);
     VersionMessage {
         version: PROTOCOL_VERSION,
@@ -101,6 +109,6 @@ pub(in crate::network) fn make_version(port: Option<u16>, network: &Network) -> 
         nonce: 1,
         user_agent: format!("/Rust BIP-157:{KYOTO_VERSION}/rust-bitcoin:{RUST_BITCOIN_VERSION}/"),
         start_height: 0,
-        relay: false,
+        relay,
     }
 }

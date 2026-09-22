@@ -23,7 +23,9 @@ use tokio::{
 use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
-    network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
+    network::{
+        dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig, RelayPolicy,
+    },
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
 
@@ -122,6 +124,7 @@ impl PeerMap {
             loaded_peer.clone(),
             self.network,
             self.block_type,
+            RelayPolicy::BlocksOnly,
             self.mtx.clone(),
             prx,
             Arc::clone(&self.dialog),
