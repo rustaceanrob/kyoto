@@ -74,6 +74,7 @@ pub(crate) struct BlockNode {
     pub acc_work: Work,
     pub filter_commitment: Option<FilterCommitment>,
     pub filter_checked: bool,
+    pub cf_header_assumed: bool,
 }
 
 impl BlockNode {
@@ -84,6 +85,7 @@ impl BlockNode {
             acc_work,
             filter_commitment: None,
             filter_checked: false,
+            cf_header_assumed: false,
         }
     }
 }
@@ -404,7 +406,8 @@ impl BlockTree {
         let mut curr = self.tip_hash();
         while let Some(node) = self.headers.get_mut(&curr) {
             if node.height <= assumed_height {
-                node.filter_checked = true
+                node.filter_checked = true;
+                node.cf_header_assumed = true;
             }
             curr = node.header.prev_blockhash
         }
@@ -417,38 +420,17 @@ impl BlockTree {
         false
     }
 
-    pub(crate) fn reset_all_filters(&mut self) {
-        let mut curr = self.tip_hash();
-        while self.headers.get_mut(&curr).is_some() {
-            match self.headers.get_mut(&curr) {
-                Some(node) => {
-                    node.filter_checked = false;
-                    curr = node.header.prev_blockhash;
-                }
-                None => break,
-            }
-        }
-        for fork in &self.candidate_forks {
-            curr = fork.hash;
-            while self.headers.get_mut(&curr).is_some() {
-                match self.headers.get_mut(&curr) {
-                    Some(node) => {
-                        if !node.filter_checked {
-                            break;
-                        }
-                        node.filter_checked = false;
-                        curr = node.header.prev_blockhash;
-                    }
-                    None => break,
-                }
-            }
+    pub(crate) fn reset_filter_state(&mut self) {
+        for node in self.headers.values_mut() {
+            node.filter_checked = false;
+            node.cf_header_assumed = false;
+            node.filter_commitment = None;
         }
     }
 
     pub(crate) fn filter_headers_synced(&self) -> bool {
         self.iter_data()
-            .map(|node| node.filter_commitment)
-            .all(|commitment| commitment.is_some())
+            .all(|node| node.filter_commitment.is_some() || node.cf_header_assumed)
     }
 
     pub(crate) fn filters_synced(&self) -> bool {
@@ -461,7 +443,7 @@ impl BlockTree {
 
     pub(crate) fn total_filter_headers_synced(&self) -> u32 {
         self.iter_data()
-            .filter(|node| node.filter_commitment.is_some())
+            .filter(|node| node.filter_commitment.is_some() || node.cf_header_assumed)
             .count() as u32
     }
 
@@ -699,7 +681,9 @@ mod tests {
         }
         chain.assume_checked_to(3);
         assert!(!chain.filters_synced());
+        assert!(!chain.filter_headers_synced());
         chain.assume_checked_to(4);
         assert!(chain.filters_synced());
+        assert!(chain.filter_headers_synced());
     }
 }
