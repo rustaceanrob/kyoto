@@ -283,6 +283,16 @@ impl Node {
                                     self.dialog.send_warning(Warning::ChannelDropped);
                                 };
                             }
+                            ClientMessage::SubscribeGossip(request) => {
+                                let (req, oneshot) = request.into_values();
+                                let recv = self.peer_map.subscribe_to_gossip(req.scripts, req.txins).await;
+                                if oneshot.send(recv).is_err() {
+                                    self.dialog.send_warning(Warning::ChannelDropped);
+                                };
+                            }
+                            ClientMessage::UnsubscribeGossip => {
+                                self.peer_map.unsubscribe_from_gossip().await;
+                            }
                             ClientMessage::NoOp => (),
                         }
                     }
@@ -294,7 +304,7 @@ impl Node {
 
     // Connect to a new peer if we are not connected to enough
     async fn dispatch(&mut self) -> Result<(), NodeError> {
-        self.peer_map.clean().await;
+        self.peer_map.clean();
         let live = self.peer_map.live();
         let required = self.next_required_peers();
         // Find more peers when lower than the desired threshold.
@@ -310,6 +320,13 @@ impl Node {
                 .ok_or(NodeError::NoReachablePeers)?;
             if self.peer_map.dispatch(address).await.is_err() {
                 self.dialog.send_warning(Warning::CouldNotConnect);
+            }
+        }
+        if self.peer_map.needs_gossip_listener() {
+            if let Some(peer) = self.peer_map.next_peer().await {
+                if self.peer_map.dispatch_gossip(peer).await.is_err() {
+                    self.dialog.send_warning(Warning::CouldNotConnect);
+                }
             }
         }
         Ok(())

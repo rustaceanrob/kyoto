@@ -3,11 +3,13 @@ use std::ops::Div;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
+use bitcoin::Transaction;
 use bitcoin::{block::Header, p2p::message_network::RejectReason, BlockHash, FeeRate, Wtxid};
+use tokio::sync::mpsc::Receiver;
 
 use crate::chain::{BlockHeaderChanges, IndexedHeader};
 use crate::{chain::checkpoints::HashCheckpoint, IndexedBlock, TrustedPeer};
-use crate::{IndexedFilter, Package};
+use crate::{GossipMonitorRequest, IndexedFilter, Package};
 
 use super::error::FetchBlockError;
 
@@ -155,6 +157,10 @@ pub(crate) enum ClientMessage {
     GetHeader(ClientRequest<u32, Option<IndexedHeader>>),
     /// Look up the height of a block hash in the chain of most work.
     HeightOfHash(ClientRequest<BlockHash, Option<u32>>),
+    /// Look for unconfirmed transactions.
+    SubscribeGossip(ClientRequest<GossipMonitorRequest, Option<Receiver<Transaction>>>),
+    /// Stop looking for unconfirmed transactions.
+    UnsubscribeGossip,
     /// Send an empty message to see if the node is running.
     NoOp,
 }

@@ -1,6 +1,6 @@
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
-use bitcoin::{Amount, Wtxid};
+use bitcoin::{Amount, Transaction, Wtxid};
 use bitcoin::{BlockHash, FeeRate};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 use crate::chain::block_subsidy;
 use crate::chain::IndexedHeader;
 use crate::messages::ClientRequest;
-use crate::{Event, HashCheckpoint, Info, Package, TrustedPeer, Warning};
+use crate::{Event, GossipMonitorRequest, HashCheckpoint, Info, Package, TrustedPeer, Warning};
 
 use super::{error::ClientError, messages::ClientMessage};
 use super::{error::FetchBlockError, IndexedBlock};
@@ -260,6 +260,62 @@ impl Requester {
             .send(ClientMessage::HeightOfHash(request))
             .map_err(|_| ClientError::SendError)?;
         rx.await.map_err(|_| ClientError::RecvError)
+    }
+
+    /// Subscribe to transaction gossip that involves scripts or outpoints of interest. This
+    /// feature is considered **experimental**.
+    ///
+    /// # Behavior
+    ///
+    /// When called for the first time, this will create a _new_ peer-to-peer connection for the
+    /// sole purpose of finding transactions that involve scripts and outpoints provided in the
+    /// request. When called subsequent times, the scripts or outpoints provided will be added to
+    /// the existing set.
+    ///
+    /// # Properties
+    ///
+    /// - No loss of privacy: all transactions are annouced by `inv` messages, so the node will
+    ///   receive all transaction gossip and does not need to request special data that would
+    ///   otherwise reveal information.
+    /// - Unreliable: remote nodes are not obligated to forward unconfirmed transactions.
+    ///   Transactions may exist involving the scripts and outpoints, but the peer may not forward
+    ///   them.
+    /// - Untrustworthy: unconfirmed transactions may not be treated as final! It does not take any
+    ///   proof of work to generate transactions. No claims on transaction validity are possible
+    ///   until the transaction has been included in a block of sufficient work.
+    ///
+    /// ## When this feature makes sense to use
+    ///
+    /// - You are expecting to see a payment from a trusted counterparty, for instance an exchange,
+    ///   broker, friend, or colleague.
+    ///
+    /// ## When this feature does not make sense
+    ///
+    /// - You are expecting to see a payment from an untrusted counterparty.
+    ///
+    /// # Returns
+    ///
+    /// On first subscription, this function an [`mpsc::Receiver`] that will forward any transaction
+    /// matching the scripts and outpoints provided. Note, duplicate transactions may be sent. On
+    /// subsequent subscriptions, this method returns `None`, as there is an exisiting
+    /// [`mpsc::Receiver`].
+    pub async fn subscribe_to_gossip(
+        &self,
+        req: GossipMonitorRequest,
+    ) -> Result<Option<mpsc::Receiver<Transaction>>, ClientError> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<mpsc::Receiver<Transaction>>>();
+        let request = ClientRequest::new(req, tx);
+        self.ntx
+            .send(ClientMessage::SubscribeGossip(request))
+            .map_err(|_| ClientError::SendError)?;
+        rx.await.map_err(|_| ClientError::RecvError)
+    }
+
+    /// Unsubscribe from all transaction gossip.
+    pub async fn unsubscribe_from_gossip(&self) -> Result<(), ClientError> {
+        self.ntx
+            .send(ClientMessage::UnsubscribeGossip)
+            .map_err(|_| ClientError::SendError)
     }
 
     /// Check if the node is running.

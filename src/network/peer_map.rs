@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -9,12 +9,12 @@ use addrman::Record;
 use bitcoin::{
     key::rand,
     p2p::{address::AddrV2, ServiceFlags},
-    FeeRate, Network,
+    FeeRate, Network, OutPoint, ScriptBuf, Transaction,
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
     sync::{
-        mpsc::{self, Sender},
+        mpsc::{self, Receiver, Sender},
         Mutex,
     },
     task::JoinHandle,
@@ -23,7 +23,10 @@ use tokio::{
 use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
-    network::{dns::bootstrap_dns, error::PeerError, peer::Peer, PeerId, PeerTimeoutConfig},
+    network::{
+        dns::bootstrap_dns, error::PeerError, gossip::GossipMonitor, peer::Peer, PeerId,
+        PeerTimeoutConfig, RelayPolicy,
+    },
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
 
@@ -43,6 +46,24 @@ pub(crate) struct ManagedPeer {
     handle: JoinHandle<Result<(), PeerError>>,
 }
 
+/// A peer that is used solely for watching incoming transaction gossip.
+#[derive(Debug)]
+struct GossipPeer {
+    id: PeerId,
+    ptx: Sender<MainThreadMessage>,
+    handle: JoinHandle<Result<(), PeerError>>,
+}
+
+#[derive(Debug, Default)]
+enum GossipSubscriptionStatus {
+    Subscribed {
+        monitor: Arc<Mutex<GossipMonitor>>,
+        active_peer: Option<GossipPeer>,
+    },
+    #[default]
+    Unsubscribed,
+}
+
 // The `PeerMap` manages connections with peers, adds and bans peers, and manages the peer database
 #[derive(Debug)]
 pub(crate) struct PeerMap {
@@ -53,6 +74,7 @@ pub(crate) struct PeerMap {
     block_type: BlockType,
     mtx: Sender<PeerThreadMessage>,
     map: HashMap<PeerId, ManagedPeer>,
+    gossip: GossipSubscriptionStatus,
     db: Arc<Mutex<AddressBook>>,
     connector: ConnectionType,
     whitelist: Whitelist,
@@ -80,6 +102,7 @@ impl PeerMap {
             block_type,
             mtx,
             map: HashMap::new(),
+            gossip: GossipSubscriptionStatus::Unsubscribed,
             db: Arc::new(Mutex::new(AddressBook::new())),
             connector: connection_type,
             whitelist,
@@ -89,7 +112,7 @@ impl PeerMap {
     }
 
     // Remove any finished connections
-    pub async fn clean(&mut self) {
+    pub fn clean(&mut self) {
         self.map.retain(|_, peer| !peer.handle.is_finished());
     }
 
@@ -106,8 +129,46 @@ impl PeerMap {
         self.whitelist.push(peer);
     }
 
-    // Send out a TCP connection to a new peer and begin tracking the task
     pub async fn dispatch(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
+        let (id, peer) = self
+            .spawn_peer(loaded_peer, RelayPolicy::BlocksOnly)
+            .await?;
+        self.map.insert(id, peer);
+        Ok(())
+    }
+
+    pub async fn dispatch_gossip(&mut self, loaded_peer: Record) -> Result<(), PeerError> {
+        match core::mem::take(&mut self.gossip) {
+            GossipSubscriptionStatus::Subscribed {
+                monitor,
+                active_peer: _,
+            } => {
+                let relay_policy = RelayPolicy::Transactions(Arc::clone(&monitor));
+                // Assign first in case the connection fails. The user still wants to be subscribed.
+                self.gossip = GossipSubscriptionStatus::Subscribed {
+                    monitor: Arc::clone(&monitor),
+                    active_peer: None,
+                };
+                let (id, ManagedPeer { ptx, handle, .. }) =
+                    self.spawn_peer(loaded_peer, relay_policy).await?;
+                // The connection loop is live. If it fails, it will be overridden by this function
+                // again.
+                self.gossip = GossipSubscriptionStatus::Subscribed {
+                    monitor,
+                    active_peer: Some(GossipPeer { id, ptx, handle }),
+                };
+                Ok(())
+            }
+            GossipSubscriptionStatus::Unsubscribed => Ok(()),
+        }
+    }
+
+    // Send out a TCP connection to a new peer and begin tracking the task
+    async fn spawn_peer(
+        &mut self,
+        loaded_peer: Record,
+        relay_policy: RelayPolicy,
+    ) -> Result<(PeerId, ManagedPeer), PeerError> {
         let (ptx, prx) = mpsc::channel::<MainThreadMessage>(32);
         let (addr, port) = loaded_peer.network_addr();
         if !self.connector.can_connect(&addr) {
@@ -122,6 +183,7 @@ impl PeerMap {
             loaded_peer.clone(),
             self.network,
             self.block_type,
+            relay_policy,
             self.mtx.clone(),
             prx,
             Arc::clone(&self.dialog),
@@ -143,7 +205,7 @@ impl PeerMap {
         };
         let is_proxy = self.connector.is_proxy();
         let handle = tokio::spawn(async move { peer.run(connection, is_proxy).await });
-        self.map.insert(
+        Ok((
             self.current_id,
             ManagedPeer {
                 record: loaded_peer,
@@ -151,8 +213,7 @@ impl PeerMap {
                 ptx,
                 handle,
             },
-        );
-        Ok(())
+        ))
     }
 
     // Set the minimum fee rate this peer will accept
@@ -189,6 +250,20 @@ impl PeerMap {
     pub async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
             let _ = peer.ptx.send(message).await;
+            return;
+        }
+        match &self.gossip {
+            GossipSubscriptionStatus::Subscribed {
+                monitor: _,
+                active_peer,
+            } => {
+                if let Some(peer) = active_peer {
+                    if peer.id == nonce {
+                        let _ = peer.ptx.send(message).await;
+                    }
+                }
+            }
+            GossipSubscriptionStatus::Unsubscribed => (),
         }
     }
 
@@ -307,6 +382,62 @@ impl PeerMap {
         if let Some(peer) = self.map.get(&nonce) {
             let mut db = self.db.lock().await;
             db.ban(&peer.record);
+        }
+    }
+
+    pub async fn subscribe_to_gossip(
+        &mut self,
+        scripts: HashSet<ScriptBuf>,
+        txins: HashSet<OutPoint>,
+    ) -> Option<Receiver<Transaction>> {
+        match core::mem::take(&mut self.gossip) {
+            GossipSubscriptionStatus::Unsubscribed => {
+                let (tx, rx) = mpsc::channel(64);
+                self.gossip = GossipSubscriptionStatus::Subscribed {
+                    monitor: Arc::new(Mutex::new(GossipMonitor::new(scripts, txins, tx))),
+                    active_peer: None,
+                };
+                Some(rx)
+            }
+            GossipSubscriptionStatus::Subscribed {
+                monitor,
+                active_peer,
+            } => {
+                monitor.lock().await.extend(scripts, txins);
+                self.gossip = GossipSubscriptionStatus::Subscribed {
+                    monitor,
+                    active_peer,
+                };
+                None
+            }
+        }
+    }
+
+    pub async fn unsubscribe_from_gossip(&mut self) {
+        match core::mem::take(&mut self.gossip) {
+            GossipSubscriptionStatus::Subscribed {
+                monitor: _,
+                active_peer,
+            } => {
+                if let Some(peer) = active_peer {
+                    let _ = peer.ptx.send(MainThreadMessage::Disconnect).await;
+                }
+                self.gossip = GossipSubscriptionStatus::Unsubscribed;
+            }
+            GossipSubscriptionStatus::Unsubscribed => (),
+        }
+    }
+
+    // Should a new connection be established to monitor transaction gossip.
+    pub fn needs_gossip_listener(&self) -> bool {
+        match &self.gossip {
+            GossipSubscriptionStatus::Subscribed {
+                monitor: _,
+                active_peer,
+            } => active_peer
+                .as_ref()
+                .is_none_or(|peer| peer.handle.is_finished()),
+            GossipSubscriptionStatus::Unsubscribed => false,
         }
     }
 }
