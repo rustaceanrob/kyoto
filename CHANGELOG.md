@@ -5,6 +5,19 @@ Notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0
+
+## Added
+
+- Experimental transaction gossip observer, to watch for unconfirmed transactions
+- "headers only sync" added to the node builder
+
+## Changed
+
+- `data_dir` has been removed. No persistence occurs in the node
+- Restrict the test debug output behind an environment variable
+- `bip324` dependency updated
+
 ## 0.6.3
 
 ## Added
