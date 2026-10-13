@@ -187,7 +187,7 @@ impl Peer {
                                 },
                             }
                         },
-                        None => continue,
+                        None => return Ok(()),
                     }
                 }
                 _ = interval.tick() => continue,
