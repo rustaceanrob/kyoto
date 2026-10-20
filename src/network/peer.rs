@@ -22,7 +22,11 @@ use tokio::{
 
 use crate::network::gossip::TransactionCheck;
 use crate::network::RelayPolicy;
-use crate::{broadcaster::BroadcastQueue, messages::Warning, BlockType, Dialog, Info};
+use crate::{
+    broadcaster::{BroadcastQueue, TxIdentifier},
+    messages::Warning,
+    BlockType, Dialog, Info,
+};
 
 use super::{
     error::PeerError,
@@ -325,39 +329,21 @@ impl Peer {
                 RelayPolicy::BlocksOnly => Ok(()),
             },
             ReaderMessage::GetData(requests) => {
-                let mut tx_queue = self.tx_queue.lock().await;
                 for inv in requests {
-                    match inv {
-                        Inventory::WTx(wtxid) => {
-                            let transaction = tx_queue.fetch_tx(wtxid);
-                            if let Some(transaction) = transaction {
-                                let msg = message_generator.broadcast_transaction(transaction);
-                                self.write_bytes(writer, msg).await?;
-                                self.message_state.sent_tx(wtxid);
-                                tx_queue.sent_transaction_payload(wtxid);
-                            }
+                    let id: TxIdentifier = match inv {
+                        Inventory::WTx(wtxid) => wtxid.into(),
+                        Inventory::Transaction(txid) | Inventory::WitnessTransaction(txid) => {
+                            txid.into()
                         }
-                        Inventory::Transaction(txid) => {
-                            let transaction = tx_queue.fetch_tx(txid);
-                            if let Some(transaction) = transaction {
-                                let wtxid = transaction.compute_wtxid();
-                                let msg = message_generator.broadcast_transaction(transaction);
-                                self.write_bytes(writer, msg).await?;
-                                self.message_state.sent_tx(wtxid);
-                                tx_queue.sent_transaction_payload(wtxid);
-                            }
-                        }
-                        Inventory::WitnessTransaction(txid) => {
-                            let transaction = tx_queue.fetch_tx(txid);
-                            if let Some(transaction) = transaction {
-                                let wtxid = transaction.compute_wtxid();
-                                let msg = message_generator.broadcast_transaction(transaction);
-                                self.write_bytes(writer, msg).await?;
-                                self.message_state.sent_tx(wtxid);
-                                tx_queue.sent_transaction_payload(wtxid);
-                            }
-                        }
-                        _ => (),
+                        _ => continue,
+                    };
+                    let transaction = self.tx_queue.lock().await.fetch_tx(id);
+                    if let Some(transaction) = transaction {
+                        let wtxid = transaction.compute_wtxid();
+                        let msg = message_generator.broadcast_transaction(transaction);
+                        self.write_bytes(writer, msg).await?;
+                        self.message_state.sent_tx(wtxid);
+                        self.tx_queue.lock().await.sent_transaction_payload(wtxid);
                     }
                 }
                 Ok(())
