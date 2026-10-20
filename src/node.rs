@@ -136,6 +136,7 @@ impl Node {
             self.required_peers
         ));
         let mut last_block = LastBlockMonitor::new();
+        last_block.reset();
         let mut interval = tokio::time::interval(LOOP_TIMEOUT);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
@@ -158,9 +159,13 @@ impl Node {
                                     crate::debug!(format!("[{}]: version", peer_thread.nonce));
                                 }
                                 PeerMessage::Headers(headers) => {
-                                    last_block.reset();
+                                    let previous_tip = self.chain.header_chain.tip_hash();
                                     crate::debug!(format!("[{}]: headers", peer_thread.nonce));
-                                    match self.handle_headers(peer_thread.nonce, headers).await {
+                                    let response = self.handle_headers(peer_thread.nonce, headers).await;
+                                    if self.chain.header_chain.tip_hash() != previous_tip {
+                                        last_block.reset();
+                                    }
+                                    match response {
                                         Some(response) => {
                                             self.peer_map.send_message(peer_thread.nonce, response).await;
                                         }
