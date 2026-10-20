@@ -40,13 +40,15 @@ impl GossipMonitor {
     }
 
     fn matches(&self, tx: &Transaction) -> bool {
-        tx.input
-            .iter()
-            .any(|txin| self.txins.contains(&txin.previous_output))
-            || tx
-                .output
-                .iter()
-                .any(|txout| self.scripts.contains(&txout.script_pubkey))
+        // All transactions check all outputs for constant time scanning
+        let mut is_relevant = false;
+        for txin in &tx.input {
+            is_relevant |= self.txins.contains(&txin.previous_output);
+        }
+        for txout in &tx.output {
+            is_relevant |= self.scripts.contains(&txout.script_pubkey);
+        }
+        is_relevant
     }
 
     pub(crate) fn check_tx(&self, tx: Transaction) -> TransactionCheck {
