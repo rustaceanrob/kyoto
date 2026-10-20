@@ -93,6 +93,7 @@ impl Peer {
     ) -> Result<(), PeerError> {
         let start_time = Instant::now();
         let (tx, mut rx) = mpsc::channel(32);
+        let reader_tx = tx.clone();
         let (reader, mut writer) = connection.into_split();
         let reader = BufReader::new(reader);
         // If a peer signals for V2 we will use it, otherwise just use plaintext.
@@ -127,7 +128,14 @@ impl Peer {
         let message = outbound_messages.version_message(&self.relay_policy);
         self.write_bytes(&mut writer, message).await?;
         self.message_state.start_version_handshake();
-        let read_handle = tokio::spawn(async move { peer_reader.read_from_remote().await });
+        let read_handle = tokio::spawn(async move {
+            // Cancel safety: This is not called in a loop, and once `reader_tx` is closed we do
+            // not care about parsing messages any longer
+            select! {
+                result = peer_reader.read_from_remote() => result,
+                _ = reader_tx.closed() => Ok(()),
+            }
+        });
         let mut interval = tokio::time::interval(LOOP_TIMEOUT);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
