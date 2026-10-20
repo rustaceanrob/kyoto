@@ -1,5 +1,5 @@
 extern crate tokio;
-use std::{sync::Arc, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 
 use addrman::Record;
 use bip324::futures::{Protocol, ProtocolReader};
@@ -38,6 +38,9 @@ use super::{
 };
 
 const LOOP_TIMEOUT: Duration = Duration::from_millis(500);
+// Writes over Tor may be slow during bootstrap, but we cap the absolute time a peer can be stuck
+// during a write. For a reasonable peer, this is a large grace period.
+const ABSOLUTE_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 const V2_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub(crate) struct Peer {
@@ -176,7 +179,7 @@ impl Peer {
                                     match e {
                                         // We were told by the reader thread to disconnect from this peer
                                         PeerError::DisconnectCommand => return Ok(()),
-                                        _ => continue,
+                                        e => return Err(e),
                                     }
                                 },
                             }
@@ -194,7 +197,7 @@ impl Peer {
                                     match e {
                                         // We were told by the main thread to disconnect from this peer
                                         PeerError::DisconnectCommand => return Ok(()),
-                                        _ => continue,
+                                        e => return Err(e),
                                     }
                                 },
                             }
@@ -495,8 +498,12 @@ impl Peer {
     where
         W: AsyncWrite + Send + Unpin,
     {
-        writer.write_all(&message).await?;
-        writer.flush().await?;
+        tokio::time::timeout(ABSOLUTE_WRITE_TIMEOUT, async {
+            writer.write_all(&message).await?;
+            writer.flush().await
+        })
+        .await
+        .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
         Ok(())
     }
 
