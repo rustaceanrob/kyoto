@@ -277,6 +277,15 @@ impl BlockTree {
         let mut curr_hash = new_best.hash;
         let mut connections = Vec::new();
         let mut disconnections = Vec::new();
+        while let Some((&height, &hash)) = self.canonical_hashes.last_key_value() {
+            if height <= new_best.height {
+                break;
+            }
+            self.canonical_hashes.remove(&height);
+            if let Some(node) = self.headers.get(&hash) {
+                disconnections.push(IndexedHeader::new(node.height, node.header));
+            }
+        }
         loop {
             match self.headers.get(&curr_hash) {
                 Some(node) => {
@@ -685,5 +694,92 @@ mod tests {
         chain.assume_checked_to(4);
         assert!(chain.filters_synced());
         assert!(chain.filter_headers_synced());
+    }
+
+    fn store_node(
+        tree: &mut BlockTree,
+        height: u32,
+        header: Header,
+        previous_work: Work,
+        canonical: bool,
+    ) -> Work {
+        let work = previous_work + header.work();
+        tree.headers
+            .insert(header.block_hash(), BlockNode::new(height, header, work));
+        if canonical {
+            tree.canonical_hashes.insert(height, header.block_hash());
+        }
+        work
+    }
+
+    #[test]
+    fn test_shorter_fork_reorg() {
+        let network = Network::Bitcoin;
+        let hard = CompactTarget::from_consensus(0x1c0ffff0);
+        let easy = CompactTarget::from_consensus(0x1c3fffc0);
+        let mut common = genesis_block(network).header;
+        common.bits = hard;
+        common.time = 1_600_000_000 + 1_000_000;
+        let mut tree = BlockTree::new(Tip::from_checkpoint(2013, common.prev_blockhash), network);
+        let common_work = store_node(&mut tree, 2014, common, Work::zero(), true);
+        let mut old = common;
+        old.prev_blockhash = common.block_hash();
+        old.time = 1_600_000_000 + 4 * 1_209_600;
+        let mut old_work = store_node(&mut tree, 2015, old, common_work, true);
+        let mut old_branch = vec![old];
+        for height in 2016..=2020 {
+            let mut next = old;
+            next.prev_blockhash = old.block_hash();
+            next.time += 600;
+            next.bits = easy;
+            old_work = store_node(&mut tree, height, next, old_work, true);
+            old_branch.push(next);
+            old = next;
+        }
+        tree.active_tip = Tip {
+            hash: old.block_hash(),
+            height: 2020,
+            next_work_required: Some(easy),
+        };
+
+        let mut fork = common;
+        fork.prev_blockhash = common.block_hash();
+        fork.time = 1_600_000_000 + 1_209_600;
+        let mut fork_work = store_node(&mut tree, 2015, fork, common_work, false);
+        let mut next = fork;
+        next.prev_blockhash = fork.block_hash();
+        next.time += 600;
+        fork = next;
+        fork_work = store_node(&mut tree, 2016, fork, fork_work, false);
+        assert!(fork_work < old_work);
+        tree.candidate_forks.push(Tip {
+            hash: fork.block_hash(),
+            height: 2016,
+            next_work_required: Some(hard),
+        });
+
+        let mut winning = fork;
+        winning.prev_blockhash = fork.block_hash();
+        winning.time += 600;
+        assert!(fork_work + winning.work() > old_work);
+        let disconnected = match tree.accept_header(winning) {
+            AcceptHeaderChanges::Reorganization { disconnected, .. } => disconnected,
+            other => panic!("expected a shorter, higher-work reorganization: {other:?}"),
+        };
+        assert_eq!(tree.height(), 2017);
+        let old_tail_hash = old_branch.last().unwrap().block_hash();
+        assert_eq!(
+            tree.height_of_hash_canonical_only(old_tail_hash),
+            None,
+            "the displaced height-2020 block is still advertised as canonical"
+        );
+        for height in 2018..=2020 {
+            assert_eq!(tree.block_hash_at_height(height), None);
+            assert_eq!(tree.header_at_height(height), None);
+        }
+        assert_eq!(disconnected.len(), old_branch.len());
+        for header in old_branch {
+            assert!(disconnected.iter().any(|entry| entry.header == header));
+        }
     }
 }
