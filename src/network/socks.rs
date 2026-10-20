@@ -172,7 +172,7 @@ pub(crate) async fn create_socks5(
         ADDR_TYPE_DOMAIN => {
             let mut len = [0_u8; 1];
             tcp_stream.read_exact(&mut len).await?;
-            let mut buf = vec![0_u8; u8::from_le_bytes(len) as usize];
+            let mut buf = vec![0_u8; u8::from_le_bytes(len) as usize + 2];
             tcp_stream.read_exact(&mut buf).await?;
         }
         _ => return Err(Socks5Error::ConnectionFailed),
