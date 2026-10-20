@@ -183,7 +183,7 @@ impl BlockTree {
             .iter()
             .position(|fork| fork.hash.eq(&prev_hash))
         {
-            let fork = self.candidate_forks.swap_remove(fork_index);
+            let fork = self.candidate_forks[fork_index];
             if let Some(node) = self.headers.get(&fork.hash) {
                 let new_height = node.height.increment();
                 let params = self.network.params();
@@ -203,6 +203,7 @@ impl BlockTree {
                         });
                     }
                 }
+                self.candidate_forks.swap_remove(fork_index);
                 let acc_work = node.acc_work + new_header.work();
                 let new_tip = Tip {
                     hash: new_hash,
@@ -781,5 +782,47 @@ mod tests {
         for header in old_branch {
             assert!(disconnected.iter().any(|entry| entry.header == header));
         }
+    }
+
+    fn mine_child(parent: Header, delay: u32, bits: CompactTarget) -> Header {
+        let mut child = parent;
+        child.prev_blockhash = parent.block_hash();
+        child.time += delay;
+        child.bits = bits;
+        child.nonce = 0;
+        while child.validate_pow(child.target()).is_err() {
+            child.nonce += 1;
+        }
+        child
+    }
+
+    #[test]
+    fn test_rejected_fork_extension_keeps_fork() {
+        let mut tree = BlockTree::from_genesis(Network::Regtest);
+        let genesis = genesis_block(Network::Regtest).header;
+        let bits = genesis.bits;
+        let common = mine_child(genesis, 600, bits);
+        let a2 = mine_child(common, 600, bits);
+        let a3 = mine_child(a2, 600, bits);
+        let b2 = mine_child(common, 601, bits);
+        let b3 = mine_child(b2, 600, bits);
+        for header in [common, a2, a3, b2, b3] {
+            tree.accept_header(header);
+        }
+        assert_eq!(tree.tip_hash(), a3.block_hash());
+
+        let invalid = mine_child(b3, 600, CompactTarget::from_consensus(0x2100ffff));
+        assert!(matches!(
+            tree.accept_header(invalid),
+            AcceptHeaderChanges::Rejected(HeaderRejection::InvalidPow { .. })
+        ));
+        assert_eq!(tree.tip_hash(), a3.block_hash());
+
+        let b4 = mine_child(b3, 601, bits);
+        assert!(matches!(
+            tree.accept_header(b4),
+            AcceptHeaderChanges::Reorganization { .. }
+        ));
+        assert_eq!(tree.tip_hash(), b4.block_hash());
     }
 }
