@@ -14,7 +14,7 @@ use bitcoin::{
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use tokio::{
     sync::{
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, error::TrySendError, Receiver, Sender},
         Mutex,
     },
     task::JoinHandle,
@@ -33,6 +33,21 @@ use crate::{
 use super::{AddressBook, ConnectionType, MainThreadMessage, PeerThreadMessage};
 
 const LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+
+fn deliver(
+    ptx: &Sender<MainThreadMessage>,
+    handle: &JoinHandle<Result<(), PeerError>>,
+    message: MainThreadMessage,
+) -> bool {
+    match ptx.try_send(message) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            handle.abort();
+            false
+        }
+        Err(TrySendError::Closed(_)) => false,
+    }
+}
 
 // Preferred peers to connect to based on the user configuration
 type Whitelist = Vec<TrustedPeer>;
@@ -247,9 +262,9 @@ impl PeerMap {
     }
 
     // Send a message to the specified peer
-    pub async fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
+    pub fn send_message(&self, nonce: PeerId, message: MainThreadMessage) {
         if let Some(peer) = self.map.get(&nonce) {
-            let _ = peer.ptx.send(message).await;
+            deliver(&peer.ptx, &peer.handle, message);
             return;
         }
         match &self.gossip {
@@ -259,7 +274,7 @@ impl PeerMap {
             } => {
                 if let Some(peer) = active_peer {
                     if peer.id == nonce {
-                        let _ = peer.ptx.send(message).await;
+                        deliver(&peer.ptx, &peer.handle, message);
                     }
                 }
             }
@@ -268,22 +283,20 @@ impl PeerMap {
     }
 
     // Broadcast to all connected peers, returning if at least one peer received the message.
-    pub async fn broadcast(&self, message: MainThreadMessage) -> bool {
+    pub fn broadcast(&self, message: MainThreadMessage) -> bool {
         let active = self.map.values().filter(|peer| !peer.handle.is_finished());
         let mut sends = Vec::new();
         for peer in active {
-            let res = peer.ptx.send(message.clone()).await;
-            sends.push(res.is_ok());
+            sends.push(deliver(&peer.ptx, &peer.handle, message.clone()));
         }
         sends.into_iter().any(|res| res)
     }
 
     // Send to a random peer, returning true if the message was sent.
-    pub async fn send_random(&self, message: MainThreadMessage) -> bool {
+    pub fn send_random(&self, message: MainThreadMessage) -> bool {
         let mut rng = StdRng::from_entropy();
         if let Some((_, peer)) = self.map.iter().choose(&mut rng) {
-            let res = peer.ptx.send(message).await;
-            return res.is_ok();
+            return deliver(&peer.ptx, &peer.handle, message);
         }
         false
     }
@@ -413,14 +426,14 @@ impl PeerMap {
         }
     }
 
-    pub async fn unsubscribe_from_gossip(&mut self) {
+    pub fn unsubscribe_from_gossip(&mut self) {
         match core::mem::take(&mut self.gossip) {
             GossipSubscriptionStatus::Subscribed {
                 monitor: _,
                 active_peer,
             } => {
                 if let Some(peer) = active_peer {
-                    let _ = peer.ptx.send(MainThreadMessage::Disconnect).await;
+                    deliver(&peer.ptx, &peer.handle, MainThreadMessage::Disconnect);
                 }
                 self.gossip = GossipSubscriptionStatus::Unsubscribed;
             }
