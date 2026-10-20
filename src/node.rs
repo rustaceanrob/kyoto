@@ -552,7 +552,10 @@ impl Node {
                     warning: format!("Compact filter header syncing encountered an error: {e}"),
                 });
                 self.peer_map.ban(peer_id).await;
-                Some(MainThreadMessage::Disconnect)
+                self.peer_map
+                    .send_message(peer_id, MainThreadMessage::Disconnect)
+                    .await;
+                None
             }
         }
     }
