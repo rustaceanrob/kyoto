@@ -233,6 +233,16 @@ impl MessageState {
         self.version_handshake = self.version_handshake.finish();
     }
 
+    fn receive_version(&mut self) -> bool {
+        match self.version_handshake.receive_version() {
+            Some(state) => {
+                self.version_handshake = state;
+                true
+            }
+            None => false,
+        }
+    }
+
     fn sent_tx(&mut self, wtxid: Wtxid) {
         self.sent_txs.insert(wtxid);
     }
@@ -256,6 +266,9 @@ enum VersionHandshakeState {
     Started {
         at: tokio::time::Instant,
     },
+    VersionReceived {
+        at: tokio::time::Instant,
+    },
     Completed,
 }
 
@@ -263,6 +276,13 @@ impl VersionHandshakeState {
     fn start(self) -> Self {
         Self::Started {
             at: tokio::time::Instant::now(),
+        }
+    }
+
+    fn receive_version(self) -> Option<Self> {
+        match self {
+            Self::Started { at } => Some(Self::VersionReceived { at }),
+            _ => None,
         }
     }
 
@@ -276,7 +296,7 @@ impl VersionHandshakeState {
 
     fn is_unresponsive(&self, timeout: Duration) -> bool {
         match self {
-            Self::Started { at } => at.elapsed() > timeout,
+            Self::Started { at } | Self::VersionReceived { at } => at.elapsed() > timeout,
             _ => false,
         }
     }

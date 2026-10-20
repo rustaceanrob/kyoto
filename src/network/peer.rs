@@ -210,7 +210,7 @@ impl Peer {
         }
         match message {
             ReaderMessage::Version(version) => {
-                if self.message_state.version_handshake.is_complete() {
+                if !self.message_state.receive_version() {
                     return Err(PeerError::DisconnectCommand);
                 }
                 self.main_thread_sender
