@@ -22,8 +22,8 @@ use bitcoin::{
     sighash::{Prevouts, SighashCache},
     Amount, KnownHrp, OutPoint, ScriptBuf, Sequence, TapSighashType, TxIn, TxOut, Witness,
 };
-use corepc_node::serde_json;
-use corepc_node::{anyhow, exe_path};
+use bitcoind::serde_json;
+use bitcoind::{anyhow, exe_path};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -32,10 +32,10 @@ fn setup_debug_output() {
 }
 
 // Start the bitcoin daemon either through an environment variable or by download
-fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node, SocketAddrV4)> {
+fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(bitcoind::BitcoinD, SocketAddrV4)> {
     let path = exe_path()?;
-    let mut conf = corepc_node::Conf::default();
-    conf.p2p = corepc_node::P2P::Yes;
+    let mut conf = bitcoind::Conf::default();
+    conf.p2p = bitcoind::P2P::Yes;
     conf.args.push("--txindex");
     conf.args.push("--blockfilterindex");
     conf.args.push("--peerblockfilters");
@@ -49,7 +49,7 @@ fn start_bitcoind(with_v2_transport: bool) -> anyhow::Result<(corepc_node::Node,
     } else {
         conf.args.push("--v2transport=0");
     }
-    let bitcoind = corepc_node::Node::with_conf(path, &conf)?;
+    let bitcoind = bitcoind::BitcoinD::with_conf(path, &conf)?;
     let socket_addr = bitcoind.params.p2p_socket.unwrap();
     Ok((bitcoind, socket_addr))
 }
@@ -68,16 +68,16 @@ fn new_node(
     (node, client)
 }
 
-fn num_blocks(rpc: &corepc_node::Client) -> i64 {
+fn num_blocks(rpc: &bitcoind::Client) -> i64 {
     rpc.get_blockchain_info().unwrap().blocks
 }
 
-fn best_hash(rpc: &corepc_node::Client) -> BlockHash {
+fn best_hash(rpc: &bitcoind::Client) -> BlockHash {
     rpc.get_best_block_hash().unwrap().block_hash().unwrap()
 }
 
 async fn mine_blocks(
-    rpc: &corepc_node::Client,
+    rpc: &bitcoind::Client,
     miner: &bitcoin::Address<NetworkChecked>,
     num_blocks: usize,
     time: u64,
@@ -86,7 +86,7 @@ async fn mine_blocks(
     tokio::time::sleep(Duration::from_secs(time)).await;
 }
 
-async fn invalidate_block(rpc: &corepc_node::Client, hash: &bitcoin::BlockHash) {
+async fn invalidate_block(rpc: &bitcoind::Client, hash: &bitcoin::BlockHash) {
     let value = serde_json::to_value(hash).unwrap();
     rpc.call::<()>("invalidateblock", &[value]).unwrap();
     tokio::time::sleep(Duration::from_secs(2)).await;

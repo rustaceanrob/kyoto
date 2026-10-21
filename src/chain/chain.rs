@@ -430,7 +430,7 @@ mod tests {
         p2p::message_filter::{CFHeaders, CFilter},
         BlockHash, FilterHash, FilterHeader,
     };
-    use corepc_node::serde_json;
+    use bitcoind::serde_json;
 
     use crate::chain::ChainState;
     use crate::FilterType;

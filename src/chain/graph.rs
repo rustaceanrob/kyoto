@@ -531,7 +531,7 @@ impl<'a> Iterator for BlockNodeIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use corepc_node::serde_json;
+    use bitcoind::serde_json;
     use std::fs::File;
     use std::str::FromStr;
 
