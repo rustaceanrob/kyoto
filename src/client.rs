@@ -312,7 +312,7 @@ impl Requester {
     }
 
     /// Unsubscribe from all transaction gossip.
-    pub async fn unsubscribe_from_gossip(&self) -> Result<(), ClientError> {
+    pub fn unsubscribe_from_gossip(&self) -> Result<(), ClientError> {
         self.ntx
             .send(ClientMessage::UnsubscribeGossip)
             .map_err(|_| ClientError::SendError)

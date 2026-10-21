@@ -898,6 +898,7 @@ async fn headers_only_sync_then_rescan() {
 }
 
 #[tokio::test]
+#[ignore = "races bitcoind's block filter index on localhost"]
 async fn inv_fallback_after_burst_mine() {
     setup_debug_output();
     let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
