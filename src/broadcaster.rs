@@ -97,7 +97,7 @@ mod tests {
     use std::fs::File;
 
     use bitcoin::Transaction;
-    use corepc_node::serde_json;
+    use bitcoind::serde_json;
 
     use super::BroadcastQueue;
 
