@@ -342,15 +342,24 @@ impl Chain {
             .header_chain
             .header_at_hash(filter_message.block_hash)
             .ok_or(CFilterSyncError::UnknownFilterHash)?;
+        let request = self
+            .request_state
+            .last_filter_request
+            .as_mut()
+            .ok_or(CFilterSyncError::UnrequestedStophash)?;
+        if height.ne(&request.next_height) {
+            if height > request.next_height && height <= request.stop_height {
+                return Err(CFilterSyncError::OutOfOrderFilter);
+            }
+            return Ok(FilterCheck {
+                was_last_in_batch: false,
+            });
+        }
+        request.next_height = height + 1;
+        let was_last_in_batch = height.eq(&request.stop_height);
         let indexed_filter = IndexedFilter::new(height, header, filter);
         self.dialog.send_event(Event::IndexedFilter(indexed_filter));
         self.header_chain.check_filter(filter_message.block_hash);
-        let stop_hash = self
-            .request_state
-            .last_filter_request
-            .ok_or(CFilterSyncError::UnrequestedStophash)?
-            .stop_hash;
-        let was_last_in_batch = filter_message.block_hash.eq(&stop_hash);
         Ok(FilterCheck { was_last_in_batch })
     }
 
@@ -372,8 +381,8 @@ impl Chain {
             .block_hash_at_height(stop_hash_index)
             .unwrap_or(self.header_chain.tip_hash());
         self.request_state.last_filter_request = Some(FilterRequest {
-            stop_hash,
-            start_height: last_unchecked_filter,
+            next_height: last_unchecked_filter,
+            stop_height: stop_hash_index.min(self.header_chain.height()),
         });
         GetCFilters {
             filter_type: self.filter_type.into(),
@@ -432,6 +441,7 @@ mod tests {
     };
     use bitcoind::serde_json;
 
+    use crate::chain::error::CFilterSyncError;
     use crate::chain::ChainState;
     use crate::FilterType;
     use crate::{
@@ -558,6 +568,34 @@ mod tests {
         serde_json::from_reader(&file).unwrap()
     }
 
+    #[test]
+    fn receiving_stop_filter_first_must_not_skip_unreceived_filters() {
+        let scenario = load_scenario();
+        let mut chain = new_regtest(base_block(), 2);
+        chain.sync_chain(scenario.most_work_headers()).unwrap();
+        let request = chain.next_cf_header_message();
+        let headers = CFHeaders {
+            filter_type: 0,
+            stop_hash: request.stop_hash,
+            previous_filter_header: scenario.prev_header(),
+            filter_hashes: scenario.n_most_work_filter_hashes(5),
+        };
+        chain.sync_cf_headers(1.into(), headers.clone()).unwrap();
+        chain.sync_cf_headers(2.into(), headers).unwrap();
+        assert!(chain.is_cf_headers_synced());
+        let original = chain.next_filter_message();
+
+        let stop_filter = scenario.filters().last().unwrap().clone();
+        let _ = chain.sync_filter(stop_filter);
+        assert!(!chain.is_filters_synced());
+
+        let retry = chain.next_filter_message();
+        assert_eq!(
+            retry.start_height, original.start_height,
+            "a stop-hash response permanently advanced past missing filters"
+        );
+    }
+
     #[tokio::test]
     async fn test_fork_includes_old_vals() {
         let gen = base_block();
@@ -620,9 +658,19 @@ mod tests {
         assert_eq!(CFHeaderChanges::Extended, append_attempt);
         assert!(chain.is_cf_headers_synced());
         chain.next_filter_message();
-        for filter in scenario.filters().into_iter().rev() {
-            assert!(chain.sync_filter(filter).is_ok())
+        let filters = scenario.filters();
+        for filter in filters[1..].iter().rev() {
+            assert!(matches!(
+                chain.sync_filter(filter.clone()),
+                Err(CFilterSyncError::OutOfOrderFilter)
+            ));
         }
+        assert!(!chain.is_filters_synced());
+        let (last, rest) = filters.split_last().unwrap();
+        for filter in rest {
+            assert!(!chain.sync_filter(filter.clone()).unwrap().was_last_in_batch);
+        }
+        assert!(chain.sync_filter(last.clone()).unwrap().was_last_in_batch);
         assert!(chain.is_filters_synced());
     }
 
@@ -655,7 +703,7 @@ mod tests {
             filter: mismatch_filter,
         });
         assert!(sync_filter_1.is_err());
-        let good_filter = scenario.filters().last().unwrap().clone();
+        let good_filter = scenario.filters().first().unwrap().clone();
         let sync_filter_1 = chain.sync_filter(good_filter);
         assert!(sync_filter_1.is_ok());
     }
@@ -820,6 +868,8 @@ mod tests {
         assert!(sync_filter_1.is_ok());
         let sync_filter_2 = chain.sync_filter(filters[1].clone());
         assert!(sync_filter_2.is_ok());
+        let sync_filter_3 = chain.sync_filter(filters[2].clone());
+        assert!(sync_filter_3.is_ok());
         let sync_filter_4 = chain.sync_filter(filters[3].clone());
         assert!(sync_filter_4.is_ok());
     }

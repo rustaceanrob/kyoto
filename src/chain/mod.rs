@@ -142,9 +142,8 @@ impl FilterRequestState {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FilterRequest {
-    #[allow(unused)]
-    pub start_height: u32,
-    pub stop_hash: BlockHash,
+    pub next_height: u32,
+    pub stop_height: u32,
 }
 
 #[derive(Debug, Clone, Copy)]

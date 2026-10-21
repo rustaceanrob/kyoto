@@ -95,6 +95,7 @@ pub enum CFilterSyncError {
     UnrequestedStophash,
     UnknownFilterHash,
     MisalignedFilterHash,
+    OutOfOrderFilter,
 }
 
 impl core::fmt::Display for CFilterSyncError {
@@ -114,6 +115,9 @@ impl core::fmt::Display for CFilterSyncError {
                 f,
                 "the filter hash from our header chain and this filter hash do not match."
             ),
+            CFilterSyncError::OutOfOrderFilter => {
+                write!(f, "a filter was received before the filters preceding it.")
+            }
         }
     }
 }
