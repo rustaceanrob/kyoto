@@ -173,11 +173,12 @@ impl Chain {
             if expected.ne(batch.prev_header()) {
                 // This is an older message and we already have the headers corresponding to this
                 // message
-                if self
-                    .header_chain
-                    .iter_data()
-                    .filter_map(|node| node.filter_commitment)
-                    .any(|commit| commit.header.eq(batch.prev_header()))
+                if batch.stop_hash().ne(&request.stop_hash)
+                    && self
+                        .header_chain
+                        .iter_data()
+                        .filter_map(|node| node.filter_commitment)
+                        .any(|commit| commit.header.eq(batch.prev_header()))
                 {
                     return Ok(CFHeaderChanges::AddedToQueue);
                 } else {

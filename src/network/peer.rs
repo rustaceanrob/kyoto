@@ -551,7 +551,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        chain::{chain::Chain, CFHeaderChanges, ChainState},
+        chain::{chain::Chain, error::CFHeaderSyncError, CFHeaderChanges, ChainState},
         FilterType, Package,
     };
 
@@ -760,14 +760,19 @@ mod tests {
         .await
         .unwrap();
         let forwarded = node_rx.try_recv().unwrap();
-        let PeerMessage::FilterHeaders(payload) = forwarded.message else {
+        let PeerMessage::FilterHeaders(mut payload) = forwarded.message else {
             panic!("expected filter headers");
         };
         assert!(matches!(
-            chain.sync_cf_headers(forwarded.nonce, payload),
+            chain.sync_cf_headers(forwarded.nonce, payload.clone()),
             Ok(CFHeaderChanges::AddedToQueue)
         ));
         assert!(!chain.is_cf_headers_synced());
+        payload.stop_hash = parent.block_hash();
+        assert!(matches!(
+            chain.sync_cf_headers(forwarded.nonce, payload),
+            Err(CFHeaderSyncError::PrevHeaderMismatch)
+        ));
         tokio::time::advance(peer.timeout_config.response_timeout + Duration::from_secs(1)).await;
         assert!(peer.message_state.unresponsive());
     }
