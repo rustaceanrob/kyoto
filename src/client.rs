@@ -157,6 +157,9 @@ impl Requester {
             .send(ClientMessage::GetBlock(message))
             .map_err(|_| FetchBlockError::SendError)?;
         let indexed_block = rx.await.map_err(|_| FetchBlockError::RecvError)??;
+        if !indexed_block.block.check_witness_commitment() {
+            return Err(FetchBlockError::InvalidWitnessCommitment);
+        }
         let subsidy = block_subsidy(indexed_block.height);
         let weight = indexed_block.block.weight();
         let revenue = indexed_block

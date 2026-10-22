@@ -55,6 +55,8 @@ pub enum FetchBlockError {
     RecvError,
     /// The hash is not a member of the chain of most work.
     UnknownHash,
+    /// The witness data of the block does not match the commitment in the coinbase.
+    InvalidWitnessCommitment,
 }
 
 impl core::fmt::Display for FetchBlockError {
@@ -69,6 +71,12 @@ impl core::fmt::Display for FetchBlockError {
             ),
             FetchBlockError::UnknownHash => {
                 write!(f, "the hash is not a member of the chain of most work.")
+            }
+            FetchBlockError::InvalidWitnessCommitment => {
+                write!(
+                    f,
+                    "the block witness data does not match the coinbase commitment."
+                )
             }
         }
     }
