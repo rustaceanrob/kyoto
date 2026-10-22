@@ -122,7 +122,7 @@ pub enum FilterType {
     Basic,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum BlockType {
     #[default]
     Legacy,

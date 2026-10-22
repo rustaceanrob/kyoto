@@ -225,7 +225,8 @@ impl Node {
                                 }
                             },
                             ClientMessage::GetBlock(request) => {
-                                let height_opt = self.chain.header_chain.height_of_hash(request.data());
+                                let (block_hash, _) = request.data();
+                                let height_opt = self.chain.header_chain.height_of_hash(block_hash);
                                 if height_opt.is_none() {
                                     let (_, oneshot) = request.into_values();
                                     let err_reponse = oneshot.send(Err(FetchBlockError::UnknownHash));
@@ -234,7 +235,7 @@ impl Node {
                                     }
                                 } else {
                                     crate::debug!(
-                                        format!("Adding block {} to queue", request.data())
+                                        format!("Adding block {} to queue", block_hash)
                                     );
                                     self.block_queue.add(request);
                                 }
@@ -634,8 +635,9 @@ impl Node {
             self.state,
             NodeState::FilterHeadersSynced | NodeState::FiltersSynced
         ) {
-            let next_block_hash = self.block_queue.pop();
-            return next_block_hash.map(MainThreadMessage::GetBlock);
+            let next_block = self.block_queue.pop();
+            return next_block
+                .map(|(hash, block_type)| MainThreadMessage::GetBlock(hash, block_type));
         }
         None
     }

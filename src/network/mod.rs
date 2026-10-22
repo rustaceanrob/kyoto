@@ -29,7 +29,7 @@ use tokio::{net::TcpStream, sync::Mutex, time::Instant};
 
 use error::PeerError;
 
-use crate::{broadcaster::TxIdentifier, network::gossip::GossipMonitor, Socks5Proxy};
+use crate::{broadcaster::TxIdentifier, network::gossip::GossipMonitor, BlockType, Socks5Proxy};
 
 pub(crate) mod dns;
 pub(crate) mod error;
@@ -465,7 +465,7 @@ pub(crate) enum MainThreadMessage {
     GetHeaders(GetHeadersMessage),
     GetFilterHeaders(GetCFHeaders),
     GetFilters(GetCFilters),
-    GetBlock(BlockHash),
+    GetBlock(BlockHash, Option<BlockType>),
     Disconnect,
     BroadcastPending,
     Verack,
@@ -484,7 +484,7 @@ impl MainThreadMessage {
             MainThreadMessage::GetFilters(_) => {
                 Some((TimeSensitiveId::C_FILTER_MSG, Instant::now()))
             }
-            MainThreadMessage::GetBlock(hash) => {
+            MainThreadMessage::GetBlock(hash, _) => {
                 let id = hash.to_raw_hash().to_byte_array();
                 Some((TimeSensitiveId::from_slice(id), Instant::now()))
             }

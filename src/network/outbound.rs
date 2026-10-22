@@ -50,8 +50,12 @@ impl MessageGenerator {
         self.serialize(msg)
     }
 
-    pub(in crate::network) fn block(&mut self, hash: BlockHash) -> Vec<u8> {
-        let inv = match self.block_type {
+    pub(in crate::network) fn block(
+        &mut self,
+        hash: BlockHash,
+        block_type: Option<BlockType>,
+    ) -> Vec<u8> {
+        let inv = match block_type.unwrap_or(self.block_type) {
             BlockType::Legacy => Inventory::Block(hash),
             BlockType::Witness => Inventory::WitnessBlock(hash),
         };
