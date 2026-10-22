@@ -8,8 +8,8 @@ use bip157::{
     chain::{checkpoints::HashCheckpoint, BlockHeaderChanges, ChainState},
     client::Client,
     node::Node,
-    Address, BlockHash, Event, GossipMonitorRequestBuilder, Info, ServiceFlags, Transaction,
-    TrustedPeer, Warning,
+    Address, BlockHash, Event, GossipMonitorRequestBuilder, Info, Package, ServiceFlags,
+    Transaction, TrustedPeer, Warning,
 };
 use bitcoin::{
     absolute,
@@ -665,6 +665,126 @@ async fn tx_can_broadcast() {
         .await
         .unwrap()
         .unwrap();
+}
+
+fn sign_key_spend(unsigned_tx: Transaction, keypair: &Keypair, prevout: TxOut) -> Transaction {
+    let secp = Secp256k1::new();
+    let sighash_type = TapSighashType::Default;
+    let prevouts = vec![prevout];
+    let prevouts = Prevouts::All(&prevouts);
+    let mut unsigned_tx = unsigned_tx;
+    let mut sighasher = SighashCache::new(&mut unsigned_tx);
+    let sighash = sighasher
+        .taproot_key_spend_signature_hash(0, &prevouts, sighash_type)
+        .unwrap();
+    let tweaked: bitcoin::key::TweakedKeypair = keypair.tap_tweak(&secp, None);
+    let msg = bitcoin::secp256k1::Message::from(sighash);
+    let signature = secp.sign_schnorr(&msg, &tweaked.to_keypair());
+    let signature = bitcoin::taproot::Signature {
+        signature,
+        sighash_type,
+    };
+    *sighasher.witness_mut(0).unwrap() = Witness::p2tr_key_spend(&signature);
+    sighasher.into_transaction().to_owned()
+}
+
+#[tokio::test]
+async fn one_parent_one_child_can_broadcast() {
+    setup_debug_output();
+    let amount_to_us = Amount::from_sat(100_000);
+    let child_fee = Amount::from_sat(2_000);
+    let (bitcoind, socket_addr) = start_bitcoind(true).unwrap();
+    let rpc = &bitcoind.client;
+    let tempdir = tempfile::TempDir::new().unwrap().path().to_owned();
+    let mut rng = StdRng::seed_from_u64(10002);
+    let secret = SecretKey::new(&mut rng);
+    let secp = Secp256k1::new();
+    let keypair = Keypair::from_secret_key(&secp, &secret);
+    let (internal_key, _) = keypair.x_only_public_key();
+    let address = Address::p2tr(&secp, internal_key, None, KnownHrp::Regtest);
+    let miner = rpc.new_address().unwrap();
+    mine_blocks(rpc, &miner, 110, 10).await;
+    let funding_txid = rpc
+        .send_to_address(&address, amount_to_us)
+        .unwrap()
+        .txid()
+        .unwrap();
+    let vout = rpc
+        .get_transaction(funding_txid)
+        .unwrap()
+        .details
+        .iter()
+        .find(|detail| detail.address.eq(&address.to_string()))
+        .map(|detail| detail.vout)
+        .unwrap();
+    mine_blocks(rpc, &miner, 1, 1).await;
+    let utxo = TxOut {
+        script_pubkey: address.script_pubkey(),
+        value: amount_to_us,
+    };
+    let unsigned_parent = Transaction {
+        version: bitcoin::transaction::Version(3),
+        lock_time: absolute::LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint {
+                txid: funding_txid,
+                vout,
+            },
+            script_sig: ScriptBuf::default(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::default(),
+        }],
+        output: vec![utxo.clone()],
+    };
+    let parent = sign_key_spend(unsigned_parent, &keypair, utxo.clone());
+    let parent_txid = parent.compute_txid();
+    let unsigned_child = Transaction {
+        version: bitcoin::transaction::Version(3),
+        lock_time: absolute::LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint {
+                txid: parent_txid,
+                vout: 0,
+            },
+            script_sig: ScriptBuf::default(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::default(),
+        }],
+        output: vec![TxOut {
+            script_pubkey: address.script_pubkey(),
+            value: amount_to_us - child_fee,
+        }],
+    };
+    let child = sign_key_spend(unsigned_child, &keypair, utxo);
+    let child_txid = child.compute_txid();
+    let package = Package::new_one_parent_one_child(parent, child).unwrap();
+    let (node, client) = new_node(
+        socket_addr,
+        tempdir.clone(),
+        ChainState::Checkpoint(HashCheckpoint::from_genesis(bitcoin::Network::Regtest)),
+    );
+    tokio::task::spawn(async move { node.run().await });
+    let Client {
+        requester,
+        info_rx: _,
+        warn_rx: _,
+        event_rx: _,
+    } = client;
+    tokio::time::timeout(Duration::from_secs(60), requester.submit_package(package))
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while rpc.get_mempool_entry(parent_txid).is_err()
+            || rpc.get_mempool_entry(child_txid).is_err()
+        {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
+    requester.shutdown().unwrap();
+    rpc.stop().unwrap();
 }
 
 #[tokio::test]
