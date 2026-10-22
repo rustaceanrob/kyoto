@@ -334,10 +334,14 @@ impl Chain {
                 return Err(CFilterSyncError::UnknownFilterHash);
             }
         }
-        let height = self
+        let Some(height) = self
             .header_chain
-            .height_of_hash(filter_message.block_hash)
-            .ok_or(CFilterSyncError::UnknownFilterHash)?;
+            .height_of_hash_canonical_only(filter_message.block_hash)
+        else {
+            return Ok(FilterCheck {
+                was_last_in_batch: false,
+            });
+        };
         let header = self
             .header_chain
             .header_at_hash(filter_message.block_hash)
@@ -594,6 +598,86 @@ mod tests {
             retry.start_height, original.start_height,
             "a stop-hash response permanently advanced past missing filters"
         );
+    }
+
+    #[test]
+    fn test_stale_filter_replay_ignored() {
+        let scenario = load_scenario();
+        let mut chain = new_regtest(base_block(), 1);
+        let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
+        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
+        let (event_tx, mut events) = tokio::sync::mpsc::unbounded_channel::<Event>();
+        chain.dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
+
+        let stale = scenario.stale_chain.first().unwrap();
+        let stale_hash = stale.header.0.block_hash();
+        let mut old_headers = scenario.n_most_work_headers(3);
+        old_headers.push(stale.header.0);
+        chain.sync_chain(old_headers).unwrap();
+        let old_request = chain.next_cf_header_message();
+        let mut old_hashes = scenario.n_most_work_filter_hashes(3);
+        old_hashes.push(stale.filter_hash());
+        chain
+            .sync_cf_headers(
+                1.into(),
+                CFHeaders {
+                    filter_type: 0,
+                    stop_hash: old_request.stop_hash,
+                    previous_filter_header: scenario.prev_header(),
+                    filter_hashes: old_hashes,
+                },
+            )
+            .unwrap();
+
+        chain.sync_chain(scenario.most_work_headers()).unwrap();
+        let shared_hash = scenario.most_work_headers()[2].block_hash();
+        let previous_filter_header = chain
+            .header_chain
+            .filter_commitment(shared_hash)
+            .unwrap()
+            .header;
+        let new_request = chain.next_cf_header_message();
+        chain
+            .sync_cf_headers(
+                1.into(),
+                CFHeaders {
+                    filter_type: 0,
+                    stop_hash: new_request.stop_hash,
+                    previous_filter_header,
+                    filter_hashes: scenario.n_most_work_filter_hashes(5)[3..].to_vec(),
+                },
+            )
+            .unwrap();
+        chain.next_filter_message();
+        while events.try_recv().is_ok() {}
+
+        let mut filters = scenario.filters().into_iter();
+        for filter in filters.by_ref().take(3) {
+            chain.sync_filter(filter).unwrap();
+        }
+        let stale_filter = CFilter {
+            filter_type: 0,
+            block_hash: stale_hash,
+            filter: stale.filter.0.clone(),
+        };
+        assert!(!chain.sync_filter(stale_filter).unwrap().was_last_in_batch);
+        for filter in filters {
+            chain.sync_filter(filter).unwrap();
+        }
+
+        let mut emitted = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let Event::IndexedFilter(filter) = event {
+                emitted.push(filter.block_hash());
+            }
+        }
+        let expected: Vec<BlockHash> = scenario
+            .most_work_headers()
+            .iter()
+            .map(|header| header.block_hash())
+            .collect();
+        assert_eq!(emitted, expected);
+        assert!(chain.is_filters_synced());
     }
 
     #[tokio::test]
