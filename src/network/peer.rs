@@ -348,12 +348,15 @@ impl Peer {
                         }
                         _ => continue,
                     };
+                    if !self.message_state.was_announced(id) {
+                        continue;
+                    }
                     let transaction = self.tx_queue.lock().await.fetch_tx(id);
                     if let Some(transaction) = transaction {
                         let wtxid = transaction.compute_wtxid();
+                        self.message_state.sent_tx(&transaction);
                         let msg = message_generator.broadcast_transaction(transaction);
                         self.write_bytes(writer, msg).await?;
-                        self.message_state.sent_tx(wtxid);
                         self.tx_queue.lock().await.sent_transaction_payload(wtxid);
                     }
                 }
@@ -470,6 +473,7 @@ impl Peer {
                     queue.pending_wtxid()
                 };
                 if !wtxids.is_empty() {
+                    self.message_state.announced_txs(&wtxids);
                     let message = message_generator.announce_transactions(wtxids);
                     self.write_bytes(writer, message).await?;
                 }
@@ -488,6 +492,7 @@ impl Peer {
                     queue.pending_wtxid()
                 };
                 if !wtxids.is_empty() {
+                    self.message_state.announced_txs(&wtxids);
                     let message = message_generator.announce_transactions(wtxids);
                     self.write_bytes(writer, message).await?;
                 }
@@ -535,17 +540,127 @@ impl Peer {
 #[cfg(test)]
 mod tests {
     use bitcoin::{
+        absolute::LockTime,
+        consensus::deserialize,
         constants::genesis_block,
         hashes::Hash,
-        p2p::{address::AddrV2, message_filter::CFHeaders},
-        FilterHash, FilterHeader,
+        p2p::{address::AddrV2, message::RawNetworkMessage, message_filter::CFHeaders},
+        transaction::Version,
+        Amount, FilterHash, FilterHeader, OutPoint, ScriptBuf, Transaction, TxIn, TxOut,
     };
 
     use super::*;
     use crate::{
         chain::{chain::Chain, CFHeaderChanges, ChainState},
-        FilterType,
+        FilterType, Package,
     };
+
+    fn transaction_peer(id: u32, tx_queue: Arc<Mutex<BroadcastQueue>>) -> Peer {
+        let (to_node, _node_rx) = mpsc::channel(8);
+        let (_to_peer, from_node) = mpsc::channel(8);
+        let (info_tx, _info_rx) = mpsc::channel(8);
+        let (warn_tx, _warn_rx) = mpsc::unbounded_channel();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel();
+        let address = AddrV2::Ipv4(std::net::Ipv4Addr::LOCALHOST);
+        let mut peer = Peer::new(
+            PeerId(id),
+            Record::new_from_addrv2_source(address.clone(), 18444, ServiceFlags::NONE, &address),
+            Network::Regtest,
+            BlockType::Witness,
+            RelayPolicy::BlocksOnly,
+            to_node,
+            from_node,
+            Arc::new(Dialog::new(info_tx, warn_tx, event_tx)),
+            Arc::new(Mutex::new(AddressBook::new())),
+            PeerTimeoutConfig::default(),
+            tx_queue,
+        );
+        peer.message_state.finish_version_handshake();
+        peer
+    }
+
+    async fn get_data(
+        peer: &mut Peer,
+        generator: &mut MessageGenerator,
+        inv: Inventory,
+    ) -> Option<Transaction> {
+        let mut writer = Vec::new();
+        peer.handle_peer_message(ReaderMessage::GetData(vec![inv]), &mut writer, generator)
+            .await
+            .unwrap();
+        if writer.is_empty() {
+            return None;
+        }
+        let message: RawNetworkMessage = deserialize(&writer).unwrap();
+        match message.into_payload() {
+            NetworkMessage::Tx(transaction) => Some(transaction),
+            other => panic!("unexpected message {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_data_only_serves_announced_transactions() {
+        let parent: Transaction = deserialize(&hex::decode("0200000000010158e87a21b56daf0c23be8e7070456c336f7cbaa5c8757924f545887bb2abdd7501000000171600145f275f436b09a8cc9a2eb2a2f528485c68a56323feffffff02d8231f1b0100000017a914aed962d6654f9a2b36608eb9d64d2b260db4f1118700c2eb0b0000000017a914b7f5faf40e3d40a5a459b1db3535f2b72fa921e88702483045022100a22edcc6e5bc511af4cc4ae0de0fcd75c7e04d8c1c3a8aa9d820ed4b967384ec02200642963597b9b1bc22c75e9f3e117284a962188bf5e8a74c895089046a20ad770121035509a48eb623e10aace8bfd0212fdb8a8e5af3c94b0b133b95e114cab89e4f7965000000").unwrap()).unwrap();
+        let parent_txid = parent.compute_txid();
+        let child = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(parent_txid, 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(1_000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+        let child_wtxid = child.compute_wtxid();
+        let tx_queue = Arc::new(Mutex::new(BroadcastQueue::new()));
+        let (callback, completion) = tokio::sync::oneshot::channel();
+        tx_queue.lock().await.add_to_queue(
+            Package::new_one_parent_one_child(parent.clone(), child.clone()).unwrap(),
+            callback,
+        );
+        let mut generator = MessageGenerator {
+            network: Network::Regtest,
+            transport: Transport::V1,
+            block_type: BlockType::Witness,
+        };
+        let mut probing_peer = transaction_peer(1, tx_queue.clone());
+        let mut announced_peer = transaction_peer(2, tx_queue);
+        announced_peer
+            .main_thread_request(
+                MainThreadMessage::BroadcastPending,
+                &mut tokio::io::sink(),
+                &mut generator,
+            )
+            .await
+            .unwrap();
+
+        let parent_inv = Inventory::WitnessTransaction(parent_txid);
+        let child_inv = Inventory::WTx(child_wtxid);
+        assert!(get_data(&mut probing_peer, &mut generator, child_inv)
+            .await
+            .is_none());
+        assert!(get_data(&mut probing_peer, &mut generator, parent_inv)
+            .await
+            .is_none());
+        assert!(get_data(&mut announced_peer, &mut generator, parent_inv)
+            .await
+            .is_none());
+        assert_eq!(
+            get_data(&mut announced_peer, &mut generator, child_inv).await,
+            Some(child)
+        );
+        assert_eq!(
+            get_data(&mut announced_peer, &mut generator, parent_inv).await,
+            Some(parent)
+        );
+        assert_eq!(completion.await.unwrap(), child_wtxid);
+        assert!(get_data(&mut probing_peer, &mut generator, child_inv)
+            .await
+            .is_none());
+    }
 
     #[tokio::test(start_paused = true)]
     async fn stale_cfheaders_do_not_clear_pending_request() {
