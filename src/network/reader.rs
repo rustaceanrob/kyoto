@@ -165,7 +165,9 @@ impl ReaderMessage {
     pub(in crate::network) fn time_sensitive_message_received(&self) -> Option<TimeSensitiveId> {
         match self {
             ReaderMessage::Headers(_) => Some(TimeSensitiveId::HEADER_MSG),
-            ReaderMessage::FilterHeaders(_) => Some(TimeSensitiveId::CF_HEADER_MSG),
+            ReaderMessage::FilterHeaders(cf_headers) => Some(
+                TimeSensitiveId::from_cf_headers_stop_hash(cf_headers.stop_hash),
+            ),
             ReaderMessage::Filter(_) => Some(TimeSensitiveId::C_FILTER_MSG),
             ReaderMessage::Pong(_) => Some(TimeSensitiveId::PING),
             ReaderMessage::Block(b) => {
