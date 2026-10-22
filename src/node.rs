@@ -115,7 +115,7 @@ impl Node {
                 peer_map,
                 required_peers: required_peers.into(),
                 dialog,
-                block_queue: BlockQueue::new(),
+                block_queue: BlockQueue::new(peer_timeout_config.response_timeout),
                 client_recv: crx,
                 peer_recv: mrx,
                 headers_only_sync,

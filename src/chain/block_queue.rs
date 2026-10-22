@@ -8,22 +8,24 @@ use tokio::{sync::oneshot, time::Instant};
 
 use crate::{error::FetchBlockError, messages::ClientRequest, IndexedBlock};
 
-const SPAM_LIMIT: Duration = Duration::from_secs(5);
+const RETRY_PADDING: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
 pub(crate) struct BlockQueue {
     queue: VecDeque<Request>,
     want: Option<Request>,
     last_req: Instant,
+    spam_limit: Duration,
     completed: HashSet<BlockHash>,
 }
 
 impl BlockQueue {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(response_timeout: Duration) -> Self {
         Self {
             queue: VecDeque::new(),
             want: None,
             last_req: Instant::now(),
+            spam_limit: response_timeout + RETRY_PADDING,
             completed: HashSet::new(),
         }
     }
@@ -36,7 +38,7 @@ impl BlockQueue {
     pub(crate) fn pop(&mut self) -> Option<BlockHash> {
         match self.want.as_mut() {
             Some(request) => {
-                if self.last_req.elapsed() < SPAM_LIMIT {
+                if self.last_req.elapsed() < self.spam_limit {
                     None
                 } else {
                     self.last_req = Instant::now();
@@ -159,7 +161,7 @@ mod test {
     #[test]
     fn test_block_queue() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
-        let mut queue = BlockQueue::new();
+        let mut queue = BlockQueue::new(Duration::from_secs(5));
         queue.add(hash_1.dummy_request());
         queue.add(hash_2.dummy_request());
         queue.add(hash_3.dummy_request());
@@ -195,7 +197,7 @@ mod test {
     #[tokio::test(start_paused = true)]
     async fn test_laggy_peer() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
-        let mut queue = BlockQueue::new();
+        let mut queue = BlockQueue::new(Duration::from_secs(5));
         queue.add(hash_1.dummy_request());
         queue.add(hash_2.dummy_request());
         queue.add(hash_3.dummy_request());
@@ -235,7 +237,7 @@ mod test {
     #[test]
     fn test_blocks_removed() {
         let [hash_1, hash_2, hash_3] = three_block_hashes();
-        let mut queue = BlockQueue::new();
+        let mut queue = BlockQueue::new(Duration::from_secs(5));
         queue.add(hash_1.dummy_request());
         queue.add(hash_2.dummy_request());
         queue.add(hash_3.dummy_request());
