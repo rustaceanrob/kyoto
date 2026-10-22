@@ -459,8 +459,8 @@ impl Peer {
                 let message = message_generator.serialize(NetworkMessage::GetCFilters(config));
                 self.write_bytes(writer, message).await?;
             }
-            MainThreadMessage::GetBlock(message) => {
-                let message = message_generator.block(message);
+            MainThreadMessage::GetBlock(hash, block_type) => {
+                let message = message_generator.block(hash, block_type);
                 self.write_bytes(writer, message).await?;
             }
             MainThreadMessage::BroadcastPending => {

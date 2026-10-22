@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::chain::{BlockHeaderChanges, IndexedHeader};
 use crate::{chain::checkpoints::HashCheckpoint, IndexedBlock, TrustedPeer};
-use crate::{GossipMonitorRequest, IndexedFilter, Package};
+use crate::{BlockType, GossipMonitorRequest, IndexedFilter, Package};
 
 use super::error::FetchBlockError;
 
@@ -144,7 +144,7 @@ pub(crate) enum ClientMessage {
     /// Starting at the configured anchor checkpoint, re-emit all filters.
     Rescan(Option<u32>),
     /// Explicitly request a block from the node.
-    GetBlock(ClientRequest<BlockHash, Result<IndexedBlock, FetchBlockError>>),
+    GetBlock(ClientRequest<(BlockHash, Option<BlockType>), Result<IndexedBlock, FetchBlockError>>),
     /// Get the chain tip.
     BestBlock(ClientRequest<(), HashCheckpoint>),
     /// Add another known peer to connect to.
