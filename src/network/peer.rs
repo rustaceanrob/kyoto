@@ -419,7 +419,10 @@ impl Peer {
     {
         let time_sensitive = request.time_sensitive_message_start();
         if let Some((msg_id, time)) = time_sensitive {
-            self.message_state.timed_message_state.insert(msg_id, time);
+            self.message_state
+                .timed_message_state
+                .entry(msg_id)
+                .or_insert(time);
         }
         match request {
             MainThreadMessage::GetAddr => {
@@ -526,5 +529,131 @@ impl Peer {
             }
             Err(_) => Err(PeerError::HandshakeFailed),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{
+        constants::genesis_block,
+        hashes::Hash,
+        p2p::{address::AddrV2, message_filter::CFHeaders},
+        FilterHash, FilterHeader,
+    };
+
+    use super::*;
+    use crate::{
+        chain::{chain::Chain, CFHeaderChanges, ChainState},
+        FilterType,
+    };
+
+    #[tokio::test(start_paused = true)]
+    async fn stale_cfheaders_do_not_clear_pending_request() {
+        let network = Network::Regtest;
+        let (info_tx, _info_rx) = mpsc::channel(32);
+        let (warn_tx, _warn_rx) = mpsc::unbounded_channel();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel();
+        let dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
+        let mut chain = Chain::new(
+            network,
+            ChainState::Snapshot(vec![]),
+            dialog.clone(),
+            1,
+            FilterType::Basic,
+        );
+        let (to_node, mut node_rx) = mpsc::channel(32);
+        let (_to_peer, from_node) = mpsc::channel(32);
+        let address = AddrV2::Ipv4(std::net::Ipv4Addr::LOCALHOST);
+        let services = ServiceFlags::NETWORK | ServiceFlags::COMPACT_FILTERS;
+        let mut peer = Peer::new(
+            PeerId(1),
+            Record::new_from_addrv2_source(address.clone(), 18444, services, &address),
+            network,
+            BlockType::Legacy,
+            RelayPolicy::BlocksOnly,
+            to_node,
+            from_node,
+            dialog,
+            Arc::new(Mutex::new(AddressBook::new())),
+            PeerTimeoutConfig::default(),
+            Arc::new(Mutex::new(BroadcastQueue::new())),
+        );
+        peer.message_state.finish_version_handshake();
+        let mut generator = MessageGenerator {
+            network,
+            transport: Transport::V1,
+            block_type: BlockType::Legacy,
+        };
+        let mut writer = tokio::io::sink();
+        let mut parent = genesis_block(network).header;
+        let mut previous_filter_header = FilterHeader::all_zeros();
+        let filter_hash = FilterHash::hash(&[0]);
+        let mut stale_response = None;
+
+        for height in 1..=3 {
+            let mut header = parent;
+            header.prev_blockhash = parent.block_hash();
+            header.time += 600;
+            header.nonce = 0;
+            while header.validate_pow(header.target()).is_err() {
+                header.nonce += 1;
+            }
+            chain.sync_chain(vec![header]).unwrap();
+            parent = header;
+            let request = chain.next_cf_header_message();
+            assert_eq!(request.start_height, height);
+            peer.main_thread_request(
+                MainThreadMessage::GetFilterHeaders(request.clone()),
+                &mut writer,
+                &mut generator,
+            )
+            .await
+            .unwrap();
+            if height == 3 {
+                break;
+            }
+            let response = CFHeaders {
+                filter_type: 0,
+                stop_hash: request.stop_hash,
+                previous_filter_header,
+                filter_hashes: vec![filter_hash],
+            };
+            peer.handle_peer_message(
+                ReaderMessage::FilterHeaders(response.clone()),
+                &mut writer,
+                &mut generator,
+            )
+            .await
+            .unwrap();
+            let forwarded = node_rx.recv().await.unwrap();
+            let PeerMessage::FilterHeaders(payload) = forwarded.message else {
+                panic!("expected filter headers");
+            };
+            assert!(matches!(
+                chain.sync_cf_headers(forwarded.nonce, payload),
+                Ok(CFHeaderChanges::Extended)
+            ));
+            previous_filter_header = filter_hash.filter_header(&previous_filter_header);
+            stale_response = Some(response);
+        }
+
+        peer.handle_peer_message(
+            ReaderMessage::FilterHeaders(stale_response.unwrap()),
+            &mut writer,
+            &mut generator,
+        )
+        .await
+        .unwrap();
+        let forwarded = node_rx.try_recv().unwrap();
+        let PeerMessage::FilterHeaders(payload) = forwarded.message else {
+            panic!("expected filter headers");
+        };
+        assert!(matches!(
+            chain.sync_cf_headers(forwarded.nonce, payload),
+            Ok(CFHeaderChanges::AddedToQueue)
+        ));
+        assert!(!chain.is_cf_headers_synced());
+        tokio::time::advance(peer.timeout_config.response_timeout + Duration::from_secs(1)).await;
+        assert!(peer.message_state.unresponsive());
     }
 }

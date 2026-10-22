@@ -424,6 +424,14 @@ impl TimeSensitiveId {
     fn from_slice(slice: [u8; 32]) -> Self {
         Self(slice)
     }
+
+    fn from_cf_headers_stop_hash(stop_hash: BlockHash) -> Self {
+        let mut id = stop_hash.to_byte_array();
+        for (byte, tag) in id.iter_mut().zip(Self::CF_HEADER_MSG.0) {
+            *byte ^= tag;
+        }
+        Self(id)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -448,9 +456,10 @@ impl MainThreadMessage {
     ) -> Option<(TimeSensitiveId, Instant)> {
         match self {
             MainThreadMessage::GetHeaders(_) => Some((TimeSensitiveId::HEADER_MSG, Instant::now())),
-            MainThreadMessage::GetFilterHeaders(_) => {
-                Some((TimeSensitiveId::CF_HEADER_MSG, Instant::now()))
-            }
+            MainThreadMessage::GetFilterHeaders(get_cf_headers) => Some((
+                TimeSensitiveId::from_cf_headers_stop_hash(get_cf_headers.stop_hash),
+                Instant::now(),
+            )),
             MainThreadMessage::GetFilters(_) => {
                 Some((TimeSensitiveId::C_FILTER_MSG, Instant::now()))
             }
