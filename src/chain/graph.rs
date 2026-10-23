@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::HashCheckpoint;
 
 use bitcoin::{
-    block::Header, constants::genesis_block, BlockHash, CompactTarget, FilterHash, Network, Work,
+    block::Header, constants::genesis_block, BlockHash, CompactTarget, FilterHash, FilterHeader,
+    Network, Work,
 };
 
 use super::{FilterCommitment, HeightExt, IndexedHeader, ZerolikeExt};
@@ -97,6 +98,8 @@ pub struct BlockTree {
     active_tip: Tip,
     candidate_forks: Vec<Tip>,
     network: Network,
+    next_cf_header_height: Height,
+    next_filter_height: Height,
 }
 
 #[allow(unused)]
@@ -109,6 +112,8 @@ impl BlockTree {
             active_tip: tip,
             candidate_forks: Vec::with_capacity(2),
             network,
+            next_cf_header_height: tip.height.increment(),
+            next_filter_height: tip.height.increment(),
         }
     }
 
@@ -128,6 +133,8 @@ impl BlockTree {
             active_tip: tip,
             candidate_forks: Vec::with_capacity(2),
             network,
+            next_cf_header_height: height.increment(),
+            next_filter_height: height.increment(),
         }
     }
 
@@ -222,6 +229,12 @@ impl BlockTree {
                     self.candidate_forks.push(self.active_tip);
                     self.active_tip = new_tip;
                     let (accepted, disconnected) = self.switch_to_fork(&new_tip);
+                    if let Some(fork_point) = accepted.last() {
+                        self.next_cf_header_height =
+                            self.next_cf_header_height.min(fork_point.height);
+                        self.next_filter_height = self.next_filter_height.min(fork_point.height);
+                        self.advance_sync_heights();
+                    }
                     return AcceptHeaderChanges::Reorganization {
                         accepted,
                         disconnected,
@@ -406,12 +419,14 @@ impl BlockTree {
         if let Some(node) = self.headers.get_mut(&hash) {
             node.filter_commitment = Some(commitment)
         }
+        self.advance_sync_heights();
     }
 
     pub(crate) fn check_filter(&mut self, hash: BlockHash) {
         if let Some(node) = self.headers.get_mut(&hash) {
             node.filter_checked = true
         }
+        self.advance_sync_heights();
     }
 
     pub(crate) fn assume_checked_to(&mut self, assumed_height: Height) {
@@ -423,6 +438,10 @@ impl BlockTree {
             }
             curr = node.header.prev_blockhash
         }
+        let assumed_through = assumed_height.min(self.active_tip.height).increment();
+        self.next_cf_header_height = self.next_cf_header_height.max(assumed_through);
+        self.next_filter_height = self.next_filter_height.max(assumed_through);
+        self.advance_sync_heights();
     }
 
     pub(crate) fn is_filter_checked(&self, hash: &BlockHash) -> bool {
@@ -438,15 +457,56 @@ impl BlockTree {
             node.cf_header_assumed = false;
             node.filter_commitment = None;
         }
+        let first_height = self
+            .canonical_hashes
+            .first_key_value()
+            .map_or(self.active_tip.height.increment(), |(height, _)| *height);
+        self.next_cf_header_height = first_height;
+        self.next_filter_height = first_height;
     }
 
     pub(crate) fn filter_headers_synced(&self) -> bool {
-        self.iter_data()
-            .all(|node| node.filter_commitment.is_some() || node.cf_header_assumed)
+        self.next_cf_header_height > self.active_tip.height
     }
 
     pub(crate) fn filters_synced(&self) -> bool {
-        self.iter_data().all(|node| node.filter_checked)
+        self.next_filter_height > self.active_tip.height
+    }
+
+    pub(crate) fn next_cf_header_height(&self) -> Height {
+        self.next_cf_header_height.min(self.active_tip.height)
+    }
+
+    pub(crate) fn next_filter_height(&self) -> Height {
+        self.next_filter_height.min(self.active_tip.height)
+    }
+
+    pub(crate) fn prev_filter_header(&self, height: Height) -> Option<FilterHeader> {
+        let hash = self.canonical_hashes.get(&height.checked_sub(1)?)?;
+        let node = self.headers.get(hash)?;
+        if node.cf_header_assumed {
+            return None;
+        }
+        node.filter_commitment.map(|commitment| commitment.header)
+    }
+
+    fn advance_sync_heights(&mut self) {
+        while self
+            .canonical_hashes
+            .get(&self.next_cf_header_height)
+            .and_then(|hash| self.headers.get(hash))
+            .is_some_and(|node| node.filter_commitment.is_some() || node.cf_header_assumed)
+        {
+            self.next_cf_header_height += 1;
+        }
+        while self
+            .canonical_hashes
+            .get(&self.next_filter_height)
+            .and_then(|hash| self.headers.get(hash))
+            .is_some_and(|node| node.filter_checked)
+        {
+            self.next_filter_height += 1;
+        }
     }
 
     pub(crate) fn locators(&self) -> Vec<BlockHash> {
@@ -517,6 +577,7 @@ impl<'a> Iterator for BlockNodeIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::hashes::Hash;
     use bitcoind::serde_json;
     use std::fs::File;
     use std::str::FromStr;
@@ -668,6 +729,44 @@ mod tests {
         assert_eq!(chain.header_at_height(3), Some(stale[0].0));
         assert_eq!(chain.header_at_height(2), Some(base[1].0));
         assert_eq!(chain.header_at_height(1), Some(base[0].0));
+    }
+
+    #[test]
+    fn test_reorg_rewinds_sync_heights() {
+        let GraphScenario { base, stale, new } = get_graph_scenario(0);
+        let tip = Tip::from_checkpoint(
+            7,
+            BlockHash::from_str("62c28f380692524a3a8f1fc66252bc0eb31d6b6a127d2263bdcbee172529fe16")
+                .unwrap(),
+        );
+        let mut chain = BlockTree::new(tip, Network::Regtest);
+        let commitment = FilterCommitment {
+            header: FilterHeader::all_zeros(),
+            filter_hash: FilterHash::all_zeros(),
+        };
+        for header in base.iter().chain(stale.iter()).map(|hex| hex.0) {
+            chain.accept_header(header);
+            chain.set_commitment(commitment, header.block_hash());
+            chain.check_filter(header.block_hash());
+        }
+        assert_eq!(chain.next_cf_header_height, 11);
+        assert_eq!(chain.next_filter_height, 11);
+        assert!(chain.filters_synced());
+        for header in new.iter().map(|hex| hex.0) {
+            chain.accept_header(header);
+        }
+        assert_eq!(chain.height(), 11);
+        assert_eq!(chain.next_cf_header_height, 10);
+        assert_eq!(chain.next_filter_height, 10);
+        assert!(!chain.filter_headers_synced());
+        assert!(!chain.filters_synced());
+        for header in new.iter().map(|hex| hex.0) {
+            chain.set_commitment(commitment, header.block_hash());
+            chain.check_filter(header.block_hash());
+        }
+        assert_eq!(chain.next_filter_height, 12);
+        assert!(chain.filter_headers_synced());
+        assert!(chain.filters_synced());
     }
 
     #[test]
