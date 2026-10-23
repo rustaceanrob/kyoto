@@ -210,38 +210,30 @@ impl Chain {
             return Err(CFHeaderSyncError::StartHeightMisalignment);
         }
 
-        match self.request_state.pending_batch.take() {
-            Some((id, pending)) => {
-                if peer_id.eq(&id) {
+        let mut agreeing_peers = match self.request_state.pending_batch.take() {
+            Some((agreeing_peers, pending)) => {
+                if agreeing_peers.contains(&peer_id) {
+                    self.request_state.pending_batch = Some((agreeing_peers, pending));
                     return Ok(CFHeaderChanges::AddedToQueue);
                 }
                 if pending.ne(&batch) {
-                    self.request_state.pending_batch = None;
-                    self.request_state.agreement_state.reset_agreements();
-                    Ok(CFHeaderChanges::Conflict)
-                } else {
-                    self.request_state.agreement_state.got_agreement();
-                    if self.request_state.agreement_state.enough_agree() {
-                        self.request_state.agreement_state.reset_agreements();
-                        self.push_cf_header_batch(batch, request.stop_hash);
-                        Ok(CFHeaderChanges::Extended)
-                    } else {
-                        self.request_state.pending_batch = Some((id, batch));
-                        Ok(CFHeaderChanges::AddedToQueue)
-                    }
+                    return Ok(CFHeaderChanges::Conflict);
                 }
+                agreeing_peers
             }
-            None => {
-                self.request_state.agreement_state.got_agreement();
-                if self.request_state.agreement_state.enough_agree() {
-                    self.request_state.agreement_state.reset_agreements();
-                    self.push_cf_header_batch(batch, request.stop_hash);
-                    Ok(CFHeaderChanges::Extended)
-                } else {
-                    self.request_state.pending_batch = Some((peer_id, batch));
-                    Ok(CFHeaderChanges::AddedToQueue)
-                }
-            }
+            None => Vec::new(),
+        };
+        agreeing_peers.push(peer_id);
+        if self
+            .request_state
+            .agreement_state
+            .enough_agree(&agreeing_peers)
+        {
+            self.push_cf_header_batch(batch, request.stop_hash);
+            Ok(CFHeaderChanges::Extended)
+        } else {
+            self.request_state.pending_batch = Some((agreeing_peers, batch));
+            Ok(CFHeaderChanges::AddedToQueue)
         }
     }
 
@@ -402,7 +394,6 @@ impl Chain {
 
     // Reset the compact filter queue because we received a new block
     pub(crate) fn clear_compact_filter_queue(&mut self) {
-        self.request_state.agreement_state.reset_agreements();
         self.request_state.last_filter_header_request = None;
         self.request_state.pending_batch = None;
     }
@@ -678,6 +669,31 @@ mod tests {
             .collect();
         assert_eq!(emitted, expected);
         assert!(chain.is_filters_synced());
+    }
+
+    #[test]
+    fn compact_filter_quorum_counts_each_peer_only_once() {
+        for peer_ids in [[1_u32, 1, 1, 1, 1], [1_u32, 2, 2, 2, 2]] {
+            let scenario = load_scenario();
+            let mut chain = new_regtest(base_block(), 3);
+            chain.sync_chain(scenario.most_work_headers()).unwrap();
+            let request = chain.next_cf_header_message();
+            let empty_filter_hash = FilterHash::from_raw_hash(sha256d::Hash::hash(&[0]));
+            let forged = CFHeaders {
+                filter_type: 0,
+                stop_hash: request.stop_hash,
+                previous_filter_header: scenario.prev_header(),
+                filter_hashes: vec![empty_filter_hash; 5],
+            };
+            for peer_id in peer_ids {
+                let result = chain.sync_cf_headers(peer_id.into(), forged.clone());
+                assert!(
+                    !matches!(result, Ok(CFHeaderChanges::Extended)),
+                    "fewer than three distinct peers authenticated forged empty filters"
+                );
+                assert!(!chain.is_cf_headers_synced());
+            }
+        }
     }
 
     #[tokio::test]
