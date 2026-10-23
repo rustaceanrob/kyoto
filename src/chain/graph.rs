@@ -449,16 +449,6 @@ impl BlockTree {
         self.iter_data().all(|node| node.filter_checked)
     }
 
-    pub(crate) fn total_filters_synced(&self) -> u32 {
-        self.iter_data().filter(|node| node.filter_checked).count() as u32
-    }
-
-    pub(crate) fn total_filter_headers_synced(&self) -> u32 {
-        self.iter_data()
-            .filter(|node| node.filter_commitment.is_some() || node.cf_header_assumed)
-            .count() as u32
-    }
-
     pub(crate) fn locators(&self) -> Vec<BlockHash> {
         let mut locators = Vec::new();
         locators.push(self.active_tip.hash);
@@ -473,10 +463,6 @@ impl BlockTree {
             }
         }
         locators.into_iter().rev().collect()
-    }
-
-    pub(crate) fn internal_chain_len(&self) -> usize {
-        self.canonical_hashes.len()
     }
 
     pub(crate) fn iter_data(&self) -> BlockNodeIterator<'_> {

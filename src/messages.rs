@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ops::Div;
 
 use bitcoin::p2p::address::AddrV2;
 use bitcoin::p2p::ServiceFlags;
@@ -20,8 +19,12 @@ pub enum Info {
     SuccessfulHandshake,
     /// The node is connected to all required peers.
     ConnectionsMet,
-    /// The progress of the node during the block filter download process.
-    Progress(Progress),
+    /// The header chain has been extended to a new height.
+    NewChainHeight(u32),
+    /// Compact filter headers have been checked up to this height.
+    CFHeadersAdded(u32),
+    /// A compact block filter has been checked at this height.
+    FilterAdded(u32),
     /// A requested block has been received and is being processed.
     BlockReceived(BlockHash),
 }
@@ -31,10 +34,9 @@ impl core::fmt::Display for Info {
         match self {
             Info::SuccessfulHandshake => write!(f, "Successful version handshake with a peer"),
             Info::ConnectionsMet => write!(f, "Required connections met"),
-            Info::Progress(p) => {
-                let progress_percent = p.percentage_complete();
-                write!(f, "Percent complete: {progress_percent}")
-            }
+            Info::NewChainHeight(height) => write!(f, "New chain height {height}"),
+            Info::CFHeadersAdded(height) => write!(f, "Filter headers added to height {height}"),
+            Info::FilterAdded(height) => write!(f, "Filter added at height {height}"),
             Info::BlockReceived(hash) => write!(f, "Received block {hash}"),
         }
     }
@@ -76,52 +78,6 @@ impl SyncUpdate {
     /// Get the ten most recent blocks in chronological order after this sync.
     pub fn recent_history(&self) -> &BTreeMap<u32, Header> {
         &self.recent_history
-    }
-}
-
-/// The progress of the node during the block filter download process.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Progress {
-    // The number of filter headers that have been assumed checked and downloaded.
-    filter_headers: u32,
-    // The number of block filters that have been assumed checked and downloaded.
-    filters: u32,
-    // The number of filters to check.
-    total_to_check: u32,
-    // The total number of headers.
-    chain_height: u32,
-}
-
-impl Progress {
-    pub(crate) fn new(
-        filter_headers: u32,
-        filters: u32,
-        total_to_check: u32,
-        chain_height: u32,
-    ) -> Self {
-        Self {
-            filter_headers,
-            filters,
-            total_to_check,
-            chain_height,
-        }
-    }
-
-    /// The height of the block chain.
-    pub fn chain_height(&self) -> u32 {
-        self.chain_height
-    }
-
-    /// The total progress represented as a percent.
-    pub fn percentage_complete(&self) -> f32 {
-        self.fraction_complete() * 100.0
-    }
-
-    /// The total progress represented as a fraction.
-    pub fn fraction_complete(&self) -> f32 {
-        // This is a weighted estimated. Here we assume filters are 3x more expensive to download.
-        let total = (4 * self.total_to_check) as f32;
-        ((self.filter_headers + 3 * self.filters) as f32).div(total)
     }
 }
 

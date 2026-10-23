@@ -497,7 +497,8 @@ impl Node {
                     if self.state != NodeState::Behind {
                         self.state = NodeState::Behind;
                     }
-                    self.chain.send_chain_update();
+                    self.dialog
+                        .send_info(Info::NewChainHeight(self.chain.header_chain.height()));
                 }
                 HeaderSyncEffect::Empty => {
                     if self.state == NodeState::Behind {
@@ -508,7 +509,8 @@ impl Node {
                     if self.state != NodeState::HeadersSynced {
                         self.state = NodeState::HeadersSynced;
                     }
-                    self.chain.send_chain_update();
+                    self.dialog
+                        .send_info(Info::NewChainHeight(self.chain.header_chain.height()));
                     self.block_queue.remove(&reorgs);
                 }
             },
@@ -529,7 +531,6 @@ impl Node {
         peer_id: PeerId,
         cf_headers: CFHeaders,
     ) -> Option<MainThreadMessage> {
-        self.chain.send_chain_update();
         match self.chain.sync_cf_headers(peer_id, cf_headers) {
             Ok(potential_message) => match potential_message {
                 CFHeaderChanges::AddedToQueue => None,
@@ -562,12 +563,9 @@ impl Node {
         match self.chain.sync_filter(filter) {
             Ok(potential_message) => {
                 let FilterCheck { was_last_in_batch } = potential_message;
-                if was_last_in_batch {
-                    self.chain.send_chain_update();
-                    if !self.chain.is_filters_synced() {
-                        let next_filters = self.chain.next_filter_message();
-                        return Some(MainThreadMessage::GetFilters(next_filters));
-                    }
+                if was_last_in_batch && !self.chain.is_filters_synced() {
+                    let next_filters = self.chain.next_filter_message();
+                    return Some(MainThreadMessage::GetFilters(next_filters));
                 }
                 None
             }

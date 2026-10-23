@@ -2,8 +2,8 @@
 //! expected sync time on your machine and in your region.
 
 use bip157::builder::Builder;
-use bip157::chain::{BlockHeaderChanges, ChainState};
-use bip157::{Client, Event, HashCheckpoint, Network, ScriptBuf};
+use bip157::chain::ChainState;
+use bip157::{Client, Event, HashCheckpoint, Info, Network, ScriptBuf};
 use std::collections::HashSet;
 use tokio::time::Instant;
 
@@ -52,29 +52,23 @@ async fn main() {
     loop {
         tokio::select! {
             event = event_rx.recv() => {
-                if let Some(event) = event {
-                    match event {
-                        Event::FiltersSynced(update) => {
-                            tracing::info!("Chain tip: {}",update.tip().hash);
-                            // Request information from the node
-                            let fee = requester.broadcast_min_feerate().await.unwrap();
-                            tracing::info!("Minimum transaction broadcast fee rate: {:#}", fee);
-                            let sync_time = now.elapsed().as_secs_f32();
-                            tracing::info!("Total sync time: {sync_time} seconds");
-                            let avg_fee_rate = requester.average_fee_rate(update.tip().hash).await.unwrap();
-                            tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
-                            break;
-                        },
-                        Event::ChainUpdate(BlockHeaderChanges::Connected(header)) => {
-                            tracing::info!("New best tip {}", header.height);
-                        },
-                        _ => (),
-                    }
+                if let Some(Event::FiltersSynced(update)) = event {
+                    tracing::info!("Chain tip: {}",update.tip().hash);
+                    // Request information from the node
+                    let fee = requester.broadcast_min_feerate().await.unwrap();
+                    tracing::info!("Minimum transaction broadcast fee rate: {:#}", fee);
+                    let sync_time = now.elapsed().as_secs_f32();
+                    tracing::info!("Total sync time: {sync_time} seconds");
+                    let avg_fee_rate = requester.average_fee_rate(update.tip().hash).await.unwrap();
+                    tracing::info!("Last block average fee rate: {:#}", avg_fee_rate);
+                    break;
                 }
             }
             info = info_rx.recv() => {
-                if let Some(info) = info {
-                    tracing::info!("{info}");
+                match info {
+                    Some(Info::FilterAdded(height)) if height % 2_000 != 0 => (),
+                    Some(info) => tracing::info!("{info}"),
+                    None => (),
                 }
             }
             warn = warn_rx.recv() => {

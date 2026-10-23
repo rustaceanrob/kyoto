@@ -86,7 +86,7 @@ pub use {
     crate::chain::ChainState,
     crate::client::{Client, Requester},
     crate::error::{ClientError, NodeError},
-    crate::messages::{Event, Info, Progress, RejectPayload, SyncUpdate, Warning},
+    crate::messages::{Event, Info, RejectPayload, SyncUpdate, Warning},
     crate::node::Node,
 };
 

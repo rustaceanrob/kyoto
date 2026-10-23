@@ -13,7 +13,7 @@ use super::{
     CFHeaderBatch, CFHeaderChanges, ChainState, Filter, FilterCheck, FilterHeaderRequest,
     FilterRequest, FilterRequestState, HeaderSyncEffect, HeaderValidationExt, PeerId,
 };
-use crate::{chain::BlockHeaderChanges, messages::Event, Dialog, Info, Progress};
+use crate::{chain::BlockHeaderChanges, messages::Event, Dialog, Info};
 use crate::{FilterType, IndexedFilter};
 
 const CF_HEADER_BATCH_SIZE: u32 = 1_999;
@@ -230,6 +230,8 @@ impl Chain {
             .enough_agree(&agreeing_peers)
         {
             self.push_cf_header_batch(batch, request.stop_hash);
+            self.dialog
+                .send_info(Info::CFHeadersAdded(height_of_stop_hash));
             Ok(CFHeaderChanges::Extended)
         } else {
             self.request_state.pending_batch = Some((agreeing_peers, batch));
@@ -356,6 +358,7 @@ impl Chain {
         let indexed_filter = IndexedFilter::new(height, header, filter);
         self.dialog.send_event(Event::IndexedFilter(indexed_filter));
         self.header_chain.check_filter(filter_message.block_hash);
+        self.dialog.send_info(Info::FilterAdded(height));
         Ok(FilterCheck { was_last_in_batch })
     }
 
@@ -410,23 +413,6 @@ impl Chain {
     // Clear the filter header cache to rescan the filters for new scripts.
     pub(crate) fn clear_filters(&mut self) {
         self.header_chain.reset_filter_state();
-    }
-
-    pub(crate) fn send_chain_update(&self) {
-        self.dialog.send_info(Info::Progress(Progress::new(
-            self.header_chain.total_filter_headers_synced(),
-            self.header_chain.total_filters_synced(),
-            self.header_chain.internal_chain_len() as u32,
-            self.header_chain.height(),
-        )));
-        crate::debug!(format!(
-            "Headers: {} CFHeaders: ({}/{}) CFilters: ({}/{})",
-            self.header_chain.height(),
-            self.header_chain.total_filter_headers_synced(),
-            self.header_chain.internal_chain_len() as u32,
-            self.header_chain.total_filters_synced(),
-            self.header_chain.internal_chain_len() as u32,
-        ));
     }
 }
 
