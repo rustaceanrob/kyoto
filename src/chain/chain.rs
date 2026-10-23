@@ -379,14 +379,23 @@ impl Chain {
             }
             last_unchecked_filter = block_data.height;
         }
-        let stop_hash_index = last_unchecked_filter + FILTER_BATCH_SIZE;
+        let stop_height = match self.request_state.last_filter_request {
+            Some(in_flight)
+                if in_flight.next_height.eq(&last_unchecked_filter)
+                    && last_unchecked_filter.le(&in_flight.stop_height) =>
+            {
+                in_flight.stop_height
+            }
+            _ => last_unchecked_filter + FILTER_BATCH_SIZE,
+        }
+        .min(self.header_chain.height());
         let stop_hash = self
             .header_chain
-            .block_hash_at_height(stop_hash_index)
+            .block_hash_at_height(stop_height)
             .unwrap_or(self.header_chain.tip_hash());
         self.request_state.last_filter_request = Some(FilterRequest {
             next_height: last_unchecked_filter,
-            stop_height: stop_hash_index.min(self.header_chain.height()),
+            stop_height,
         });
         GetCFilters {
             filter_type: self.filter_type.into(),
@@ -597,6 +606,63 @@ mod tests {
         assert_eq!(
             retry.start_height, original.start_height,
             "a stop-hash response permanently advanced past missing filters"
+        );
+    }
+
+    #[test]
+    fn reissued_filter_request_keeps_in_flight_stop() {
+        let scenario = load_scenario();
+        let mut chain = new_regtest(base_block(), 1);
+        let first_headers = scenario.n_most_work_headers(3);
+        chain.sync_chain(first_headers.clone()).unwrap();
+        let request = chain.next_cf_header_message();
+        chain
+            .sync_cf_headers(
+                1.into(),
+                CFHeaders {
+                    filter_type: 0,
+                    stop_hash: request.stop_hash,
+                    previous_filter_header: scenario.prev_header(),
+                    filter_hashes: scenario.n_most_work_filter_hashes(3),
+                },
+            )
+            .unwrap();
+        let original = chain.next_filter_message();
+        let mut filters = scenario.filters().into_iter();
+        chain.sync_filter(filters.next().unwrap()).unwrap();
+
+        chain.sync_chain(scenario.most_work_headers()).unwrap();
+        let previous_filter_header = chain
+            .header_chain
+            .filter_commitment(first_headers[2].block_hash())
+            .unwrap()
+            .header;
+        let request = chain.next_cf_header_message();
+        chain
+            .sync_cf_headers(
+                1.into(),
+                CFHeaders {
+                    filter_type: 0,
+                    stop_hash: request.stop_hash,
+                    previous_filter_header,
+                    filter_hashes: scenario.n_most_work_filter_hashes(5)[3..].to_vec(),
+                },
+            )
+            .unwrap();
+        let reissued = chain.next_filter_message();
+        assert_eq!(reissued.stop_hash, original.stop_hash);
+
+        assert!(
+            !chain
+                .sync_filter(filters.next().unwrap())
+                .unwrap()
+                .was_last_in_batch
+        );
+        assert!(
+            chain
+                .sync_filter(filters.next().unwrap())
+                .unwrap()
+                .was_last_in_batch
         );
     }
 
