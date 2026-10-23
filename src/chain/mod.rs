@@ -109,7 +109,7 @@ pub(crate) struct FilterCommitment {
 pub(crate) struct FilterRequestState {
     pub last_filter_request: Option<FilterRequest>,
     pub last_filter_header_request: Option<FilterHeaderRequest>,
-    pub pending_batch: Option<(PeerId, CFHeaderBatch)>,
+    pub pending_batch: Option<(Vec<PeerId>, CFHeaderBatch)>,
     pub agreement_state: FilterHeaderAgreements,
     prev_cf_header_stop_hashes: VecDeque<BlockHash>,
 }
@@ -155,28 +155,16 @@ pub(crate) struct FilterHeaderRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FilterHeaderAgreements {
-    current: u8,
     required: u8,
 }
 
 impl FilterHeaderAgreements {
     pub(crate) fn new(required: u8) -> Self {
-        Self {
-            current: 0,
-            required,
-        }
+        Self { required }
     }
 
-    pub(crate) fn got_agreement(&mut self) {
-        self.current += 1;
-    }
-
-    pub(crate) fn enough_agree(&self) -> bool {
-        self.current.ge(&self.required)
-    }
-
-    pub(crate) fn reset_agreements(&mut self) {
-        self.current = 0;
+    pub(crate) fn enough_agree(&self, peers: &[PeerId]) -> bool {
+        peers.len() >= self.required as usize
     }
 }
 
