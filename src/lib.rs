@@ -288,9 +288,9 @@ impl TrustedPeer {
     /// Create a new trusted peer from a DNS hostname.
     ///
     /// The hostname is stored as-is and resolved to an IP address at the
-    /// time a connection is attempted, via [`tokio::net::lookup_host`]. If
-    /// resolution fails or yields no addresses, the peer is skipped and
-    /// the next configured peer is tried.
+    /// time a connection is attempted, via [`tokio::net::lookup_host`], or through
+    /// the Socks5 proxy if one is configured. If resolution fails or yields no
+    /// addresses, the peer is skipped and the next configured peer is tried.
     pub fn from_hostname(hostname: impl Into<String>, port: u16) -> Self {
         Self {
             address: TrustedPeerInner::Hostname(hostname.into()),

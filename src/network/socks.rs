@@ -2,7 +2,7 @@
 // ref: https://datatracker.ietf.org/doc/html/rfc1928#section-1
 
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 
@@ -19,6 +19,7 @@ const VERSION: u8 = 5;
 const NOAUTH: u8 = 0;
 const METHODS: u8 = 1;
 const CMD_CONNECT: u8 = 1;
+const CMD_RESOLVE: u8 = 0xF0;
 const RESPONSE_SUCCESS: u8 = 0;
 const RSV: u8 = 0;
 const ADDR_TYPE_IPV4: u8 = 1;
@@ -117,19 +118,11 @@ impl From<[u8; 32]> for SocksConnection {
     }
 }
 
-pub(crate) async fn create_socks5(
-    proxy: SocketAddr,
-    addr: SocksConnection,
-    port: u16,
-) -> Result<TcpStream, Socks5Error> {
+async fn greet_proxy(proxy: SocketAddr) -> Result<TcpStream, Socks5Error> {
     // Connect to the proxy, likely a local Tor daemon.
     let timeout = tokio::time::timeout(CONNECTION_TIMEOUT, TcpStream::connect(proxy))
         .await
         .map_err(|_| Socks5Error::ConnectionTimeout)?;
-    // Format the destination IP address and port according to the Socks5 spec
-    let dest_ip_bytes = addr.encode();
-    let dest_port_bytes = port.to_be_bytes();
-    let ip_type_byte = addr.type_byte();
     // Begin the handshake by requesting a connection to the proxy.
     let mut tcp_stream = timeout.map_err(|_| Socks5Error::ConnectionFailed)?;
     tcp_stream.write_all(&[VERSION, METHODS, NOAUTH]).await?;
@@ -142,6 +135,19 @@ pub(crate) async fn create_socks5(
     if buf[1] != NOAUTH {
         return Err(Socks5Error::AuthRequired);
     }
+    Ok(tcp_stream)
+}
+
+pub(crate) async fn create_socks5(
+    proxy: SocketAddr,
+    addr: SocksConnection,
+    port: u16,
+) -> Result<TcpStream, Socks5Error> {
+    // Format the destination IP address and port according to the Socks5 spec
+    let dest_ip_bytes = addr.encode();
+    let dest_port_bytes = port.to_be_bytes();
+    let ip_type_byte = addr.type_byte();
+    let mut tcp_stream = greet_proxy(proxy).await?;
     // Write the request to the proxy to connect to our destination
     tcp_stream
         .write_all(&[VERSION, CMD_CONNECT, RSV, ip_type_byte])
@@ -180,6 +186,44 @@ pub(crate) async fn create_socks5(
 
     // Proxy handshake is complete, the TCP reader/writer can be returned
     Ok(tcp_stream)
+}
+
+pub(crate) async fn resolve_socks5(
+    proxy: SocketAddr,
+    hostname: &str,
+) -> Result<IpAddr, Socks5Error> {
+    let mut tcp_stream = greet_proxy(proxy).await?;
+    let name = hostname.as_bytes();
+    let len = u8::try_from(name.len()).map_err(|_| Socks5Error::ConnectionFailed)?;
+    let mut request = Vec::with_capacity(name.len() + 7);
+    request.extend_from_slice(&[VERSION, CMD_RESOLVE, RSV, ADDR_TYPE_DOMAIN, len]);
+    request.extend_from_slice(name);
+    // Unused destination port
+    request.extend_from_slice(&[0, 0]);
+    tcp_stream.write_all(&request).await?;
+    let mut buf = [0_u8; 4];
+    tcp_stream.read_exact(&mut buf).await?;
+    if buf[0] != VERSION {
+        return Err(Socks5Error::WrongVersion);
+    }
+    if buf[1] != RESPONSE_SUCCESS {
+        return Err(Socks5Error::ConnectionFailed);
+    }
+    match buf[3] {
+        ADDR_TYPE_IPV4 => {
+            let mut buf = [0_u8; 6];
+            tcp_stream.read_exact(&mut buf).await?;
+            Ok(IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3])))
+        }
+        ADDR_TYPE_IPV6 => {
+            let mut buf = [0_u8; 18];
+            tcp_stream.read_exact(&mut buf).await?;
+            let mut octets = [0_u8; 16];
+            octets.copy_from_slice(&buf[..16]);
+            Ok(IpAddr::V6(Ipv6Addr::from(octets)))
+        }
+        _ => Err(Socks5Error::ConnectionFailed),
+    }
 }
 
 #[cfg(test)]
