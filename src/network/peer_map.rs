@@ -24,8 +24,11 @@ use crate::{
     broadcaster::BroadcastQueue,
     default_port_from_network,
     network::{
-        dns::bootstrap_dns, error::PeerError, gossip::GossipMonitor, peer::Peer, PeerId,
-        PeerTimeoutConfig, RelayPolicy,
+        dns::{bootstrap_dns, resolve_hostname_socks5},
+        error::PeerError,
+        gossip::GossipMonitor,
+        peer::Peer,
+        PeerId, PeerTimeoutConfig, RelayPolicy,
     },
     BlockType, Dialog, TrustedPeer, TrustedPeerInner,
 };
@@ -313,10 +316,22 @@ impl PeerMap {
                 TrustedPeerInner::Addr(addr) => addr,
                 TrustedPeerInner::Hostname(host) => {
                     crate::debug!(format!("Resolving hostname {host}:{port}"));
-                    match tokio::net::lookup_host((host.as_str(), port)).await {
-                        Ok(iter) => {
-                            let resolved: Vec<AddrV2> = iter
-                                .map(|sa| match sa.ip() {
+                    let lookup = match &self.connector {
+                        ConnectionType::ClearNet => tokio::net::lookup_host((host.as_str(), port))
+                            .await
+                            .ok()
+                            .map(|iter| iter.map(|sa| sa.ip()).collect::<Vec<IpAddr>>()),
+                        ConnectionType::Socks5Proxy(proxy) => {
+                            resolve_hostname_socks5(proxy.0, &host)
+                                .await
+                                .map(|ip| vec![ip])
+                        }
+                    };
+                    match lookup {
+                        Some(ips) => {
+                            let resolved: Vec<AddrV2> = ips
+                                .into_iter()
+                                .map(|ip| match ip {
                                     IpAddr::V4(ip) => AddrV2::Ipv4(ip),
                                     IpAddr::V6(ip) => AddrV2::Ipv6(ip),
                                 })
@@ -343,7 +358,7 @@ impl PeerMap {
                             }
                             continue;
                         }
-                        Err(_) => {
+                        None => {
                             crate::debug!(format!("Failed to resolve hostname {host}"));
                             continue;
                         }
@@ -359,7 +374,7 @@ impl PeerMap {
         let mut db_lock = self.db.lock().await;
         if db_lock.is_empty() {
             crate::debug!("Bootstrapping peers with DNS");
-            let new_peers = bootstrap_dns(self.network)
+            let new_peers = bootstrap_dns(self.network, &self.connector)
                 .await
                 .into_iter()
                 .map(|ip| match ip {
