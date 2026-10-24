@@ -106,7 +106,7 @@ async fn sync_assert(best: &bitcoin::BlockHash, channel: &mut UnboundedReceiver<
     }
 }
 
-async fn print_logs(mut info_rx: Receiver<Info>, mut warn_rx: UnboundedReceiver<Warning>) {
+async fn print_logs(mut info_rx: Receiver<Info>, mut warn_rx: Receiver<Warning>) {
     loop {
         tokio::select! {
             log = info_rx.recv() => {

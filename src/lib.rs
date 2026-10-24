@@ -437,14 +437,14 @@ fn default_port_from_network(network: &Network) -> u16 {
 #[derive(Debug, Clone)]
 struct Dialog {
     info_tx: Sender<Info>,
-    warn_tx: UnboundedSender<Warning>,
+    warn_tx: Sender<Warning>,
     event_tx: UnboundedSender<Event>,
 }
 
 impl Dialog {
     fn new(
         info_tx: Sender<Info>,
-        warn_tx: UnboundedSender<Warning>,
+        warn_tx: Sender<Warning>,
         event_tx: UnboundedSender<Event>,
     ) -> Self {
         Self {
@@ -455,7 +455,7 @@ impl Dialog {
     }
 
     fn send_warning(&self, warning: Warning) {
-        let _ = self.warn_tx.send(warning);
+        let _ = self.warn_tx.try_send(warning);
     }
 
     fn send_info(&self, info: Info) {

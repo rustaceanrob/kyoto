@@ -445,7 +445,7 @@ mod tests {
 
     fn new_regtest(anchor: HashCheckpoint, peers: u8) -> Chain {
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
-        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
+        let (warn_tx, _) = tokio::sync::mpsc::channel::<Warning>(1);
         let (event_tx, _) = tokio::sync::mpsc::unbounded_channel::<Event>();
         Chain::new(
             bitcoin::Network::Regtest,
@@ -649,7 +649,7 @@ mod tests {
         let scenario = load_scenario();
         let mut chain = new_regtest(base_block(), 1);
         let (info_tx, _) = tokio::sync::mpsc::channel::<Info>(1);
-        let (warn_tx, _) = tokio::sync::mpsc::unbounded_channel::<Warning>();
+        let (warn_tx, _) = tokio::sync::mpsc::channel::<Warning>(1);
         let (event_tx, mut events) = tokio::sync::mpsc::unbounded_channel::<Event>();
         chain.dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
 
