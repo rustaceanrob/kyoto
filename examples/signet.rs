@@ -4,7 +4,8 @@
 use bip157::chain::{BlockHeaderChanges, ChainState};
 use bip157::messages::Event;
 use bip157::{builder::Builder, chain::checkpoints::HashCheckpoint, Client};
-use bip157::{Address, BlockHash, Network};
+use bip157::{BlockHash, Network};
+use bitcoin::Address;
 use std::collections::HashSet;
 use std::str::FromStr;
 

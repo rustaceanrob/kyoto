@@ -93,7 +93,7 @@ pub use {
 #[doc(inline)]
 pub use bitcoin::{
     bip158::BlockFilter, block::Header, p2p::address::AddrV2, p2p::message_network::RejectReason,
-    p2p::ServiceFlags, Address, Block, BlockHash, FeeRate, Network, ScriptBuf, Transaction, Wtxid,
+    p2p::ServiceFlags, Block, BlockHash, FeeRate, Network, ScriptBuf, Transaction, Wtxid,
 };
 
 pub extern crate tokio;

@@ -8,8 +8,8 @@ use bip157::{
     chain::{checkpoints::HashCheckpoint, BlockHeaderChanges, ChainState},
     client::Client,
     node::Node,
-    Address, BlockHash, Event, GossipMonitorRequestBuilder, Info, Package, ServiceFlags,
-    Transaction, TrustedPeer, Warning,
+    BlockHash, Event, GossipMonitorRequestBuilder, Info, Package, ServiceFlags, Transaction,
+    TrustedPeer, Warning,
 };
 use bitcoin::{
     absolute,
@@ -20,7 +20,7 @@ use bitcoin::{
     },
     secp256k1::SecretKey,
     sighash::{Prevouts, SighashCache},
-    Amount, KnownHrp, OutPoint, ScriptBuf, Sequence, TapSighashType, TxIn, TxOut, Witness,
+    Address, Amount, KnownHrp, OutPoint, ScriptBuf, Sequence, TapSighashType, TxIn, TxOut, Witness,
 };
 use bitcoind::serde_json;
 use bitcoind::{anyhow, exe_path};
