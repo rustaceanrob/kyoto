@@ -559,7 +559,7 @@ mod tests {
         let (to_node, _node_rx) = mpsc::channel(8);
         let (_to_peer, from_node) = mpsc::channel(8);
         let (info_tx, _info_rx) = mpsc::channel(8);
-        let (warn_tx, _warn_rx) = mpsc::unbounded_channel();
+        let (warn_tx, _warn_rx) = mpsc::channel(8);
         let (event_tx, _event_rx) = mpsc::unbounded_channel();
         let address = AddrV2::Ipv4(std::net::Ipv4Addr::LOCALHOST);
         let mut peer = Peer::new(
@@ -666,7 +666,7 @@ mod tests {
     async fn stale_cfheaders_do_not_clear_pending_request() {
         let network = Network::Regtest;
         let (info_tx, _info_rx) = mpsc::channel(32);
-        let (warn_tx, _warn_rx) = mpsc::unbounded_channel();
+        let (warn_tx, _warn_rx) = mpsc::channel(8);
         let (event_tx, _event_rx) = mpsc::unbounded_channel();
         let dialog = Arc::new(Dialog::new(info_tx, warn_tx, event_tx));
         let mut chain = Chain::new(

@@ -24,7 +24,7 @@ pub struct Client {
     /// Receive informational messages from the node.
     pub info_rx: mpsc::Receiver<Info>,
     /// Receive warning messages from a node.
-    pub warn_rx: mpsc::UnboundedReceiver<Warning>,
+    pub warn_rx: mpsc::Receiver<Warning>,
     /// Receive [`Event`] from a node to act on.
     pub event_rx: mpsc::UnboundedReceiver<Event>,
 }
@@ -32,7 +32,7 @@ pub struct Client {
 impl Client {
     pub(crate) fn new(
         info_rx: mpsc::Receiver<Info>,
-        warn_rx: mpsc::UnboundedReceiver<Warning>,
+        warn_rx: mpsc::Receiver<Warning>,
         event_rx: mpsc::UnboundedReceiver<Event>,
         ntx: UnboundedSender<ClientMessage>,
     ) -> Self {

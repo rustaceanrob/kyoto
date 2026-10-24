@@ -77,7 +77,7 @@ impl Node {
         } = config;
         // Set up a communication channel between the node and client
         let (info_tx, info_rx) = mpsc::channel::<Info>(32);
-        let (warn_tx, warn_rx) = mpsc::unbounded_channel::<Warning>();
+        let (warn_tx, warn_rx) = mpsc::channel::<Warning>(512);
         let (event_tx, event_rx) = mpsc::unbounded_channel::<Event>();
         let (ctx, crx) = mpsc::unbounded_channel::<ClientMessage>();
         let client = Client::new(info_rx, warn_rx, event_rx, ctx);
