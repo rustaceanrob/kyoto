@@ -469,6 +469,45 @@ impl BlockTree {
         self.ancestors(self.active_tip.hash)
     }
 
+    // The lowest height of the canonical chain above genesis, or the tip if there is none.
+    pub(crate) fn lowest_stored_block_height(&self) -> Height {
+        self.canonical_hashes
+            .range(1..)
+            .next()
+            .map(|(&height, _)| height)
+            .unwrap_or(self.active_tip.height)
+    }
+
+    //For contiguous properties (being known, filter checked, etc.) we use binary search to find
+    //the `BlockNode` for which it holds.
+    pub(crate) fn highest_block_node_where(
+        &self,
+        pred: impl Fn(&BlockNode) -> bool,
+    ) -> Option<&BlockNode> {
+        let mut low = self
+            .canonical_hashes
+            .range(1..)
+            .next()
+            .map(|(&height, _)| height)?;
+        let mut high = self.active_tip.height;
+        let mut found = None;
+        while low <= high {
+            let mid = low + (high - low) / 2;
+            match self
+                .canonical_hashes
+                .get(&mid)
+                .and_then(|hash| self.headers.get(hash))
+            {
+                Some(node) if pred(node) => {
+                    found = Some(node);
+                    low = mid + 1;
+                }
+                _ => high = mid - 1,
+            }
+        }
+        found
+    }
+
     fn ancestors(&self, hash: BlockHash) -> BlockNodeIterator<'_> {
         BlockNodeIterator {
             block_tree: self,
