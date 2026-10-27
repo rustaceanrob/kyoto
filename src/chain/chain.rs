@@ -259,39 +259,34 @@ impl Chain {
 
     // We need to make this public for new peers that connect to us throughout syncing the filter headers
     pub(crate) fn next_cf_header_message(&mut self) -> GetCFHeaders {
-        let mut last_unchecked_cfheader = self.header_chain.height();
-        let mut prev_header = None;
-        for data in self.header_chain.iter_data() {
-            if data.height.eq(&0) {
-                break;
+        let tip = self.header_chain.height();
+        let last_synced_block_node = self.header_chain.highest_block_node_where(|node| {
+            node.filter_commitment.is_some() || node.cf_header_assumed
+        });
+        let start_height = match last_synced_block_node {
+            Some(node) => (node.height + 1).min(tip),
+            None => self.header_chain.lowest_stored_block_height(),
+        };
+        let prev_header = match last_synced_block_node {
+            // There is nothing to check the next batch against after an assumed filter header.
+            Some(node) if !node.cf_header_assumed => {
+                node.filter_commitment.map(|commitment| commitment.header)
             }
-            if data.cf_header_assumed {
-                break;
-            }
-            match data.filter_commitment {
-                Some(commitment) => {
-                    prev_header = Some(commitment.header);
-                    break;
-                }
-                None => {
-                    last_unchecked_cfheader = data.height;
-                }
-            }
-        }
-        let stop_hash_index = last_unchecked_cfheader + CF_HEADER_BATCH_SIZE;
+            _ => None,
+        };
         let stop_hash = self
             .header_chain
-            .block_hash_at_height(stop_hash_index)
+            .block_hash_at_height(start_height + CF_HEADER_BATCH_SIZE)
             .unwrap_or(self.header_chain.tip_hash());
         self.request_state.push_stop_hash(stop_hash);
         self.request_state.last_filter_header_request = Some(FilterHeaderRequest {
             expected_prev_filter_header: prev_header,
-            start_height: last_unchecked_cfheader,
+            start_height,
             stop_hash,
         });
         GetCFHeaders {
             filter_type: self.filter_type.into(),
-            start_height: last_unchecked_cfheader,
+            start_height,
             stop_hash,
         }
     }
@@ -365,16 +360,14 @@ impl Chain {
 
     // Next filter message, if there is one
     pub(crate) fn next_filter_message(&mut self) -> GetCFilters {
-        let mut last_unchecked_filter = self.header_chain.height();
-        for block_data in self.header_chain.iter_data() {
-            if block_data.height.eq(&0) {
-                break;
-            }
-            if block_data.filter_checked {
-                break;
-            }
-            last_unchecked_filter = block_data.height;
-        }
+        let tip = self.header_chain.height();
+        let last_synced_block_node = self
+            .header_chain
+            .highest_block_node_where(|node| node.filter_checked);
+        let last_unchecked_filter = match last_synced_block_node {
+            Some(node) => (node.height + 1).min(tip),
+            None => self.header_chain.lowest_stored_block_height(),
+        };
         let stop_height = match self.request_state.last_filter_request {
             Some(in_flight)
                 if in_flight.next_height.eq(&last_unchecked_filter)
