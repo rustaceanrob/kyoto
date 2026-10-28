@@ -20,7 +20,7 @@ const TESTNET_SEEDS: &[&str; 4] = &[
     "seed.testnet.achownodes.xyz",
 ];
 
-const MAINNET_SEEDS: &[&str; 7] = &[
+const MAINNET_SEEDS: &[&str; 8] = &[
     "dnsseed.bluematt.me",
     "seed.bitcoin.jonasschnelli.ch",
     "seed.btc.petertodd.net",
@@ -28,6 +28,7 @@ const MAINNET_SEEDS: &[&str; 7] = &[
     "dnsseed.emzy.de",
     "seed.bitcoin.wiz.biz",
     "seed.mainnet.achownodes.xyz",
+    "seed.rustaceanrob.com",
 ];
 
 const TESTNET4_SEEDS: &[&str; 2] = &[
